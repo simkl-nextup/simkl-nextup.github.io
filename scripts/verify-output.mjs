@@ -18,13 +18,22 @@ const setupScript = setupHtml.match(/<script type="module">([\s\S]*?)<\/script>/
 if (!setupScript) throw new Error("Setup page is missing its authorization script.");
 new Function(setupScript);
 
-const secret = process.env.SIMKL_ACCESS_TOKEN;
-if (secret) {
+const secrets = [
+  process.env.SIMKL_ACCESS_TOKEN,
+  process.env.TMDB_READ_ACCESS_TOKEN,
+  process.env.MDBLIST_API_KEY,
+].filter(Boolean);
+if (secrets.length) {
   async function scan(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const target = path.join(dir, entry.name);
       if (entry.isDirectory()) await scan(target);
-      else if ((await readFile(target, "utf8")).includes(secret)) throw new Error(`Access token leaked into ${target}`);
+      else {
+        const contents = await readFile(target, "utf8");
+        for (const secret of secrets) {
+          if (contents.includes(secret)) throw new Error(`An API credential leaked into ${target}`);
+        }
+      }
     }
   }
   await scan(publicDir);

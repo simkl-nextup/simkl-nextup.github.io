@@ -60,6 +60,8 @@ jobs:
         env:
           SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+          MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           MAX_CATALOG_ITEMS: 50
         run: npm run refresh
@@ -67,6 +69,8 @@ jobs:
       - name: Verify generated addon
         env:
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+          MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
         run: npm run verify
 
       - name: Save private sync state

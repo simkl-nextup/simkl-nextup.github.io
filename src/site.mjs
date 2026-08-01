@@ -3,6 +3,8 @@ import path from "node:path";
 import { CATALOG_ID } from "./constants.mjs";
 import { buildManifest } from "./catalog.mjs";
 
+const TMDB_LOGO = "https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg";
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -11,7 +13,7 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function indexHtml({ baseUrl, count, updatedAt, skippedCount }) {
+function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb }) {
   const manifestUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/manifest.json` : "./manifest.json";
   return `<!doctype html>
 <html lang="en">
@@ -29,7 +31,7 @@ function indexHtml({ baseUrl, count, updatedAt, skippedCount }) {
     .pill{background:#1d2027;border:1px solid #303541;border-radius:999px;padding:8px 12px;color:#dfe3ec}
     a.button{display:inline-block;background:#f4f5f7;color:#090a0d;text-decoration:none;font-weight:800;padding:13px 18px;border-radius:12px}
     code{display:block;margin-top:16px;padding:14px;background:#090a0d;border-radius:10px;overflow-wrap:anywhere;color:#bfc8ff}
-    footer{margin-top:28px;font-size:.9rem;color:#808694}footer a{color:#aebcff}
+    footer{margin-top:28px;font-size:.9rem;color:#808694}footer a{color:#aebcff}.tmdb{display:flex;align-items:center;gap:12px;margin-top:16px}.tmdb img{width:72px;height:auto}.tmdb span{font-size:.78rem;line-height:1.35}
   </style>
 </head>
 <body>
@@ -44,7 +46,10 @@ function indexHtml({ baseUrl, count, updatedAt, skippedCount }) {
     </div>
     <a class="button" href="${escapeHtml(manifestUrl)}">Open manifest</a>
     <code>${escapeHtml(manifestUrl)}</code>
-    <footer>Anime tracking and schedule data from <a href="https://simkl.com">Simkl</a>.</footer>
+    <footer>
+      <div>Anime tracking and schedule data from <a href="https://simkl.com">Simkl</a>.</div>
+      ${usesTmdb ? `<div class="tmdb"><a href="https://www.themoviedb.org"><img src="${TMDB_LOGO}" alt="TMDB"></a><span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span></div>` : ""}
+    </footer>
   </main>
 </body>
 </html>`;
@@ -60,7 +65,7 @@ function setupHtml() {
 <p class="warn">Treat the final access token like a password. Save it only as the GitHub repository secret <strong>SIMKL_ACCESS_TOKEN</strong>.</p>
 <script type="module">
 const out=document.querySelector('#out');const button=document.querySelector('#start');
-const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'1.0.0'});
+const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'1.1.0'});
 const get=async url=>{const response=await fetch(url);const body=await response.json();if(!response.ok||body.error)throw new Error(body.message||body.error||('Simkl returned HTTP '+response.status));return body};
 button.onclick=async()=>{button.disabled=true;try{const id=document.querySelector('#client').value.trim();if(!id)throw new Error('Enter a client ID.');
 const pin=await get('https://api.simkl.com/oauth/pin?'+params(id));if(!pin.user_code||!pin.verification_uri)throw new Error('Simkl did not return a usable PIN.');
@@ -79,7 +84,7 @@ export function deriveBaseUrl({ explicitBaseUrl, githubRepository }) {
   return repo.toLowerCase() === `${owner.toLowerCase()}.github.io` ? host : `${host}/${repo}`;
 }
 
-export async function writeSite({ outputDir, catalog, items, updatedAt, skipped = [], baseUrl = "" }) {
+export async function writeSite({ outputDir, catalog, items, updatedAt, skipped = [], baseUrl = "", usesTmdb = false }) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
   await mkdir(path.join(outputDir, "meta", "series"), { recursive: true });
@@ -99,6 +104,7 @@ export async function writeSite({ outputDir, catalog, items, updatedAt, skipped 
     count: catalog.metas.length,
     updatedAt,
     skippedCount: skipped.length,
+    usesTmdb,
   }));
   await writeFile(path.join(outputDir, "setup.html"), setupHtml());
   await writeFile(path.join(outputDir, ".nojekyll"), "");
@@ -106,6 +112,7 @@ export async function writeSite({ outputDir, catalog, items, updatedAt, skipped 
     updatedAt,
     catalogItems: catalog.metas.length,
     trackedWatchingItems: Object.keys(items ?? {}).length,
+    tmdbArtworkEnabled: usesTmdb,
     skipped,
   }));
 }

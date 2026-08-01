@@ -49,6 +49,21 @@ test("catalog sorts the most recently aired episode first", () => {
   assert.deepEqual(catalog.metas.map((meta) => meta.name), ["Newest", "Example Anime"]);
 });
 
+test("catalog prefers enriched artwork and retains Simkl as fallback", () => {
+  const enriched = watching({
+    _addonVisuals: {
+      provider: "tmdb",
+      poster: "https://image.tmdb.org/t/p/w500/poster.jpg",
+      background: "https://image.tmdb.org/t/p/w1280/backdrop.jpg",
+      tmdbId: 123,
+    },
+  });
+  const { catalog } = buildCatalog({ "101": enriched }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(catalog.metas[0].poster, "https://image.tmdb.org/t/p/w500/poster.jpg");
+  assert.equal(catalog.metas[0].background, "https://image.tmdb.org/t/p/w1280/backdrop.jpg");
+  assert.ok(catalog.metas[0].links.some((link) => link.url === "https://www.themoviedb.org/tv/123"));
+});
+
 test("catalog ID selection favors IMDb, then TMDB and TVDB", () => {
   assert.equal(chooseCatalogId({ imdb: "tt1234567", tmdb: "12" }), "tt1234567");
   assert.equal(chooseCatalogId({ tmdb: "12", tvdb: "34" }), "tmdb:12");
@@ -70,4 +85,3 @@ test("calendar refresh updates the matching next episode date", () => {
   assert.equal(merged["101"].next_to_watch_info.date, "2026-08-01T12:30:00Z");
   assert.equal(merged["101"].next_to_watch_info.title, "Rescheduled");
 });
-

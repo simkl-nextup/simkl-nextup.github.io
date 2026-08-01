@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildCatalog, chooseCatalogId, mergeAnimeDetails, mergeCalendar } from "../src/catalog.mjs";
 import { DEFAULT_MAX_ITEMS } from "../src/constants.mjs";
+import { enrichCatalogMetadata, MetadataApiError } from "../src/metadata.mjs";
 import { createSimklClient, SimklApiError } from "../src/simkl.mjs";
 import {
   createEmptyState,
@@ -59,6 +60,8 @@ export async function refresh({
   fetchImpl = fetch,
   explicitBaseUrl = process.env.PUBLIC_BASE_URL,
   githubRepository = process.env.GITHUB_REPOSITORY,
+  tmdbAccessToken = process.env.TMDB_READ_ACCESS_TOKEN,
+  mdblistApiKey = process.env.MDBLIST_API_KEY,
   stateFile = statePath,
   outputDirectory = outputDir,
 } = {}) {
@@ -98,6 +101,16 @@ export async function refresh({
   }
 
   state = await enrichMissingMappings(client, state);
+  const metadata = await enrichCatalogMetadata(state.items, {
+    tmdbAccessToken,
+    mdblistApiKey,
+    fetchImpl,
+    now,
+  });
+  state.items = metadata.items;
+  for (const warning of metadata.warnings) {
+    console.warn(`Artwork enrichment skipped for Simkl ${warning.simklId ?? "unknown"}: ${warning.message}`);
+  }
   state.lastSuccessfulRefresh = new Date(now).toISOString();
 
   const { catalog, skipped } = buildCatalog(state.items, { now, maxItems });
@@ -109,9 +122,10 @@ export async function refresh({
     updatedAt: state.lastSuccessfulRefresh,
     skipped,
     baseUrl,
+    usesTmdb: metadata.usesTmdb,
   });
   await saveState(stateFile, state);
-  return { catalog, skipped, state };
+  return { catalog, skipped, state, metadataWarnings: metadata.warnings };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -126,6 +140,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } catch (error) {
     if (error instanceof SimklApiError && error.status === 401) {
       console.error("Simkl authorization was revoked or expired. Run the authorization step again and replace SIMKL_ACCESS_TOKEN.");
+    } else if (error instanceof MetadataApiError && (error.status === 401 || error.status === 403)) {
+      console.error(`${error.provider} rejected its configured API credential. Replace the corresponding GitHub secret.`);
     } else {
       console.error(error.stack || error.message);
     }

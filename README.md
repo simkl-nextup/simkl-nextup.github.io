@@ -2,6 +2,8 @@
 
 A personal, single-row Stremio/Nuvio addon. It shows only anime on your Simkl **Watching** list whose next unwatched episode has already aired.
 
+Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
+
 When Xperience records an episode in Simkl, the next refresh removes the caught-up show or advances it to its next aired episode. When a future episode reaches its air time, the show automatically enters the row.
 
 ## What the row includes
@@ -54,6 +56,18 @@ Open **Repository → Settings → Secrets and variables → Actions** and creat
 | `SIMKL_CLIENT_ID` | The app's Simkl client ID |
 | `SIMKL_ACCESS_TOKEN` | The token returned by the PIN authorization |
 
+Recommended artwork secret:
+
+| Secret | Value |
+|---|---|
+| `TMDB_READ_ACCESS_TOKEN` | The long TMDB API Read Access Token beginning with `eyJ`, not the short API key |
+
+Optional metadata fallback:
+
+| Secret | Value |
+|---|---|
+| `MDBLIST_API_KEY` | Your MDBList API key; queried only when strong external IDs are missing |
+
 Optional repository variable:
 
 | Variable | Value |
@@ -94,6 +108,8 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 - `/sync/all-items` is called only when Simkl reports changed anime activity.
 - Delta changes are merged into a private GitHub Actions cache.
 - The public Simkl v2 anime calendar corrects rescheduled air times.
+- TMDB artwork and resolved IDs are cached in the private sync state for 30 days, keeping API usage low.
+- Simkl artwork remains the automatic fallback when TMDB has no match or no TMDB token is configured.
 - If a token is revoked, deployment fails and the existing Pages version remains online.
 
 GitHub schedules are best-effort and can occasionally run late. Use **Run workflow** for an immediate manual refresh.
@@ -106,7 +122,7 @@ GitHub automatically disables scheduled workflows in a public repository after 6
 npm test
 npm run build:placeholder
 npm run keepalive
-SIMKL_CLIENT_ID=... SIMKL_ACCESS_TOKEN=... npm run refresh
+SIMKL_CLIENT_ID=... SIMKL_ACCESS_TOKEN=... TMDB_READ_ACCESS_TOKEN=... npm run refresh
 npm run verify
 ```
 
@@ -114,10 +130,14 @@ Node.js 20+ is required. There are no third-party runtime packages.
 
 ## Privacy
 
-- The token is read only from GitHub Secrets and is scanned against generated output before deployment.
+- All configured API credentials are read only from GitHub Secrets and are scanned against generated output before deployment.
 - Sync state is stored in the GitHub Actions cache, not committed to the repository or published by Pages.
 - The final catalog itself is public to anyone who knows the Pages URL. This is required so Nuvio/Stremio can request it without authentication.
 
 ## Simkl attribution and API use
 
 Tracking and schedule data is provided by [Simkl](https://simkl.com). This project uses Simkl's documented two-phase sync model and v2 calendar CDN. It is intended for personal, non-commercial use.
+
+Artwork can be provided by [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+TOP Posters is intentionally not called directly from the static catalog because its API key must appear inside each poster URL. A future image-cache mode can add badge posters without publishing that key.

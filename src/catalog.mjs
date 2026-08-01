@@ -118,23 +118,33 @@ export function buildCatalog(items, options = {}) {
     }
 
     const episode = episodeLabel(info);
+    const visuals = item._addonVisuals ?? {};
+    const links = [
+      {
+        name: "View on Simkl",
+        category: "simkl",
+        url: simklUrl(item),
+      },
+    ];
+    if (visuals.tmdbId) {
+      const tmdbMediaType = visuals.tmdbMediaType === "movie" ? "movie" : "tv";
+      links.push({
+        name: "View on TMDB",
+        category: "tmdb",
+        url: `https://www.themoviedb.org/${tmdbMediaType}/${visuals.tmdbId}`,
+      });
+    }
     included.push({
       airedAt,
       meta: {
         id,
         type: "series",
         name: media.title,
-        poster: posterUrl(media.poster),
-        background: fanartUrl(media.fanart),
+        poster: visuals.poster || posterUrl(media.poster),
+        background: visuals.background || fanartUrl(media.fanart),
         releaseInfo: episode,
         description: `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. Aired ${displayDate(airedAt)}. Data from Simkl.`,
-        links: [
-          {
-            name: "View on Simkl",
-            category: "simkl",
-            url: simklUrl(item),
-          },
-        ],
+        links,
       },
     });
   }
@@ -173,4 +183,3 @@ export function buildManifest() {
     },
   };
 }
-
