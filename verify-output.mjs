@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Authorize Simkl</title><style>
+:root{color-scheme:dark;font-family:system-ui;background:#0b0c0f;color:#fff}body{max-width:680px;margin:48px auto;padding:0 20px}input,button{font:inherit;padding:12px;border-radius:10px;border:1px solid #3b4150}input{width:100%;box-sizing:border-box;background:#151820;color:#fff}button{margin-top:12px;background:#fff;color:#08090b;font-weight:800;cursor:pointer}.box{margin-top:20px;padding:18px;background:#151820;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere}.warn{color:#ffcb6b}</style></head>
+<body><h1>Authorize this personal addon</h1><p>Enter the client ID from your Simkl developer app. Your browser will request a PIN directly from Simkl; nothing is sent to this GitHub Pages site.</p>
+<label>Simkl client ID<input id="client" autocomplete="off"></label><button id="start">Request PIN</button><div id="out" class="box">Waiting.</div>
+<p class="warn">Treat the final access token like a password. Save it only as the GitHub repository secret <strong>SIMKL_ACCESS_TOKEN</strong>.</p>
+<script type="module">
+const out=document.querySelector('#out');const button=document.querySelector('#start');
+const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'1.0.0'});
+const get=async url=>{const response=await fetch(url);const body=await response.json();if(!response.ok||body.error)throw new Error(body.message||body.error||('Simkl returned HTTP '+response.status));return body};
+button.onclick=async()=>{button.disabled=true;try{const id=document.querySelector('#client').value.trim();if(!id)throw new Error('Enter a client ID.');
+const pin=await get('https://api.simkl.com/oauth/pin?'+params(id));if(!pin.user_code||!pin.verification_uri)throw new Error('Simkl did not return a usable PIN.');
+out.textContent='Open '+pin.verification_uri+' and enter PIN: '+pin.user_code+'\n\nWaiting for approval…';const deadline=Date.now()+pin.expires_in*1000;
+while(Date.now()<deadline){await new Promise(r=>setTimeout(r,pin.interval*1000));const result=await get('https://api.simkl.com/oauth/pin/'+encodeURIComponent(pin.user_code)+'?'+params(id));
+if(result.access_token){out.textContent='SIMKL_ACCESS_TOKEN\n\n'+result.access_token+'\n\nCopy it now and add it as a GitHub repository secret. Do not commit it.';return}if(result.result==='KO'&&!/pending/i.test(result.message||''))throw new Error(result.message||'Simkl declined the PIN authorization.');}
+throw new Error('The PIN expired. Start again.')}catch(error){out.textContent='Error: '+error.message}finally{button.disabled=false}};
+</script></body></html>

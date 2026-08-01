@@ -1,0 +1,88 @@
+name: Refresh Simkl catalog and deploy Pages
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Twice per hour, away from the busy top-of-hour queue.
+    - cron: "7,37 * * * *"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: simkl-new-episodes-pages
+  cancel-in-progress: false
+
+jobs:
+  refresh-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Keep scheduled workflows active
+        run: |
+          node scripts/update-keepalive.mjs
+          if git diff --quiet -- .github/keepalive; then
+            echo "Monthly keepalive is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive
+          git commit -m "chore: keep scheduled workflows active"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Restore private sync state
+        id: restore-state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/simkl-state.json
+          key: simkl-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            simkl-state-
+
+      - name: Run tests
+        run: npm test
+
+      - name: Refresh personalized catalog
+        env:
+          SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          MAX_CATALOG_ITEMS: 50
+        run: npm run refresh
+
+      - name: Verify generated addon
+        env:
+          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
+        run: npm run verify
+
+      - name: Save private sync state
+        uses: actions/cache/save@v4
+        with:
+          path: state/simkl-state.json
+          key: simkl-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

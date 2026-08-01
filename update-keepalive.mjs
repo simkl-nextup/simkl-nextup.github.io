@@ -1,0 +1,35 @@
+{
+  "id": "community.simkl.new-anime-episodes",
+  "version": "1.0.0",
+  "name": "Simkl New Anime Episodes",
+  "description": "One personalized row containing only aired but unwatched episodes from anime you are watching on Simkl.",
+  "resources": [
+    "catalog",
+    {
+      "name": "meta",
+      "types": [
+        "series"
+      ],
+      "idPrefixes": [
+        "tmdb:",
+        "tvdb:",
+        "kitsu:",
+        "mal:",
+        "simkl:"
+      ]
+    }
+  ],
+  "types": [
+    "series"
+  ],
+  "catalogs": [
+    {
+      "type": "series",
+      "id": "simkl-new-anime-episodes",
+      "name": "New Episodes From Your Anime · Simkl"
+    }
+  ],
+  "behaviorHints": {
+    "configurable": false
+  }
+}
