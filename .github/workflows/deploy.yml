@@ -3,8 +3,8 @@ name: Refresh Simkl catalog and deploy Pages
 on:
   workflow_dispatch:
   schedule:
-    # Twice per hour, away from the busy top-of-hour queue.
-    - cron: "7,37 * * * *"
+    # Run once per hour, away from GitHub's busy top-of-hour period.
+    - cron: "23 * * * *"
 
 permissions:
   contents: write
@@ -21,6 +21,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -38,6 +39,7 @@ jobs:
             echo "Monthly keepalive is already current."
             exit 0
           fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .github/keepalive
