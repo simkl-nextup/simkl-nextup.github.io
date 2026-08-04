@@ -26,19 +26,20 @@ function imageResponse(buffer, status = 200) {
   });
 }
 
-test("poster badge SVG distinguishes every tracked-list status", () => {
+test("poster ribbon SVG distinguishes every tracked-list status", () => {
   const watching = buildPosterBadgeSvg({ status: "watching", episode: "Ep. 5" }).toString();
   const planned = buildPosterBadgeSvg({ status: "plantowatch", episode: "S3E6" }).toString();
   const revived = buildPosterBadgeSvg({ status: "completed", episode: "Ep. 13" }).toString();
 
-  assert.match(watching, /WATCHING/);
+  assert.match(watching, /NEW EPISODE/);
   assert.match(watching, /EP 5/);
-  assert.match(watching, /#6D5DFC/);
+  assert.match(watching, /#139A67/);
+  assert.match(watching, /<path d="M0 18 H/);
   assert.match(planned, /PLAN TO WATCH/);
   assert.match(planned, /S03 · E06/);
   assert.match(planned, /#D88A00/);
-  assert.match(revived, /NEW EPISODE/);
-  assert.match(revived, /#139A67/);
+  assert.match(revived, /NEW SEASON/);
+  assert.match(revived, /#6D5DFC/);
 });
 
 test("poster decoration creates a deterministic 500x750 WebP and publishes its URL", async () => {

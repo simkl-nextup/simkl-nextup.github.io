@@ -5,6 +5,7 @@ import sharp from "sharp";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
+const POSTER_BADGE_STYLE_VERSION = 4;
 const MAX_POSTER_BYTES = 12 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 const ALLOWED_POSTER_HOSTS = new Set([
@@ -14,9 +15,9 @@ const ALLOWED_POSTER_HOSTS = new Set([
 ]);
 
 const STATUS_STYLES = {
-  watching: { label: "WATCHING", color: "#6D5DFC" },
+  watching: { label: "NEW EPISODE", color: "#139A67" },
   plantowatch: { label: "PLAN TO WATCH", color: "#D88A00" },
-  completed: { label: "NEW EPISODE", color: "#139A67" },
+  completed: { label: "NEW SEASON", color: "#6D5DFC" },
 };
 
 function escapeXml(value) {
@@ -40,7 +41,7 @@ function normalizedEpisodeLabel(value) {
 }
 
 function pillWidth(label, minimum) {
-  return Math.max(minimum, Math.round(label.length * 14.2 + 38));
+  return Math.max(minimum, Math.round(label.length * 19 + 44));
 }
 
 export function buildPosterBadgeSvg({ status, episode }) {
@@ -50,10 +51,16 @@ export function buildPosterBadgeSvg({ status, episode }) {
   const episodeLabel = normalizedEpisodeLabel(episode);
   if (!episodeLabel) throw new Error("Poster badge episode label is required.");
 
-  const statusWidth = pillWidth(statusLabel, 142);
-  const episodeWidth = pillWidth(episodeLabel, 92);
-  const episodeX = 18;
-  const episodeY = 74;
+  const statusWidth = pillWidth(statusLabel, 214);
+  const episodeWidth = pillWidth(episodeLabel, 116);
+  const statusTop = 18;
+  const statusBottom = 78;
+  const statusPoint = statusWidth;
+  const statusBody = statusWidth - 18;
+  const episodeTop = 90;
+  const episodeBottom = 146;
+  const episodePoint = episodeWidth;
+  const episodeBody = episodeWidth - 15;
 
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" viewBox="0 0 ${POSTER_WIDTH} ${POSTER_HEIGHT}">
   <defs>
@@ -61,11 +68,12 @@ export function buildPosterBadgeSvg({ status, episode }) {
       <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.62"/>
     </filter>
   </defs>
-  <g filter="url(#shadow)" font-family="Inter, Arial, Helvetica, sans-serif" font-size="21" font-weight="800" letter-spacing="0.6">
-    <rect x="18" y="18" width="${statusWidth}" height="46" rx="23" fill="${style.color}" fill-opacity="0.96" stroke="#FFFFFF" stroke-opacity="0.22"/>
-    <text x="${18 + statusWidth / 2}" y="48" fill="#FFFFFF" text-anchor="middle">${escapeXml(statusLabel)}</text>
-    <rect x="${episodeX}" y="${episodeY}" width="${episodeWidth}" height="46" rx="23" fill="#090B10" fill-opacity="0.91" stroke="#FFFFFF" stroke-opacity="0.28"/>
-    <text x="${episodeX + episodeWidth / 2}" y="${episodeY + 30}" fill="#FFFFFF" text-anchor="middle">${escapeXml(episodeLabel)}</text>
+  <g filter="url(#shadow)" font-family="Inter, Arial, Helvetica, sans-serif" font-weight="800">
+    <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${(statusTop + statusBottom) / 2} L${statusBody} ${statusBottom} H0 Z" fill="${style.color}" fill-opacity="0.98" stroke="#FFFFFF" stroke-opacity="0.24"/>
+    <path d="M0 ${statusTop} H${statusBody}" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="2"/>
+    <text x="${statusBody / 2}" y="58" fill="#FFFFFF" text-anchor="middle" font-size="30" letter-spacing="0.4">${escapeXml(statusLabel)}</text>
+    <path d="M0 ${episodeTop} H${episodeBody} L${episodePoint} ${(episodeTop + episodeBottom) / 2} L${episodeBody} ${episodeBottom} H0 Z" fill="#090B10" fill-opacity="0.94" stroke="#FFFFFF" stroke-opacity="0.3"/>
+    <text x="${episodeBody / 2}" y="${episodeTop + 38}" fill="#FFFFFF" text-anchor="middle" font-size="28" letter-spacing="0.3">${escapeXml(episodeLabel)}</text>
   </g>
 </svg>`);
 }
@@ -107,7 +115,7 @@ async function downloadPoster(url, fetchImpl) {
 
 function posterFileName(meta, badge) {
   const signature = JSON.stringify({
-    version: 1,
+    version: POSTER_BADGE_STYLE_VERSION,
     id: meta.id,
     poster: meta.poster,
     status: badge.status,
