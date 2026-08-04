@@ -1,9 +1,9 @@
 {
   "name": "simkl-new-episodes-addon",
-  "version": "1.1.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
-  "description": "A personal Stremio/Nuvio catalog of aired but unwatched anime episodes from Simkl.",
+  "description": "A personal Stremio/Nuvio catalog that bumps tracked anime on every new episode, including revived Completed titles.",
   "scripts": {
     "authorize": "node scripts/authorize.mjs",
     "build:placeholder": "node scripts/build-placeholder.mjs",

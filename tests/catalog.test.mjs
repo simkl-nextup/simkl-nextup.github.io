@@ -19,9 +19,26 @@ const watching = (overrides = {}) => ({
   ...overrides,
 });
 
-test("catalog includes only aired, unwatched episodes from Watching", () => {
+const planned = (overrides = {}) => ({
+  status: "plantowatch",
+  watched_episodes_count: 0,
+  anime: {
+    title: "Planned Premiere",
+    poster: "12/planned",
+    ids: { simkl: 201, imdb: "tt3333333" },
+  },
+  _addonLatestAiredInfo: {
+    title: "The Latest One",
+    episode: 4,
+    date: "2026-08-01T09:00:00Z",
+  },
+  ...overrides,
+});
+
+test("catalog combines Watching and Plan to Watch titles with aired episodes", () => {
   const items = {
     "101": watching(),
+    "201": planned(),
     "102": watching({
       next_to_watch_info: { episode: 6, date: "2026-08-03T10:00:00Z" },
       anime: { title: "Future Anime", ids: { simkl: 102, imdb: "tt7654321" } },
@@ -30,11 +47,48 @@ test("catalog includes only aired, unwatched episodes from Watching", () => {
       status: "completed",
       anime: { title: "Completed Anime", ids: { simkl: 103, imdb: "tt1111111" } },
     }),
+    "202": planned({
+      anime: { title: "Old Planned Anime", ids: { simkl: 202, imdb: "tt4444444" } },
+      _addonLatestAiredInfo: { episode: 7, date: "2026-07-01T09:00:00Z" },
+    }),
+    "203": planned({
+      anime: { title: "Future Planned Anime", ids: { simkl: 203, imdb: "tt5555555" } },
+      _addonLatestAiredInfo: { episode: 2, date: "2026-08-05T09:00:00Z" },
+    }),
   };
   const { catalog } = buildCatalog(items, { now: "2026-08-02T00:00:00Z" });
-  assert.equal(catalog.metas.length, 1);
-  assert.equal(catalog.metas[0].name, "Example Anime");
+  assert.equal(catalog.metas.length, 3);
+  assert.deepEqual(catalog.metas.map((meta) => meta.name), ["Example Anime", "Planned Premiere", "Old Planned Anime"]);
   assert.equal(catalog.metas[0].releaseInfo, "Ep. 5");
+  assert.equal(catalog.metas[1].releaseInfo, "Ep. 4");
+});
+
+test("catalog revives a Completed title only when a newly aired episode exceeds its watched count", () => {
+  const revived = watching({
+    status: "completed",
+    watched_episodes_count: 12,
+    next_to_watch_info: undefined,
+    _addonLatestAiredInfo: {
+      episode: 13,
+      title: "A New Beginning",
+      date: "2026-08-02T10:00:00Z",
+    },
+    anime: { title: "Revived Anime", ids: { simkl: 301, imdb: "tt6666666" } },
+  });
+  const stillCaughtUp = watching({
+    status: "completed",
+    watched_episodes_count: 13,
+    next_to_watch_info: undefined,
+    _addonLatestAiredInfo: { episode: 13, date: "2026-08-02T10:00:00Z" },
+    anime: { title: "Caught Up Anime", ids: { simkl: 302, imdb: "tt7777777" } },
+  });
+  const { catalog } = buildCatalog(
+    { "301": revived, "302": stillCaughtUp },
+    { now: "2026-08-02T12:00:00Z" },
+  );
+  assert.deepEqual(catalog.metas.map((meta) => meta.name), ["Revived Anime"]);
+  assert.equal(catalog.metas[0].releaseInfo, "Ep. 13");
+  assert.match(catalog.metas[0].description, /Previously completed/);
 });
 
 test("catalog sorts the most recently aired episode first", () => {
@@ -84,4 +138,65 @@ test("calendar refresh updates the matching next episode date", () => {
   );
   assert.equal(merged["101"].next_to_watch_info.date, "2026-08-01T12:30:00Z");
   assert.equal(merged["101"].next_to_watch_info.title, "Rescheduled");
+});
+
+test("calendar refresh records the latest aired Plan to Watch episode", () => {
+  const merged = mergeCalendar(
+    { "201": planned({ _addonLatestAiredInfo: undefined }) },
+    {
+      calendar: [
+        { simkl_id: 201, date: "2026-08-01T09:00:00Z", episode: { episode: 1, title: "The Beginning" } },
+        { simkl_id: 201, date: "2026-08-08T09:00:00Z", episode: { episode: 2, title: "Second" } },
+      ],
+      metadata: {
+        "201": { title: "Planned Premiere", ids: { simkl_id: 201, tmdb: "456" } },
+      },
+    },
+    { now: "2026-08-09T00:00:00Z" },
+  );
+  assert.deepEqual(merged["201"]._addonLatestAiredInfo, {
+    episode: 2,
+    title: "Second",
+    date: "2026-08-08T09:00:00.000Z",
+  });
+  assert.equal(merged["201"].anime.ids.tmdb, "456");
+});
+
+test("calendar refresh also records a newly aired episode for Completed anime", () => {
+  const completed = watching({
+    status: "completed",
+    watched_episodes_count: 12,
+    next_to_watch_info: undefined,
+    _addonLatestAiredInfo: undefined,
+    anime: { title: "Completed Anime", ids: { simkl: 301, imdb: "tt6666666" } },
+  });
+  const merged = mergeCalendar(
+    { "301": completed },
+    {
+      calendar: [
+        { simkl_id: 301, date: "2026-08-02T10:00:00Z", episode: { episode: 13, title: "We Are Back" } },
+      ],
+      metadata: { "301": { title: "Completed Anime", ids: { simkl_id: 301 } } },
+    },
+    { now: "2026-08-02T12:00:00Z" },
+  );
+  assert.equal(merged["301"]._addonLatestAiredInfo.episode, 13);
+});
+
+test("a new release bumps a behind Watching title while keeping its next-unwatched label", () => {
+  const behind = watching({
+    _addonLatestAiredInfo: {
+      episode: 10,
+      title: "Newest Release",
+      date: "2026-08-02T10:00:00Z",
+    },
+  });
+  const other = watching({
+    next_to_watch_info: { episode: 2, date: "2026-08-02T08:00:00Z" },
+    anime: { title: "Other Show", ids: { simkl: 104, imdb: "tt2222222" } },
+  });
+  const { catalog } = buildCatalog({ "101": behind, "104": other }, { now: "2026-08-02T12:00:00Z" });
+  assert.deepEqual(catalog.metas.map((meta) => meta.name), ["Example Anime", "Other Show"]);
+  assert.equal(catalog.metas[0].releaseInfo, "Ep. 5");
+  assert.match(catalog.metas[0].description, /Latest release: Ep\. 10/);
 });

@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import {
   createEmptyState,
   mergeAnimeDelta,
+  normalizeState,
   pruneRemovedItems,
-  replaceWithInitialWatching,
+  replaceWithInitialEligibleAnime,
 } from "../src/state.mjs";
 
 const item = (id, status = "watching") => ({
@@ -12,22 +13,35 @@ const item = (id, status = "watching") => ({
   anime: { title: `Anime ${id}`, ids: { simkl: id } },
 });
 
-test("initial sync stores only Watching anime", () => {
-  const state = replaceWithInitialWatching(createEmptyState(), {
-    anime: [item(1), item(2, "completed")],
+test("initial sync stores Watching, Plan to Watch, and Completed anime", () => {
+  const state = replaceWithInitialEligibleAnime(createEmptyState(), {
+    anime: [item(1), item(2, "plantowatch"), item(3, "completed"), item(4, "dropped")],
   });
-  assert.deepEqual(Object.keys(state.items), ["1"]);
+  assert.deepEqual(Object.keys(state.items), ["1", "2", "3"]);
 });
 
-test("delta overwrites Watching items and removes moved items", () => {
-  let state = replaceWithInitialWatching(createEmptyState(), { anime: [item(1), item(2)] });
-  state = mergeAnimeDelta(state, { anime: [item(1, "completed"), item(3)] });
-  assert.deepEqual(Object.keys(state.items).sort(), ["2", "3"]);
+test("delta keeps all eligible statuses and removes dropped items", () => {
+  let state = replaceWithInitialEligibleAnime(createEmptyState(), { anime: [item(1), item(2)] });
+  state = mergeAnimeDelta(state, {
+    anime: [item(1, "completed"), item(2, "dropped"), item(3)],
+  });
+  assert.deepEqual(Object.keys(state.items).sort(), ["1", "3"]);
+  assert.equal(state.items["1"].status, "completed");
 });
 
 test("ID snapshot prunes items removed from the Simkl library", () => {
-  let state = replaceWithInitialWatching(createEmptyState(), { anime: [item(1), item(2)] });
+  let state = replaceWithInitialEligibleAnime(createEmptyState(), { anime: [item(1), item(2)] });
   state = pruneRemovedItems(state, { anime: [item(2)] });
   assert.deepEqual(Object.keys(state.items), ["2"]);
 });
 
+test("an older cache triggers a clean version 4 bootstrap", () => {
+  const state = normalizeState({
+    version: 3,
+    lastAnimeActivity: "2026-08-01T00:00:00Z",
+    items: { "1": item(1) },
+  });
+  assert.equal(state.version, 4);
+  assert.equal(state.lastAnimeActivity, null);
+  assert.deepEqual(state.items, {});
+});

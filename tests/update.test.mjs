@@ -13,7 +13,7 @@ function jsonResponse(value, status = 200) {
   });
 }
 
-test("end-to-end refresh builds the row and removes a completed anime on the next delta", async () => {
+test("end-to-end refresh builds the row and hides a caught-up completed anime on the next delta", async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-"));
   const stateFile = path.join(temp, "state.json");
   const outputDirectory = path.join(temp, "public");
@@ -33,8 +33,9 @@ test("end-to-end refresh builds the row and removes a completed anime on the nex
     const url = new URL(input);
     assert.equal(url.searchParams.get("client_id"), "client");
     if (url.hostname === "data.simkl.in") return jsonResponse({ calendar: [], metadata: {} });
-    if (url.pathname === "/sync/all-items/anime/watching") {
+    if (url.pathname === "/sync/all-items/anime" && !url.searchParams.has("date_from")) {
       assert.equal(options.headers.Authorization, "Bearer token");
+      assert.equal(url.searchParams.get("next_watch_info"), "yes");
       return jsonResponse({ anime: [animeItem] });
     }
     if (url.pathname === "/sync/activities") {
@@ -45,7 +46,7 @@ test("end-to-end refresh builds the row and removes a completed anime on the nex
         },
       });
     }
-    if (url.pathname === "/sync/all-items/anime") {
+    if (url.pathname === "/sync/all-items/anime" && url.searchParams.has("date_from")) {
       assert.equal(url.searchParams.get("date_from"), "2026-08-01T11:00:00Z");
       return jsonResponse({ anime: [{ ...animeItem, status: "completed" }] });
     }

@@ -161,6 +161,7 @@ export async function enrichCatalogMetadata(items, {
   mdblistApiKey,
   fetchImpl = fetch,
   now = new Date(),
+  itemFilter = (item) => item?.status === "watching",
 } = {}) {
   const tmdb = createTmdbClient({ accessToken: tmdbAccessToken, fetchImpl });
   const mdblist = createMdblistClient({ apiKey: mdblistApiKey, fetchImpl });
@@ -171,7 +172,7 @@ export async function enrichCatalogMetadata(items, {
   if (!sources.length) return { items: next, warnings, usesTmdb: false };
 
   for (const [key, item] of Object.entries(next)) {
-    if (item?.status !== "watching") continue;
+    if (!itemFilter(item)) continue;
     const media = mediaFor(item);
     if (!media) continue;
 

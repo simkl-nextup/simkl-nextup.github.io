@@ -41,21 +41,35 @@ export function simklUrl(item) {
   return `https://simkl.com/anime/${id}${slug}`;
 }
 
-export function mergeCalendar(items, calendarPayload) {
+export function mergeCalendar(items, calendarPayload, options = {}) {
   const next = structuredClone(items ?? {});
   const calendar = calendarPayload?.calendar ?? [];
   const metadata = calendarPayload?.metadata ?? {};
+  const now = options.now ? new Date(options.now) : new Date();
 
   for (const entry of calendar) {
     const key = String(entry.simkl_id);
     const item = next[key];
-    if (!item || item.status !== "watching") continue;
+    if (!item || !["watching", "plantowatch", "completed"].includes(item.status)) continue;
 
-    const info = item.next_to_watch_info;
-    if (!info || Number(info.episode) !== Number(entry.episode?.episode)) continue;
+    if (item.status === "watching") {
+      const info = item.next_to_watch_info;
+      if (info && Number(info.episode) === Number(entry.episode?.episode)) {
+        info.date = entry.date || info.date;
+        info.title = entry.episode?.title || info.title;
+      }
+    }
 
-    info.date = entry.date || info.date;
-    info.title = entry.episode?.title || info.title;
+    const candidateDate = validDate(entry.date);
+    const savedDate = validDate(item._addonLatestAiredInfo?.date);
+    const episodeNumber = Number(entry.episode?.episode);
+    if (candidateDate && candidateDate <= now && Number.isFinite(episodeNumber) && (!savedDate || candidateDate >= savedDate)) {
+      item._addonLatestAiredInfo = {
+        episode: episodeNumber,
+        title: entry.episode?.title || undefined,
+        date: candidateDate.toISOString(),
+      };
+    }
 
     const media = mediaFor(item);
     const calendarMedia = metadata[key];
@@ -105,10 +119,18 @@ export function buildCatalog(items, options = {}) {
   const skipped = [];
 
   for (const item of Object.values(items ?? {})) {
-    if (item?.status !== "watching") continue;
-    const info = item.next_to_watch_info;
+    if (!isCatalogCandidate(item, now)) continue;
+    const isPlanned = item.status === "plantowatch";
+    const isRevived = item.status === "completed";
+    const info = isPlanned || isRevived ? item._addonLatestAiredInfo : item.next_to_watch_info;
     const airedAt = validDate(info?.date);
     if (!info?.episode || !airedAt || airedAt > now) continue;
+
+    const latestAiredInfo = item._addonLatestAiredInfo;
+    const latestAiredAt = validDate(latestAiredInfo?.date);
+    const sortAt = latestAiredAt && latestAiredAt <= now && latestAiredAt > airedAt
+      ? latestAiredAt
+      : airedAt;
 
     const media = mediaFor(item);
     const id = chooseCatalogId(media?.ids);
@@ -135,7 +157,7 @@ export function buildCatalog(items, options = {}) {
       });
     }
     included.push({
-      airedAt,
+      airedAt: sortAt,
       meta: {
         id,
         type: "series",
@@ -143,7 +165,11 @@ export function buildCatalog(items, options = {}) {
         poster: visuals.poster || posterUrl(media.poster),
         background: visuals.background || fanartUrl(media.fanart),
         releaseInfo: episode,
-        description: `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. Aired ${displayDate(airedAt)}. Data from Simkl.`,
+        description: isPlanned
+          ? `From your Plan to Watch list: latest release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`
+          : isRevived
+            ? `Previously completed: new release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`
+            : `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. ${sortAt > airedAt && latestAiredInfo?.episode ? `Latest release: ${episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}Data from Simkl.`,
         links,
       },
     });
@@ -156,12 +182,28 @@ export function buildCatalog(items, options = {}) {
   };
 }
 
+export function isCatalogCandidate(item, nowInput = new Date()) {
+  const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
+  if (!["watching", "plantowatch", "completed"].includes(item?.status)) return false;
+
+  const info = item.status === "watching" ? item.next_to_watch_info : item._addonLatestAiredInfo;
+  const airedAt = validDate(info?.date);
+  if (!info?.episode || !airedAt || airedAt > now) return false;
+
+  if (item.status === "completed") {
+    const watchedCount = Number(item.watched_episodes_count ?? 0);
+    const releasedEpisode = Number(info.episode);
+    if (!Number.isFinite(releasedEpisode) || releasedEpisode <= watchedCount) return false;
+  }
+  return true;
+}
+
 export function buildManifest() {
   return {
     id: ADDON_ID,
     version: APP_VERSION,
-    name: "Simkl New Anime Episodes",
-    description: "One personalized row containing only aired but unwatched episodes from anime you are watching on Simkl.",
+    name: "Simkl Anime Up Next",
+    description: "One personalized row that bumps Watching, Plan to Watch, and newly revived Completed anime when an episode airs.",
     resources: [
       "catalog",
       {

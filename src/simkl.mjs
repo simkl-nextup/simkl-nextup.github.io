@@ -2,6 +2,7 @@ import {
   APP_NAME,
   APP_VERSION,
   SIMKL_API_BASE,
+  SIMKL_CALENDAR_BASE,
   SIMKL_CALENDAR_URL,
 } from "./constants.mjs";
 
@@ -29,6 +30,15 @@ function apiUrl(path, clientId, params = {}) {
 
 function calendarUrl(clientId) {
   const url = new URL(SIMKL_CALENDAR_URL);
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("app-name", APP_NAME);
+  url.searchParams.set("app-version", APP_VERSION);
+  return url;
+}
+
+function calendarMonthUrl(clientId, year, month) {
+  const normalizedMonth = String(month).padStart(2, "0");
+  const url = new URL(`${SIMKL_CALENDAR_BASE}/${year}/${normalizedMonth}/anime.json`);
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("app-name", APP_NAME);
   url.searchParams.set("app-version", APP_VERSION);
@@ -74,10 +84,10 @@ export function createSimklClient({ clientId, accessToken, fetchImpl = fetch }) 
       return getJson(fetchImpl, apiUrl("/sync/activities", clientId), accessToken);
     },
 
-    getInitialWatchingAnime() {
+    getInitialAnimeLibrary() {
       return getJson(
         fetchImpl,
-        apiUrl("/sync/all-items/anime/watching", clientId, {
+        apiUrl("/sync/all-items/anime", clientId, {
           next_watch_info: "yes",
           language: "en",
         }),
@@ -115,6 +125,9 @@ export function createSimklClient({ clientId, accessToken, fetchImpl = fetch }) 
     getAnimeCalendar() {
       return getJson(fetchImpl, calendarUrl(clientId), null);
     },
+
+    getAnimeCalendarMonth(year, month) {
+      return getJson(fetchImpl, calendarMonthUrl(clientId, year, month), null);
+    },
   };
 }
-

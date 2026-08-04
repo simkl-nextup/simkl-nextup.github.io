@@ -1,6 +1,9 @@
+const STATE_VERSION = 4;
+const INCLUDED_STATUSES = new Set(["watching", "plantowatch", "completed"]);
+
 export function createEmptyState() {
   return {
-    version: 1,
+    version: STATE_VERSION,
     lastAnimeActivity: null,
     lastRemovedFromList: null,
     lastSuccessfulRefresh: null,
@@ -20,6 +23,9 @@ export function simklIdFor(item) {
 export function normalizeState(input) {
   const base = createEmptyState();
   if (!input || typeof input !== "object") return base;
+  // Version 4 retains Completed anime so a newly added episode can revive a
+  // title the user had previously finished.
+  if (input.version !== STATE_VERSION) return base;
   return {
     ...base,
     ...input,
@@ -27,11 +33,11 @@ export function normalizeState(input) {
   };
 }
 
-export function replaceWithInitialWatching(state, payload) {
+export function replaceWithInitialEligibleAnime(state, payload) {
   const next = { ...normalizeState(state), items: {} };
   for (const item of payload?.anime ?? []) {
     const id = simklIdFor(item);
-    if (id !== null && item.status === "watching") next.items[String(id)] = item;
+    if (id !== null && INCLUDED_STATUSES.has(item.status)) next.items[String(id)] = item;
   }
   return next;
 }
@@ -42,7 +48,7 @@ export function mergeAnimeDelta(state, payload) {
     const id = simklIdFor(item);
     if (id === null) continue;
     const key = String(id);
-    if (item.status === "watching") next.items[key] = item;
+    if (INCLUDED_STATUSES.has(item.status)) next.items[key] = item;
     else delete next.items[key];
   }
   return next;

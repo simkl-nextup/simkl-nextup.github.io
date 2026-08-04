@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildCatalog, chooseCatalogId, mergeAnimeDetails, mergeCalendar } from "../src/catalog.mjs";
+import { buildCatalog, chooseCatalogId, isCatalogCandidate, mergeAnimeDetails, mergeCalendar } from "../src/catalog.mjs";
 import { DEFAULT_MAX_ITEMS } from "../src/constants.mjs";
 import { enrichCatalogMetadata, MetadataApiError } from "../src/metadata.mjs";
 import { createSimklClient, SimklApiError } from "../src/simkl.mjs";
@@ -11,7 +11,7 @@ import {
   mergeAnimeDelta,
   normalizeState,
   pruneRemovedItems,
-  replaceWithInitialWatching,
+  replaceWithInitialEligibleAnime,
   simklIdFor,
 } from "../src/state.mjs";
 import { deriveBaseUrl, writeSite } from "../src/site.mjs";
@@ -34,9 +34,10 @@ async function saveState(filePath, state) {
   await writeFile(filePath, `${JSON.stringify(state, null, 2)}\n`);
 }
 
-async function enrichMissingMappings(client, state) {
+async function enrichMissingMappings(client, state, now) {
   const next = structuredClone(state);
   for (const [key, item] of Object.entries(next.items)) {
+    if (!isCatalogCandidate(item, now)) continue;
     if (item._addonMetadataEnriched) continue;
     const media = mediaFor(item);
     const usable = chooseCatalogId(media?.ids);
@@ -69,8 +70,8 @@ export async function refresh({
   let state = await loadState(stateFile);
 
   if (!state.lastAnimeActivity) {
-    const initial = await client.getInitialWatchingAnime();
-    state = replaceWithInitialWatching(state, initial);
+    const initial = await client.getInitialAnimeLibrary();
+    state = replaceWithInitialEligibleAnime(state, initial);
     const activities = await client.getActivities();
     state.lastAnimeActivity = activities?.anime?.all ?? activities?.all ?? new Date(now).toISOString();
     state.lastRemovedFromList = activities?.anime?.removed_from_list ?? null;
@@ -93,19 +94,27 @@ export async function refresh({
     }
   }
 
-  try {
-    const calendar = await client.getAnimeCalendar();
-    state.items = mergeCalendar(state.items, calendar);
-  } catch (error) {
-    console.warn(`Calendar refresh skipped: ${error.message}`);
+  const previousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const calendarRequests = [
+    ["rolling", () => client.getAnimeCalendar()],
+    ["current month", () => client.getAnimeCalendarMonth(now.getUTCFullYear(), now.getUTCMonth() + 1)],
+    ["previous month", () => client.getAnimeCalendarMonth(previousMonth.getUTCFullYear(), previousMonth.getUTCMonth() + 1)],
+  ];
+  for (const [label, request] of calendarRequests) {
+    try {
+      state.items = mergeCalendar(state.items, await request(), { now });
+    } catch (error) {
+      console.warn(`${label} calendar refresh skipped: ${error.message}`);
+    }
   }
 
-  state = await enrichMissingMappings(client, state);
+  state = await enrichMissingMappings(client, state, now);
   const metadata = await enrichCatalogMetadata(state.items, {
     tmdbAccessToken,
     mdblistApiKey,
     fetchImpl,
     now,
+    itemFilter: (item) => isCatalogCandidate(item, now),
   });
   state.items = metadata.items;
   for (const warning of metadata.warnings) {
@@ -135,7 +144,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       accessToken: process.env.SIMKL_ACCESS_TOKEN,
       maxItems: process.env.MAX_CATALOG_ITEMS || DEFAULT_MAX_ITEMS,
     });
-    console.log(`Published ${result.catalog.metas.length} aired-but-unwatched anime title(s).`);
+    console.log(`Published ${result.catalog.metas.length} anime title(s) ready to watch.`);
     if (result.skipped.length) console.warn(`Skipped ${result.skipped.length} title(s) with unusable metadata.`);
   } catch (error) {
     if (error instanceof SimklApiError && error.status === 401) {

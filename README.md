@@ -1,19 +1,22 @@
-# Simkl New Anime Episodes
+# My Anime Up Next · Simkl
 
-A personal, single-row Stremio/Nuvio addon. It shows only anime on your Simkl **Watching** list whose next unwatched episode has already aired.
+A personal, single-row Stremio/Nuvio addon. It combines anime from your Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** anime that receive an additional episode, and bumps a title to the top whenever a new episode airs.
 
 Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
 
-When Xperience records an episode in Simkl, the next refresh removes the caught-up show or advances it to its next aired episode. When a future episode reaches its air time, the show automatically enters the row.
+For Watching titles, the card still identifies your next unwatched episode. The sorting timestamp comes from the show's latest aired episode, so a title is bumped even when you are several episodes behind. Plan to Watch titles display their latest aired episode and are bumped on every subsequent release. A Completed title re-enters only when the calendar reports an episode number beyond its saved watched count, then disappears after the new episode is recorded. Future-only titles remain excluded until an episode actually airs.
+
+Anime seasons are often separate Simkl titles. If a sequel season has a different Simkl ID, add that sequel itself to Watching or Plan to Watch; the addon intentionally does not infer that every sequel is wanted from a completed prequel.
 
 ## What the row includes
 
-- Simkl status is `watching`.
-- `next_to_watch_info.date` is at or before the current time.
-- One card per anime, displaying the next unwatched episode number.
-- Most recently aired episodes first.
+- Simkl status is `watching`, with a next unwatched episode already available; or
+- Simkl status is `plantowatch`, with at least one aired episode observed by the addon; or
+- Simkl status is `completed`, but a newly aired episode number exceeds the saved watched count.
+- One card per anime: next unwatched episode for Watching, latest aired episode for Plan to Watch or revived Completed.
+- Every new episode bumps its show to the top, regardless of which eligible list it is in.
 
-It does **not** include recommendations, Plan to Watch titles, completed anime, movies, or future-only episodes.
+It does **not** include recommendations, caught-up Completed anime, movies, On Hold, Dropped, or future-only episodes.
 
 ## Deployment
 
@@ -95,7 +98,7 @@ Recommended for Nuvio:
 
 1. In Xperience, choose **Import from another add-on**.
 2. Paste the manifest URL.
-3. Keep the single `New Episodes From Your Anime · Simkl` row.
+3. Keep the single `My Anime Up Next · Simkl` row.
 4. Push the profile to Nuvio.
 5. Put the row where your broken Trakt `Your Recently Aired` row used to be.
 
@@ -103,11 +106,11 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 
 ## Refresh behavior
 
-- The first run pulls only your full Anime/Watching list.
+- The first run pulls your Anime library once and locally keeps Watching, Plan to Watch, and Completed so revived titles can be detected.
 - Later runs call `/sync/activities` first.
 - `/sync/all-items` is called only when Simkl reports changed anime activity.
 - Delta changes are merged into a private GitHub Actions cache.
-- The public Simkl v2 anime calendar corrects rescheduled air times.
+- The public Simkl v2 rolling and monthly anime calendars correct rescheduled air times and track the latest aired episode for all eligible statuses.
 - TMDB artwork and resolved IDs are cached in the private sync state for 30 days, keeping API usage low.
 - Simkl artwork remains the automatic fallback when TMDB has no match or no TMDB token is configured.
 - If a token is revoked, deployment fails and the existing Pages version remains online.

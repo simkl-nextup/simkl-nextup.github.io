@@ -20,7 +20,7 @@ function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb }) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Simkl New Anime Episodes</title>
+  <title>My Anime Up Next · Simkl</title>
   <style>
     :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#08090b;color:#f7f7f8}
     body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}
@@ -37,8 +37,8 @@ function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb }) {
 <body>
   <main>
     <div class="eyebrow">Personal Nuvio / Stremio catalog</div>
-    <h1>New Episodes From Your Anime</h1>
-    <p>Only anime from your Simkl <strong>Watching</strong> list with an aired, unwatched episode. Caught-up and future-only shows are excluded automatically.</p>
+    <h1>My Anime Up Next</h1>
+    <p>A focused mix of <strong>Watching</strong>, <strong>Plan to Watch</strong>, and previously completed anime that receive a new episode. Every new release bumps its show to the top.</p>
     <div class="stats">
       <span class="pill">${count} title${count === 1 ? "" : "s"} ready</span>
       <span class="pill">Updated ${escapeHtml(updatedAt)}</span>
@@ -65,7 +65,7 @@ function setupHtml() {
 <p class="warn">Treat the final access token like a password. Save it only as the GitHub repository secret <strong>SIMKL_ACCESS_TOKEN</strong>.</p>
 <script type="module">
 const out=document.querySelector('#out');const button=document.querySelector('#start');
-const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'1.1.0'});
+const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'1.4.0'});
 const get=async url=>{const response=await fetch(url);const body=await response.json();if(!response.ok||body.error)throw new Error(body.message||body.error||('Simkl returned HTTP '+response.status));return body};
 button.onclick=async()=>{button.disabled=true;try{const id=document.querySelector('#client').value.trim();if(!id)throw new Error('Enter a client ID.');
 const pin=await get('https://api.simkl.com/oauth/pin?'+params(id));if(!pin.user_code||!pin.verification_uri)throw new Error('Simkl did not return a usable PIN.');
@@ -111,7 +111,8 @@ export async function writeSite({ outputDir, catalog, items, updatedAt, skipped 
   await writeFile(path.join(outputDir, "status.json"), json({
     updatedAt,
     catalogItems: catalog.metas.length,
-    trackedWatchingItems: Object.keys(items ?? {}).length,
+    trackedWatchingItems: Object.values(items ?? {}).filter((item) => item.status === "watching").length,
+    trackedPlanToWatchItems: Object.values(items ?? {}).filter((item) => item.status === "plantowatch").length,
     tmdbArtworkEnabled: usesTmdb,
     skipped,
   }));
