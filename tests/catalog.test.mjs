@@ -275,8 +275,8 @@ test("catalog publishes a synthetic parent with all seasons and opens the mapped
       episodeCount: 3,
       videos: [
         { id: "tt2000000:1:1", title: "Pilot", released: "2024-01-01T00:00:00.000Z", season: 1, episode: 1 },
-        { id: "tt2000000:2:4", title: "Four", released: "2026-07-25T00:00:00.000Z", season: 2, episode: 4 },
-        { id: "tt2000000:2:5", title: "Five", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 5 },
+        { id: "mal:222:4", title: "Four", released: "2026-07-25T00:00:00.000Z", season: 2, episode: 4 },
+        { id: "mal:222:5", title: "Five", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 5 },
       ],
     },
   });
@@ -285,8 +285,8 @@ test("catalog publishes a synthetic parent with all seasons and opens the mapped
   assert.equal(catalog.metas[0].id, "simkl-unified:900");
   assert.equal(catalog.metas[0].name, "Unified Anime");
   assert.equal(metadata[0].videos.length, 3);
-  assert.equal(metadata[0].behaviorHints.defaultVideoId, "tt2000000:2:5");
-  assert.deepEqual(unifiedStats, { titles: 1, seasons: 2, episodes: 3 });
+  assert.equal(metadata[0].behaviorHints.defaultVideoId, "mal:222:5");
+  assert.deepEqual(unifiedStats, { titles: 1, seasons: 2, episodes: 3, trackingEpisodes: 0 });
 });
 
 test("separate Simkl season entries resolving to the same TMDB show collapse into one card", () => {
@@ -297,8 +297,8 @@ test("separate Simkl season entries resolving to the same TMDB show collapse int
     seasonCount: 2,
     episodeCount: 2,
     videos: [
-      { id: "tt9010000:1:1", title: "One", released: "2025-01-01T00:00:00.000Z", season: 1, episode: 1 },
-      { id: "tt9010000:2:1", title: "Return", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 1 },
+      { id: "mal:5011:1", title: "One", released: "2025-01-01T00:00:00.000Z", season: 1, episode: 1 },
+      { id: "mal:5022:1", title: "Return", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 1 },
     ],
   };
   const seasonOne = watching({
@@ -314,5 +314,27 @@ test("separate Simkl season entries resolving to the same TMDB show collapse int
 
   const { catalog, metadata } = buildCatalog({ "501": seasonOne, "502": seasonTwo }, { now: "2026-08-02T00:00:00Z" });
   assert.equal(catalog.metas.length, 1);
-  assert.equal(metadata[0].behaviorHints.defaultVideoId, "tt9010000:2:1");
+  assert.equal(metadata[0].behaviorHints.defaultVideoId, "mal:5022:1");
+});
+
+
+test("default video uses the local cour episode after applying the TMDB offset", () => {
+  const courTwo = watching({
+    next_to_watch_info: { episode: 5, title: "Local episode five", date: "2026-08-01T00:00:00Z" },
+    anime: { title: "Split Cour 2", ids: { simkl: 902, mal: 7002 } },
+    _addonSeriesMeta: {
+      parentId: "simkl-unified:990",
+      name: "Split Cour",
+      matchedSeasonNumber: 2,
+      matchedEpisodeOffset: 12,
+      seasonCount: 2,
+      episodeCount: 1,
+      videos: [
+        { id: "mal:7002:5", title: "TMDB episode 17", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 17 },
+      ],
+    },
+  });
+
+  const { metadata } = buildCatalog({ "902": courTwo }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(metadata[0].behaviorHints.defaultVideoId, "mal:7002:5");
 });

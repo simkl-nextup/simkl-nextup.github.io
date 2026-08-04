@@ -34,21 +34,42 @@ async function saveState(filePath, state) {
   await writeFile(filePath, `${JSON.stringify(state, null, 2)}\n`);
 }
 
-async function enrichMissingMappings(client, state, now) {
+const METADATA_ENRICHMENT_VERSION = 2;
+
+async function enrichMissingMappings(client, state, now, { unifiedSeasonsEnabled = false } = {}) {
   const next = structuredClone(state);
   for (const [key, item] of Object.entries(next.items)) {
-    if (!isCatalogCandidate(item, now)) continue;
-    if (item._addonMetadataEnriched) continue;
+    const trackedAnime = ["watching", "plantowatch", "completed"].includes(item?.status);
+    if (!isCatalogCandidate(item, now) && !(unifiedSeasonsEnabled && trackedAnime)) continue;
+    if (item._addonMetadataEnrichmentVersion === METADATA_ENRICHMENT_VERSION) continue;
     const media = mediaFor(item);
     const usable = chooseCatalogId(media?.ids);
     const weakOnly = usable?.startsWith("simkl:") || usable?.startsWith("mal:") || usable?.startsWith("kitsu:");
-    if (!weakOnly) continue;
+    const hasTrackingAnimeId = Boolean(media?.ids?.mal || media?.ids?.kitsu);
+    const needsTrackingAnimeId = unifiedSeasonsEnabled && !hasTrackingAnimeId;
+
+    if (!weakOnly && !needsTrackingAnimeId) {
+      item._addonMetadataEnrichmentVersion = METADATA_ENRICHMENT_VERSION;
+      item._addonMetadataEnriched = true;
+      continue;
+    }
+
     const simklId = simklIdFor(item);
     if (!simklId) continue;
-    const details = await client.getAnimeDetails(simklId);
-    next.items[key] = mergeAnimeDetails(item, details);
-    next.items[key]._addonMetadataEnriched = true;
-    await new Promise((resolve) => setTimeout(resolve, 125));
+    try {
+      const details = await client.getAnimeDetails(simklId);
+      next.items[key] = mergeAnimeDetails(item, details);
+      next.items[key]._addonMetadataEnrichmentVersion = METADATA_ENRICHMENT_VERSION;
+      next.items[key]._addonMetadataEnriched = true;
+      await new Promise((resolve) => setTimeout(resolve, 125));
+    } catch (error) {
+      if (error instanceof SimklApiError && (error.status === 401 || error.status === 403)) throw error;
+      console.warn(`Simkl ID enrichment skipped for ${simklId}: ${error.message}`);
+      if (error instanceof SimklApiError && error.status === 404) {
+        item._addonMetadataEnrichmentVersion = METADATA_ENRICHMENT_VERSION;
+        item._addonMetadataEnriched = true;
+      }
+    }
   }
   return next;
 }
@@ -109,13 +130,13 @@ export async function refresh({
     }
   }
 
-  state = await enrichMissingMappings(client, state, now);
+  state = await enrichMissingMappings(client, state, now, { unifiedSeasonsEnabled: Boolean(tmdbAccessToken) });
   const metadata = await enrichCatalogMetadata(state.items, {
     tmdbAccessToken,
     mdblistApiKey,
     fetchImpl,
     now,
-    itemFilter: (item) => isCatalogCandidate(item, now),
+    itemFilter: (item) => ["watching", "plantowatch", "completed"].includes(item?.status),
   });
   state.items = metadata.items;
   for (const warning of metadata.warnings) {

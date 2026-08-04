@@ -24,6 +24,14 @@ for (const preview of catalog.metas.filter((meta) => meta.id?.startsWith("simkl-
     if (!video.id || !Number.isInteger(video.season) || !Number.isInteger(video.episode) || !video.released) {
       throw new Error(`Unified metadata for ${preview.id} contains an invalid episode.`);
     }
+    const trackingAnimeId = /^(mal|kitsu):[^:]+:\d+$/.test(video.id);
+    const canonicalSeriesId = /^(tt\d+|tmdb:[^:]+):\d+:\d+$/.test(video.id);
+    if (!trackingAnimeId && !canonicalSeriesId) {
+      throw new Error(`Unified metadata for ${preview.id} contains an unsupported episode ID: ${video.id}`);
+    }
+    if (video.thumbnail && !/^https:\/\//.test(video.thumbnail)) {
+      throw new Error(`Unified metadata for ${preview.id} contains a non-HTTPS episode thumbnail.`);
+    }
   }
 }
 

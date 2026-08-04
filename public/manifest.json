@@ -1,8 +1,8 @@
 {
   "id": "community.simkl.new-anime-episodes",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "name": "Simkl Anime Up Next",
-  "description": "A personalized anime row with unified TMDB seasons and standard episode IDs for compatible stream addons.",
+  "description": "A personalized anime row with unified TMDB seasons, Simkl-aware anime episode IDs, and high-resolution episode artwork.",
   "resources": [
     "catalog",
     {

@@ -97,7 +97,7 @@ export async function writeSite({
   posterBadges = [],
   posterBadgesEnabled = false,
   metadata = [],
-  unifiedStats = { titles: 0, seasons: 0, episodes: 0 },
+  unifiedStats = { titles: 0, seasons: 0, episodes: 0, trackingEpisodes: 0 },
   fetchImpl = fetch,
 }) {
   await rm(outputDir, { recursive: true, force: true });
@@ -155,6 +155,7 @@ export async function writeSite({
     unifiedMetadataTitles: unifiedStats.titles,
     unifiedMetadataSeasons: unifiedStats.seasons,
     unifiedMetadataEpisodes: unifiedStats.episodes,
+    unifiedMetadataTrackingEpisodes: unifiedStats.trackingEpisodes ?? 0,
     skipped,
   }));
 

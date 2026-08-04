@@ -160,7 +160,8 @@ function finiteNumber(value) {
 
 function findDefaultVideoId(seriesMeta, info) {
   if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
-  const episode = Number(info.episode);
+  const localEpisode = Number(info.episode);
+  const episode = localEpisode + Number(seriesMeta.matchedEpisodeOffset ?? 0);
   const preferredSeasons = [
     finiteNumber(info?.season),
     finiteNumber(seriesMeta.matchedSeasonNumber),
@@ -288,6 +289,7 @@ ${seriesMeta.description}` : description,
       unified: Boolean(seriesMeta?.videos?.length),
       unifiedSeasonCount: seriesMeta?.seasonCount ?? 0,
       unifiedEpisodeCount: seriesMeta?.episodeCount ?? 0,
+      unifiedTrackingEpisodeCount: seriesMeta?.trackingMappedEpisodeCount ?? 0,
     };
 
     const existing = includedById.get(id);
@@ -312,6 +314,7 @@ ${seriesMeta.description}` : description,
       titles: selected.filter((entry) => entry.unified).length,
       seasons: selected.reduce((sum, entry) => sum + entry.unifiedSeasonCount, 0),
       episodes: selected.reduce((sum, entry) => sum + entry.unifiedEpisodeCount, 0),
+      trackingEpisodes: selected.reduce((sum, entry) => sum + entry.unifiedTrackingEpisodeCount, 0),
     },
   };
 }
@@ -337,7 +340,7 @@ export function buildManifest() {
     id: ADDON_ID,
     version: APP_VERSION,
     name: "Simkl Anime Up Next",
-    description: "A personalized anime row with unified TMDB seasons and standard episode IDs for compatible stream addons.",
+    description: "A personalized anime row with unified TMDB seasons, Simkl-aware anime episode IDs, and high-resolution episode artwork.",
     resources: [
       "catalog",
       {

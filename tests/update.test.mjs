@@ -167,29 +167,51 @@ test("end-to-end refresh publishes Watching, monthly Plan to Watch, and revived 
   assert.equal(status.trackedCompletedItems, 1);
 });
 
-test("end-to-end refresh publishes a unified multi-season metadata page", async () => {
+test("end-to-end refresh publishes a unified page with watched-compatible seasonal IDs", async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-unified-"));
   const stateFile = path.join(temp, "state.json");
   const outputDirectory = path.join(temp, "public");
-  const libraryItem = {
-    status: "watching",
-    watched_episodes_count: 4,
-    next_to_watch_info: { episode: 5, title: "Next", date: "2026-08-01T10:00:00Z" },
-    anime: {
-      title: "Unified Anime Season 2",
-      ids: { simkl: 901, imdb: "tt7654002" },
+  const library = [
+    {
+      status: "completed",
+      watched_episodes_count: 1,
+      total_episodes_count: 1,
+      anime: {
+        title: "Unified Anime",
+        ids: { simkl: 9001, imdb: "tt7654001" },
+      },
     },
-  };
+    {
+      status: "watching",
+      watched_episodes_count: 4,
+      total_episodes_count: 12,
+      next_to_watch_info: { episode: 5, title: "Next", date: "2026-08-01T10:00:00Z" },
+      anime: {
+        title: "Unified Anime Season 2",
+        ids: { simkl: 901, imdb: "tt7654002" },
+      },
+    },
+  ];
+  const seasonCalls = [];
 
   const fetchImpl = async (input) => {
     const url = new URL(input);
     if (url.hostname === "api.simkl.com" && url.pathname === "/sync/all-items/anime") {
-      return jsonResponse({ anime: [libraryItem] });
+      return jsonResponse({ anime: library });
     }
     if (url.hostname === "api.simkl.com" && url.pathname === "/sync/activities") {
       return jsonResponse({ anime: { all: "2026-08-05T00:00:00Z", removed_from_list: null } });
     }
+    if (url.hostname === "api.simkl.com" && url.pathname === "/anime/9001") {
+      return jsonResponse({ title: "Unified Anime", ids: { simkl: 9001, mal: 111, imdb: "tt7654001" } });
+    }
+    if (url.hostname === "api.simkl.com" && url.pathname === "/anime/901") {
+      return jsonResponse({ title: "Unified Anime Season 2", ids: { simkl: 901, mal: 222, imdb: "tt7654002" } });
+    }
     if (url.hostname === "data.simkl.in") return jsonResponse({ calendar: [], metadata: {} });
+    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/find/tt7654001") {
+      return jsonResponse({ tv_season_results: [{ show_id: 900, season_number: 1 }] });
+    }
     if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/find/tt7654002") {
       return jsonResponse({ tv_season_results: [{ show_id: 900, season_number: 2 }] });
     }
@@ -202,6 +224,7 @@ test("end-to-end refresh publishes a unified multi-season metadata page", async 
         status: "Returning Series",
         poster_path: "/poster.jpg",
         backdrop_path: "/background.jpg",
+        episode_run_time: [24],
         seasons: [
           { season_number: 1, episode_count: 1 },
           { season_number: 2, episode_count: 1 },
@@ -210,10 +233,18 @@ test("end-to-end refresh publishes a unified multi-season metadata page", async 
       });
     }
     if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/tv/900/season/1") {
-      return jsonResponse({ episodes: [{ season_number: 1, episode_number: 1, name: "Start", air_date: "2024-01-01" }] });
+      seasonCalls.push(url.pathname);
+      return jsonResponse({
+        season_number: 1,
+        episodes: [{ season_number: 1, episode_number: 1, name: "Start", air_date: "2024-01-01", still_path: "/start.jpg" }],
+      });
     }
     if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/tv/900/season/2") {
-      return jsonResponse({ episodes: [{ season_number: 2, episode_number: 5, name: "Next", air_date: "2026-08-01" }] });
+      seasonCalls.push(url.pathname);
+      return jsonResponse({
+        season_number: 2,
+        episodes: [{ season_number: 2, episode_number: 5, name: "Next", air_date: "2026-08-01", still_path: "/next.jpg" }],
+      });
     }
     throw new Error(`Unexpected request: ${url}`);
   };
@@ -229,7 +260,8 @@ test("end-to-end refresh publishes a unified multi-season metadata page", async 
     posterBadgesEnabled: false,
   });
 
-  assert.deepEqual(result.unifiedStats, { titles: 1, seasons: 2, episodes: 2 });
+  assert.deepEqual(result.unifiedStats, { titles: 1, seasons: 2, episodes: 2, trackingEpisodes: 2 });
+  assert.deepEqual(seasonCalls, ["/3/tv/900/season/1", "/3/tv/900/season/2"]);
   const catalog = JSON.parse(await readFile(
     path.join(outputDirectory, "catalog", "series", `${CATALOG_ID}.json`),
     "utf8",
@@ -239,6 +271,7 @@ test("end-to-end refresh publishes a unified multi-season metadata page", async 
     path.join(outputDirectory, "meta", "series", "simkl-unified:900.json"),
     "utf8",
   ));
-  assert.equal(detail.meta.videos.length, 2);
-  assert.equal(detail.meta.behaviorHints.defaultVideoId, "tt7654000:2:5");
+  assert.deepEqual(detail.meta.videos.map((video) => video.id), ["mal:111:1", "mal:222:5"]);
+  assert.equal(detail.meta.videos[1].thumbnail, "https://image.tmdb.org/t/p/original/next.jpg");
+  assert.equal(detail.meta.behaviorHints.defaultVideoId, "mal:222:5");
 });
