@@ -4,6 +4,8 @@ const TMDB_API_BASE = "https://api.themoviedb.org";
 const MDBLIST_API_BASE = "https://api.mdblist.com";
 const SUCCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 6 * 60 * 60 * 1000;
+const SERIES_METADATA_VERSION = 2;
+const TMDB_SEASON_CONCURRENCY = 4;
 
 export class MetadataApiError extends Error {
   constructor(provider, message, status, body) {
@@ -30,6 +32,24 @@ async function readResponse(response, provider) {
   return body;
 }
 
+async function mapWithConcurrency(values, concurrency, mapper) {
+  const results = new Array(values.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < values.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(values[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, () => worker()),
+  );
+  return results;
+}
+
 export function createTmdbClient({ accessToken, fetchImpl = fetch }) {
   if (!accessToken) return null;
 
@@ -47,12 +67,12 @@ export function createTmdbClient({ accessToken, fetchImpl = fetch }) {
     return readResponse(response, "TMDB");
   }
 
-  async function details(mediaType, tmdbId) {
+  async function details(mediaType, tmdbId, match = {}) {
     const result = await get(`/3/${mediaType}/${encodeURIComponent(tmdbId)}`, {
       language: "en-US",
       append_to_response: "external_ids",
     });
-    return { ...result, _addonTmdbMediaType: mediaType };
+    return { ...result, _addonTmdbMediaType: mediaType, ...match };
   }
 
   return {
@@ -62,16 +82,36 @@ export function createTmdbClient({ accessToken, fetchImpl = fetch }) {
         ids.tvdb && [ids.tvdb, "tvdb_id"],
       ].filter(Boolean);
 
+      let movieFallback = null;
       for (const [externalId, externalSource] of candidates) {
         const found = await get(`/3/find/${encodeURIComponent(externalId)}`, {
           external_source: externalSource,
           language: "en-US",
         });
+
+        const episodeMatch = found?.tv_episode_results?.[0];
+        if (episodeMatch?.show_id) {
+          return details("tv", episodeMatch.show_id, {
+            _addonMatchedSeasonNumber: episodeMatch.season_number,
+            _addonMatchedEpisodeNumber: episodeMatch.episode_number,
+          });
+        }
+
+        const seasonMatch = found?.tv_season_results?.[0];
+        if (seasonMatch?.show_id) {
+          return details("tv", seasonMatch.show_id, {
+            _addonMatchedSeasonNumber: seasonMatch.season_number,
+          });
+        }
+
         const tvMatch = found?.tv_results?.[0];
         if (tvMatch?.id) return details("tv", tvMatch.id);
+
         const movieMatch = found?.movie_results?.[0];
-        if (movieMatch?.id) return details("movie", movieMatch.id);
+        if (movieMatch?.id && !movieFallback) movieFallback = movieMatch.id;
       }
+
+      if (movieFallback) return details("movie", movieFallback);
 
       if (ids.tmdb) {
         try {
@@ -82,6 +122,17 @@ export function createTmdbClient({ accessToken, fetchImpl = fetch }) {
         }
       }
       return null;
+    },
+
+    async getTvSeasons(tmdbId, seasons = []) {
+      const published = seasons
+        .filter((season) => Number.isInteger(Number(season?.season_number)) && Number(season?.episode_count) > 0)
+        .sort((a, b) => Number(a.season_number) - Number(b.season_number));
+
+      return mapWithConcurrency(published, TMDB_SEASON_CONCURRENCY, (season) =>
+        get(`/3/tv/${encodeURIComponent(tmdbId)}/season/${encodeURIComponent(season.season_number)}`, {
+          language: "en-US",
+        }));
     },
   };
 }
@@ -131,7 +182,7 @@ function tmdbImage(path, size) {
 
 function sourceSignature(ids, sources) {
   return JSON.stringify({
-    version: 1,
+    version: SERIES_METADATA_VERSION,
     sources,
     imdb: ids?.imdb ?? null,
     tmdb: ids?.tmdb ?? null,
@@ -154,6 +205,77 @@ function isAuthenticationFailure(error) {
 
 function weakForTmdb(ids = {}) {
   return !ids.tmdb && !ids.imdb && !ids.tvdb;
+}
+
+function validImdbId(value) {
+  return typeof value === "string" && /^tt\d+$/.test(value) ? value : null;
+}
+
+function isoAirDate(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function releaseInfoForTmdbSeries(series) {
+  const start = String(series?.first_air_date ?? "").slice(0, 4);
+  const end = String(series?.last_air_date ?? "").slice(0, 4);
+  if (!/^\d{4}$/.test(start)) return null;
+  if (series?.status === "Ended" || series?.status === "Canceled") {
+    return /^\d{4}$/.test(end) && end !== start ? `${start}-${end}` : start;
+  }
+  return `${start}-`;
+}
+
+function buildSeriesMetadata(series, seasonPayloads, signature, now) {
+  if (series?._addonTmdbMediaType !== "tv") return null;
+
+  const imdbId = validImdbId(series.external_ids?.imdb_id);
+  const videoIdBase = imdbId || `tmdb:${series.id}`;
+  const videos = seasonPayloads
+    .flatMap((season) => (season?.episodes ?? []).map((episode) => {
+      const seasonNumber = Number(episode.season_number ?? season.season_number);
+      const episodeNumber = Number(episode.episode_number);
+      const released = isoAirDate(episode.air_date);
+      if (!Number.isInteger(seasonNumber) || !Number.isInteger(episodeNumber) || !released) return null;
+      return {
+        id: `${videoIdBase}:${seasonNumber}:${episodeNumber}`,
+        title: episode.name || `Episode ${episodeNumber}`,
+        released,
+        season: seasonNumber,
+        episode: episodeNumber,
+        thumbnail: tmdbImage(episode.still_path, "w300") || undefined,
+        overview: episode.overview || undefined,
+      };
+    }))
+    .filter(Boolean)
+    .sort((a, b) => a.season - b.season || a.episode - b.episode);
+
+  const seasonNumbers = [...new Set(videos.map((video) => video.season))];
+  return {
+    signature,
+    attemptedAt: new Date(now).toISOString(),
+    provider: "tmdb",
+    parentId: `simkl-unified:${series.id}`,
+    tmdbId: series.id,
+    imdbId,
+    videoIdBase,
+    matchedSeasonNumber: series._addonMatchedSeasonNumber !== null
+      && series._addonMatchedSeasonNumber !== undefined
+      && Number.isInteger(Number(series._addonMatchedSeasonNumber))
+      ? Number(series._addonMatchedSeasonNumber)
+      : null,
+    name: series.name || series.original_name || null,
+    description: series.overview || null,
+    releaseInfo: releaseInfoForTmdbSeries(series),
+    genres: Array.isArray(series.genres) ? series.genres.map((genre) => genre?.name).filter(Boolean) : [],
+    runtime: Number(series.episode_run_time?.[0]) > 0 ? `${Number(series.episode_run_time[0])}m` : null,
+    status: series.status || null,
+    seasonCount: seasonNumbers.filter((season) => season > 0).length,
+    specialSeasonIncluded: seasonNumbers.includes(0),
+    episodeCount: videos.length,
+    videos,
+  };
 }
 
 export async function enrichCatalogMetadata(items, {
@@ -195,8 +317,9 @@ export async function enrichCatalogMetadata(items, {
           imdb: tmdbResult.external_ids?.imdb_id,
           tvdb: tmdbResult.external_ids?.tvdb_id,
         });
+        const finalSignature = sourceSignature(media.ids, sources);
         item._addonVisuals = {
-          signature: sourceSignature(media.ids, sources),
+          signature: finalSignature,
           attemptedAt: new Date(now).toISOString(),
           provider: "tmdb",
           poster: tmdbImage(tmdbResult.poster_path, "w500"),
@@ -204,6 +327,13 @@ export async function enrichCatalogMetadata(items, {
           tmdbId: tmdbResult.id,
           tmdbMediaType: tmdbResult._addonTmdbMediaType || "tv",
         };
+
+        if (tmdbResult._addonTmdbMediaType === "tv") {
+          const seasonPayloads = await tmdb.getTvSeasons(tmdbResult.id, tmdbResult.seasons ?? []);
+          item._addonSeriesMeta = buildSeriesMetadata(tmdbResult, seasonPayloads, finalSignature, now);
+        } else {
+          delete item._addonSeriesMeta;
+        }
       } else if (mdblistResult) {
         item._addonVisuals = {
           signature: sourceSignature(media.ids, sources),
@@ -212,6 +342,7 @@ export async function enrichCatalogMetadata(items, {
           poster: mdblistResult.poster || mdblistResult.poster_url || null,
           background: mdblistResult.backdrop || mdblistResult.backdrop_url || null,
         };
+        delete item._addonSeriesMeta;
       } else {
         item._addonVisuals = {
           signature: sourceSignature(media.ids, sources),
@@ -220,6 +351,7 @@ export async function enrichCatalogMetadata(items, {
           poster: null,
           background: null,
         };
+        delete item._addonSeriesMeta;
       }
     } catch (error) {
       if (isAuthenticationFailure(error)) throw error;

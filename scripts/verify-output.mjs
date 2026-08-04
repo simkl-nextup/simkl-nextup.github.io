@@ -14,6 +14,19 @@ if (!manifest.resources || !manifest.catalogs?.some((item) => item.id === CATALO
 }
 if (!Array.isArray(catalog.metas)) throw new Error("Catalog response must contain a metas array.");
 
+for (const preview of catalog.metas.filter((meta) => meta.id?.startsWith("simkl-unified:"))) {
+  const detailPath = path.join(publicDir, "meta", "series", `${preview.id}.json`);
+  const detail = JSON.parse(await readFile(detailPath, "utf8"));
+  if (!Array.isArray(detail?.meta?.videos) || detail.meta.videos.length === 0) {
+    throw new Error(`Unified metadata for ${preview.id} is missing episodes.`);
+  }
+  for (const video of detail.meta.videos) {
+    if (!video.id || !Number.isInteger(video.season) || !Number.isInteger(video.episode) || !video.released) {
+      throw new Error(`Unified metadata for ${preview.id} contains an invalid episode.`);
+    }
+  }
+}
+
 const setupScript = setupHtml.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
 if (!setupScript) throw new Error("Setup page is missing its authorization script.");
 new Function(setupScript);
@@ -39,4 +52,4 @@ if (secrets.length) {
   await scan(publicDir);
 }
 
-console.log(`Verified manifest and ${catalog.metas.length} catalog item(s); no credential leakage detected.`);
+console.log(`Verified manifest and ${catalog.metas.length} catalog item(s), including unified season metadata; no credential leakage detected.`);

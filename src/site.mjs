@@ -96,6 +96,8 @@ export async function writeSite({
   usesTmdb = false,
   posterBadges = [],
   posterBadgesEnabled = false,
+  metadata = [],
+  unifiedStats = { titles: 0, seasons: 0, episodes: 0 },
   fetchImpl = fetch,
 }) {
   await rm(outputDir, { recursive: true, force: true });
@@ -115,8 +117,16 @@ export async function writeSite({
   await writeFile(path.join(outputDir, "manifest.json"), json(manifest));
   await writeFile(path.join(outputDir, "catalog", "series", `${CATALOG_ID}.json`), json(publishedCatalog));
 
-  for (const meta of publishedCatalog.metas) {
-    if (meta.id.startsWith("tt")) continue;
+  const metadataById = new Map((metadata ?? []).map((meta) => [meta?.id, meta]));
+  for (const preview of publishedCatalog.metas) {
+    const detail = metadataById.get(preview.id);
+    if (preview.id.startsWith("tt") && !detail?.videos?.length) continue;
+    const meta = {
+      ...(detail ?? preview),
+      poster: preview.poster || detail?.poster,
+      background: detail?.background || preview.background,
+    };
+    if (/[\/]/.test(meta.id)) throw new Error(`Unsafe metadata ID: ${meta.id}`);
     await writeFile(path.join(outputDir, "meta", "series", `${meta.id}.json`), json({ meta }));
   }
 
@@ -142,6 +152,9 @@ export async function writeSite({
     posterBadgesEnabled,
     posterBadgesGenerated: posterResult.generated,
     posterBadgeWarnings: posterResult.warnings,
+    unifiedMetadataTitles: unifiedStats.titles,
+    unifiedMetadataSeasons: unifiedStats.seasons,
+    unifiedMetadataEpisodes: unifiedStats.episodes,
     skipped,
   }));
 

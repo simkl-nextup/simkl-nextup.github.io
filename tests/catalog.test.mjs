@@ -258,3 +258,61 @@ test("a new release bumps a behind Watching title while keeping its next-unwatch
   assert.equal(catalog.metas[0].releaseInfo, "Ep. 5");
   assert.match(catalog.metas[0].description, /Latest release: Ep\. 10/);
 });
+
+test("catalog publishes a synthetic parent with all seasons and opens the mapped Simkl season episode", () => {
+  const unified = watching({
+    next_to_watch_info: { episode: 5, title: "Next", date: "2026-08-01T10:00:00Z" },
+    anime: { title: "Anime Season 2", ids: { simkl: 101, imdb: "tt2000002" } },
+    _addonSeriesMeta: {
+      parentId: "simkl-unified:900",
+      name: "Unified Anime",
+      description: "Franchise description",
+      releaseInfo: "2024-",
+      genres: ["Animation"],
+      runtime: "24m",
+      matchedSeasonNumber: 2,
+      seasonCount: 2,
+      episodeCount: 3,
+      videos: [
+        { id: "tt2000000:1:1", title: "Pilot", released: "2024-01-01T00:00:00.000Z", season: 1, episode: 1 },
+        { id: "tt2000000:2:4", title: "Four", released: "2026-07-25T00:00:00.000Z", season: 2, episode: 4 },
+        { id: "tt2000000:2:5", title: "Five", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 5 },
+      ],
+    },
+  });
+
+  const { catalog, metadata, unifiedStats } = buildCatalog({ "101": unified }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(catalog.metas[0].id, "simkl-unified:900");
+  assert.equal(catalog.metas[0].name, "Unified Anime");
+  assert.equal(metadata[0].videos.length, 3);
+  assert.equal(metadata[0].behaviorHints.defaultVideoId, "tt2000000:2:5");
+  assert.deepEqual(unifiedStats, { titles: 1, seasons: 2, episodes: 3 });
+});
+
+test("separate Simkl season entries resolving to the same TMDB show collapse into one card", () => {
+  const seriesMeta = {
+    parentId: "simkl-unified:901",
+    name: "One Franchise",
+    matchedSeasonNumber: 1,
+    seasonCount: 2,
+    episodeCount: 2,
+    videos: [
+      { id: "tt9010000:1:1", title: "One", released: "2025-01-01T00:00:00.000Z", season: 1, episode: 1 },
+      { id: "tt9010000:2:1", title: "Return", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 1 },
+    ],
+  };
+  const seasonOne = watching({
+    anime: { title: "One Franchise", ids: { simkl: 501, imdb: "tt9010001" } },
+    next_to_watch_info: { episode: 1, date: "2026-07-01T00:00:00Z" },
+    _addonSeriesMeta: seriesMeta,
+  });
+  const seasonTwo = watching({
+    anime: { title: "One Franchise Season 2", ids: { simkl: 502, imdb: "tt9010002" } },
+    next_to_watch_info: { episode: 1, date: "2026-08-01T00:00:00Z" },
+    _addonSeriesMeta: { ...seriesMeta, matchedSeasonNumber: 2 },
+  });
+
+  const { catalog, metadata } = buildCatalog({ "501": seasonOne, "502": seasonTwo }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(catalog.metas.length, 1);
+  assert.equal(metadata[0].behaviorHints.defaultVideoId, "tt9010000:2:1");
+});

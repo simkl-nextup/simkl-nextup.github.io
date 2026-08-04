@@ -139,3 +139,49 @@ test("site generation publishes badged poster URLs and health counts", async () 
   assert.equal(status.posterBadgesGenerated, 1);
   assert.deepEqual(status.posterBadgeWarnings, []);
 });
+
+test("site generation writes unified season metadata beside the catalog", async () => {
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "simkl-unified-site-"));
+  const preview = {
+    id: "simkl-unified:900",
+    type: "series",
+    name: "Unified Anime",
+    poster: "https://image.tmdb.org/t/p/w500/unified.jpg",
+    releaseInfo: "S02E05",
+  };
+  const detail = {
+    ...preview,
+    releaseInfo: "2024-",
+    videos: [
+      {
+        id: "tt7654000:2:5",
+        title: "Episode 5",
+        released: "2026-08-01T00:00:00.000Z",
+        season: 2,
+        episode: 5,
+      },
+    ],
+    behaviorHints: { defaultVideoId: "tt7654000:2:5" },
+  };
+
+  await writeSite({
+    outputDir: outputDirectory,
+    catalog: { metas: [preview] },
+    metadata: [detail],
+    items: {},
+    updatedAt: "2026-08-05T00:00:00.000Z",
+    posterBadgesEnabled: false,
+    unifiedStats: { titles: 1, seasons: 2, episodes: 24 },
+  });
+
+  const publishedDetail = JSON.parse(await readFile(
+    path.join(outputDirectory, "meta", "series", "simkl-unified:900.json"),
+    "utf8",
+  ));
+  const status = JSON.parse(await readFile(path.join(outputDirectory, "status.json"), "utf8"));
+  assert.equal(publishedDetail.meta.videos[0].id, "tt7654000:2:5");
+  assert.equal(publishedDetail.meta.behaviorHints.defaultVideoId, "tt7654000:2:5");
+  assert.equal(status.unifiedMetadataTitles, 1);
+  assert.equal(status.unifiedMetadataSeasons, 2);
+  assert.equal(status.unifiedMetadataEpisodes, 24);
+});

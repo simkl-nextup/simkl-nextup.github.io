@@ -139,3 +139,77 @@ test("MDBList can bridge a MAL ID into TMDB enrichment", async () => {
   assert.equal(result.items["101"].anime.ids.tmdb, 31911);
   assert.equal(result.items["101"]._addonVisuals.poster, "https://image.tmdb.org/t/p/w500/fma.jpg");
 });
+
+test("TMDB enrichment builds every season under one synthetic parent with canonical episode IDs", async () => {
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    if (url.pathname === "/3/find/tt7654002") {
+      return jsonResponse({
+        tv_results: [],
+        tv_season_results: [{ show_id: 900, season_number: 2 }],
+        tv_episode_results: [],
+        movie_results: [],
+      });
+    }
+    if (url.pathname === "/3/tv/900") {
+      return jsonResponse({
+        id: 900,
+        name: "Unified Anime",
+        overview: "All cours and seasons live here.",
+        first_air_date: "2024-01-01",
+        last_air_date: "2026-07-01",
+        status: "Returning Series",
+        poster_path: "/unified.jpg",
+        backdrop_path: "/unified-bg.jpg",
+        episode_run_time: [24],
+        genres: [{ name: "Animation" }],
+        seasons: [
+          { season_number: 0, episode_count: 1 },
+          { season_number: 1, episode_count: 2 },
+          { season_number: 2, episode_count: 1 },
+        ],
+        external_ids: { imdb_id: "tt7654000", tvdb_id: 12345 },
+      });
+    }
+    if (url.pathname === "/3/tv/900/season/0") {
+      return jsonResponse({ season_number: 0, episodes: [{ season_number: 0, episode_number: 1, name: "Special", air_date: "2024-01-02" }] });
+    }
+    if (url.pathname === "/3/tv/900/season/1") {
+      return jsonResponse({
+        season_number: 1,
+        episodes: [
+          { season_number: 1, episode_number: 1, name: "Start", air_date: "2024-01-01", still_path: "/s1e1.jpg" },
+          { season_number: 1, episode_number: 2, name: "Continue", air_date: "2024-01-08" },
+        ],
+      });
+    }
+    if (url.pathname === "/3/tv/900/season/2") {
+      return jsonResponse({ season_number: 2, episodes: [{ season_number: 2, episode_number: 1, name: "Return", air_date: "2026-07-01" }] });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const result = await enrichCatalogMetadata(
+    { "101": item({ imdb: "tt7654002" }) },
+    {
+      tmdbAccessToken: "tmdb-token",
+      fetchImpl,
+      now: new Date("2026-08-05T00:00:00Z"),
+    },
+  );
+
+  const series = result.items["101"]._addonSeriesMeta;
+  assert.equal(series.parentId, "simkl-unified:900");
+  assert.equal(series.videoIdBase, "tt7654000");
+  assert.equal(series.matchedSeasonNumber, 2);
+  assert.equal(series.seasonCount, 2);
+  assert.equal(series.specialSeasonIncluded, true);
+  assert.equal(series.episodeCount, 4);
+  assert.deepEqual(series.videos.map((video) => video.id), [
+    "tt7654000:0:1",
+    "tt7654000:1:1",
+    "tt7654000:1:2",
+    "tt7654000:2:1",
+  ]);
+  assert.equal(series.videos[1].thumbnail, "https://image.tmdb.org/t/p/w300/s1e1.jpg");
+});

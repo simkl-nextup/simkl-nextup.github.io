@@ -166,3 +166,79 @@ test("end-to-end refresh publishes Watching, monthly Plan to Watch, and revived 
   assert.equal(status.publishedCompletedItems, 1);
   assert.equal(status.trackedCompletedItems, 1);
 });
+
+test("end-to-end refresh publishes a unified multi-season metadata page", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-unified-"));
+  const stateFile = path.join(temp, "state.json");
+  const outputDirectory = path.join(temp, "public");
+  const libraryItem = {
+    status: "watching",
+    watched_episodes_count: 4,
+    next_to_watch_info: { episode: 5, title: "Next", date: "2026-08-01T10:00:00Z" },
+    anime: {
+      title: "Unified Anime Season 2",
+      ids: { simkl: 901, imdb: "tt7654002" },
+    },
+  };
+
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    if (url.hostname === "api.simkl.com" && url.pathname === "/sync/all-items/anime") {
+      return jsonResponse({ anime: [libraryItem] });
+    }
+    if (url.hostname === "api.simkl.com" && url.pathname === "/sync/activities") {
+      return jsonResponse({ anime: { all: "2026-08-05T00:00:00Z", removed_from_list: null } });
+    }
+    if (url.hostname === "data.simkl.in") return jsonResponse({ calendar: [], metadata: {} });
+    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/find/tt7654002") {
+      return jsonResponse({ tv_season_results: [{ show_id: 900, season_number: 2 }] });
+    }
+    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/tv/900") {
+      return jsonResponse({
+        id: 900,
+        name: "Unified Anime",
+        overview: "One detail page.",
+        first_air_date: "2024-01-01",
+        status: "Returning Series",
+        poster_path: "/poster.jpg",
+        backdrop_path: "/background.jpg",
+        seasons: [
+          { season_number: 1, episode_count: 1 },
+          { season_number: 2, episode_count: 1 },
+        ],
+        external_ids: { imdb_id: "tt7654000", tvdb_id: 111 },
+      });
+    }
+    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/tv/900/season/1") {
+      return jsonResponse({ episodes: [{ season_number: 1, episode_number: 1, name: "Start", air_date: "2024-01-01" }] });
+    }
+    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/tv/900/season/2") {
+      return jsonResponse({ episodes: [{ season_number: 2, episode_number: 5, name: "Next", air_date: "2026-08-01" }] });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const result = await refresh({
+    clientId: "client",
+    accessToken: "token",
+    tmdbAccessToken: "tmdb-token",
+    fetchImpl,
+    now: new Date("2026-08-05T01:00:00Z"),
+    stateFile,
+    outputDirectory,
+    posterBadgesEnabled: false,
+  });
+
+  assert.deepEqual(result.unifiedStats, { titles: 1, seasons: 2, episodes: 2 });
+  const catalog = JSON.parse(await readFile(
+    path.join(outputDirectory, "catalog", "series", `${CATALOG_ID}.json`),
+    "utf8",
+  ));
+  assert.equal(catalog.metas[0].id, "simkl-unified:900");
+  const detail = JSON.parse(await readFile(
+    path.join(outputDirectory, "meta", "series", "simkl-unified:900.json"),
+    "utf8",
+  ));
+  assert.equal(detail.meta.videos.length, 2);
+  assert.equal(detail.meta.behaviorHints.defaultVideoId, "tt7654000:2:5");
+});

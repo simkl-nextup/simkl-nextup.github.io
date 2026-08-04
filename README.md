@@ -2,20 +2,24 @@
 
 A personal, single-row Stremio/Nuvio addon. It combines anime from your Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** anime that receive an additional episode, and bumps a title to the top whenever a new episode airs.
 
-Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
+TMDB enrichment now does two jobs: it replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops, and it generates a complete series metadata page containing every available TMDB season and dated episode. MDBList remains an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
 
 Each generated poster includes two large left-edge ribbons. The first identifies the source as green **NEW EPISODE** for Watching, gold **PLAN TO WATCH**, or purple **NEW SEASON** for a revived Completed title. The second shows the relevant episode, such as **EP 5** or **S03 · E06**. Heavy lettering, layered gradients, a gloss streak, highlighted edges, and deep shadows keep the labels readable on Nuvio's compact cards. The ribbons sit together at the top-left so Nuvio's native top-right checkmark remains unobstructed.
 
 For Watching titles, the card still identifies your next unwatched episode. The sorting timestamp comes from the show's latest aired episode, so a title is bumped even when you are several episodes behind. Plan to Watch titles display their latest aired episode and are bumped on every subsequent release. A Completed title re-enters only when the calendar reports an episode number beyond its saved watched count, then disappears after the new episode is recorded. Future-only titles remain excluded until an episode actually airs.
 
-Anime seasons are often separate Simkl titles. If a sequel season has a different Simkl ID, add that sequel itself to Watching or Plan to Watch; the addon intentionally does not infer that every sequel is wanted from a completed prequel.
+Anime seasons are often separate Simkl titles. Version 1.7 publishes a private synthetic parent such as `simkl-unified:12345`, then places the complete TMDB season list beneath it. Episode IDs remain in the standard `tt1234567:season:episode` form whenever TMDB supplies a root IMDb ID, so compatible stream addons can still resolve the selected episode. Separate Simkl entries that resolve to the same TMDB television show collapse into one card.
+
+Simkl still controls whether a card belongs in the Up Next row. The unified detail page does not automatically add an unrelated sequel to your Simkl list. TMDB also models some anime sequels as entirely separate television shows; those franchises cannot be safely merged automatically and remain separate cards.
 
 ## What the row includes
 
 - Simkl status is `watching`, with a next unwatched episode already available; or
 - Simkl status is `plantowatch`, with at least one aired episode observed by the addon; or
 - Simkl status is `completed`, but a newly aired episode number exceeds the saved watched count.
-- One card per anime: next unwatched episode for Watching, latest aired episode for Plan to Watch or revived Completed.
+- One card per unified TMDB show when season metadata is available; duplicate Simkl season entries resolving to that same show are collapsed.
+- Opening a unified card shows every available TMDB season, specials, and episode with a published air date, including scheduled episodes when TMDB provides the date.
+- The relevant Simkl episode is used as Nuvio's default selected episode when the season mapping is known.
 - Every new episode bumps its show to the top, regardless of which eligible list it is in.
 
 It does **not** include recommendations, caught-up Completed anime, movies, On Hold, Dropped, or future-only episodes.
@@ -61,11 +65,11 @@ Open **Repository → Settings → Secrets and variables → Actions** and creat
 | `SIMKL_CLIENT_ID` | The app's Simkl client ID |
 | `SIMKL_ACCESS_TOKEN` | The token returned by the PIN authorization |
 
-Recommended artwork secret:
+Required for unified seasons and recommended artwork:
 
 | Secret | Value |
 |---|---|
-| `TMDB_READ_ACCESS_TOKEN` | The long TMDB API Read Access Token beginning with `eyJ`, not the short API key |
+| `TMDB_READ_ACCESS_TOKEN` | The long TMDB API Read Access Token beginning with `eyJ`, not the short API key. Without it, the row still works but falls back to the old single-title metadata behavior. |
 
 Optional metadata fallback:
 
@@ -104,7 +108,7 @@ Recommended for Nuvio:
 4. Push the profile to Nuvio.
 5. Put the row where your broken Trakt `Your Recently Aired` row used to be.
 
-Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TVDB and anime IDs. Direct manifest installation also works best for titles carrying IMDb IDs.
+Importing through Xperience remains supported. Unified cards now use this addon's own synthetic metadata ID, while their episode IDs remain IMDb-style whenever possible for stream compatibility. After upgrading an existing deployment, run the workflow and refresh or re-import the addon in Nuvio if an old detail page is still cached.
 
 ## Refresh behavior
 
@@ -113,8 +117,9 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 - `/sync/all-items` is called only when Simkl reports changed anime activity.
 - Delta changes are merged into a private GitHub Actions cache.
 - The Simkl v2 rolling calendar plus the unversioned current/previous-month archives correct rescheduled air times and track the latest aired episode for all eligible statuses.
-- TMDB artwork and resolved IDs are cached in the private sync state for 30 days, keeping API usage low.
-- Simkl artwork remains the automatic fallback when TMDB has no match or no TMDB token is configured.
+- TMDB artwork, root identifiers, complete season lists, and episode metadata are cached in the private sync state for 30 days, keeping API usage low.
+- TMDB season endpoints are fetched with bounded concurrency during the first 1.7 refresh or after the 30-day cache expires.
+- Simkl artwork and the old single-title behavior remain the automatic fallback when TMDB has no match or no TMDB token is configured.
 - The workflow downloads each published poster from an allowlisted HTTPS image host, adds the status and episode badges, and serves the resulting WebP from your own Pages site.
 - Poster filenames are deterministic. If an image is unavailable or cannot be processed, that card keeps its original clean poster instead of failing the catalog deployment.
 - If a token is revoked, deployment fails and the existing Pages version remains online.
@@ -134,6 +139,12 @@ After deployment, `status.json` reports both tracked and actually published coun
 Version 1.6 adds generated poster labels, 1.6.2 converts them into left-edge ribbons, and 1.6.3 maps Watching to green New Episode and revived Completed titles to purple New Season. Version 1.6.4 makes both ribbons substantially taller and heavier, with layered gradients and gloss for stronger small-card visibility. The poster style version changes so clients receive fresh image URLs instead of reusing cached artwork. Replace the repository files, commit `package-lock.json`, and run the personalized workflow. The workflow runs `npm ci` before testing and generation, so no new GitHub secret is required.
 
 `status.json` reports `posterBadgesGenerated` and `posterBadgeWarnings`. A warning means that title safely retained its original poster. Set the workflow environment variable `POSTER_BADGES` to `false` only if you intentionally want to disable the generated overlays.
+
+## Updating to 1.7.0
+
+Version 1.7 adds generated full-series metadata. Replace the repository files, including `package.json`, `package-lock.json`, `src`, `scripts`, and `tests`, then run **Refresh Simkl catalog and deploy Pages**. The metadata cache signature changed, so the first run automatically re-enriches eligible titles and downloads their TMDB season data; you do not need to delete the Actions cache.
+
+The existing `TMDB_READ_ACCESS_TOKEN` secret is used for the feature. If that secret was never configured, add it before running the workflow. `status.json` now reports `unifiedMetadataTitles`, `unifiedMetadataSeasons`, and `unifiedMetadataEpisodes`, which makes it easy to confirm that the deployment generated the season pages.
 
 ## Local development
 

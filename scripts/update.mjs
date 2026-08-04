@@ -123,7 +123,7 @@ export async function refresh({
   }
   state.lastSuccessfulRefresh = new Date(now).toISOString();
 
-  const { catalog, posterBadges, skipped, sourceCounts } = buildCatalog(state.items, { now, maxItems });
+  const { catalog, metadata: detailMetadata, posterBadges, skipped, sourceCounts, unifiedStats } = buildCatalog(state.items, { now, maxItems });
   const baseUrl = deriveBaseUrl({ explicitBaseUrl, githubRepository });
   const site = await writeSite({
     outputDir: outputDirectory,
@@ -136,6 +136,8 @@ export async function refresh({
     usesTmdb: metadata.usesTmdb,
     posterBadges,
     posterBadgesEnabled,
+    metadata: detailMetadata,
+    unifiedStats,
     fetchImpl,
   });
   for (const warning of site.posterBadgeWarnings) {
@@ -150,6 +152,7 @@ export async function refresh({
     metadataWarnings: metadata.warnings,
     posterBadgesGenerated: site.posterBadgesGenerated,
     posterBadgeWarnings: site.posterBadgeWarnings,
+    unifiedStats,
   };
 }
 
