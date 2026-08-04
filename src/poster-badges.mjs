@@ -10,6 +10,7 @@ const MAX_POSTER_BYTES = 12 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 const ALLOWED_POSTER_HOSTS = new Set([
   "image.tmdb.org",
+  "artworks.thetvdb.com",
   "simkl.in",
   "wsrv.nl",
 ]);

@@ -259,82 +259,40 @@ test("a new release bumps a behind Watching title while keeping its next-unwatch
   assert.match(catalog.metas[0].description, /Latest release: Ep\. 10/);
 });
 
-test("catalog publishes a synthetic parent with all seasons and opens the mapped Simkl season episode", () => {
-  const unified = watching({
-    next_to_watch_info: { episode: 5, title: "Next", date: "2026-08-01T10:00:00Z" },
-    anime: { title: "Anime Season 2", ids: { simkl: 101, imdb: "tt2000002" } },
-    _addonSeriesMeta: {
-      parentId: "simkl-unified:900",
-      name: "Unified Anime",
-      description: "Franchise description",
-      releaseInfo: "2024-",
-      genres: ["Animation"],
-      runtime: "24m",
-      matchedSeasonNumber: 2,
-      seasonCount: 2,
-      episodeCount: 3,
-      videos: [
-        { id: "tt2000000:1:1", title: "Pilot", released: "2024-01-01T00:00:00.000Z", season: 1, episode: 1 },
-        { id: "mal:222:4", title: "Four", released: "2026-07-25T00:00:00.000Z", season: 2, episode: 4 },
-        { id: "mal:222:5", title: "Five", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 5 },
-      ],
-    },
-  });
-
-  const { catalog, metadata, unifiedStats } = buildCatalog({ "101": unified }, { now: "2026-08-02T00:00:00Z" });
-  assert.equal(catalog.metas[0].id, "simkl-unified:900");
-  assert.equal(catalog.metas[0].name, "Unified Anime");
-  assert.equal(metadata[0].videos.length, 3);
-  assert.equal(metadata[0].behaviorHints.defaultVideoId, "mal:222:5");
-  assert.deepEqual(unifiedStats, { titles: 1, seasons: 2, episodes: 3, trackingEpisodes: 0 });
-});
-
-test("separate Simkl season entries resolving to the same TMDB show collapse into one card", () => {
-  const seriesMeta = {
-    parentId: "simkl-unified:901",
-    name: "One Franchise",
-    matchedSeasonNumber: 1,
-    seasonCount: 2,
-    episodeCount: 2,
+test("TVDB metadata collapses separate Simkl seasons into one canonical show with a default episode", () => {
+  const sharedMeta = {
+    parentId: "tt7654000",
+    tvdbId: 900,
+    name: "Unified Anime",
+    poster: "https://artworks.thetvdb.com/banners/poster.jpg",
+    background: "https://artworks.thetvdb.com/banners/background.jpg",
+    releaseInfo: "2021-",
+    description: "TVDB overview",
+    seasonCount: 3,
+    episodeCount: 4,
     videos: [
-      { id: "mal:5011:1", title: "One", released: "2025-01-01T00:00:00.000Z", season: 1, episode: 1 },
-      { id: "mal:5022:1", title: "Return", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 1 },
+      { id: "tt7654000:1:1", season: 1, episode: 1, title: "Start" },
+      { id: "tt7654000:2:1", season: 2, episode: 1, title: "Return" },
+      { id: "tt7654000:3:1", season: 3, episode: 1, title: "Again" },
+      { id: "tt7654000:3:2", season: 3, episode: 2, title: "Next" },
     ],
   };
-  const seasonOne = watching({
-    anime: { title: "One Franchise", ids: { simkl: 501, imdb: "tt9010001" } },
-    next_to_watch_info: { episode: 1, date: "2026-07-01T00:00:00Z" },
-    _addonSeriesMeta: seriesMeta,
-  });
   const seasonTwo = watching({
-    anime: { title: "One Franchise Season 2", ids: { simkl: 502, imdb: "tt9010002" } },
-    next_to_watch_info: { episode: 1, date: "2026-08-01T00:00:00Z" },
-    _addonSeriesMeta: { ...seriesMeta, matchedSeasonNumber: 2 },
+    next_to_watch_info: { episode: 1, date: "2026-07-01T10:00:00Z" },
+    anime: { title: "Unified Anime Season 2", ids: { simkl: 501, tvdb: 900 } },
+    _addonTvdbMeta: { ...sharedMeta, matchedSeasonNumber: 2, matchedEpisodeOffset: 0, matchedVideoId: "tt7654000:2:1" },
+  });
+  const seasonThree = watching({
+    next_to_watch_info: { episode: 2, date: "2026-08-01T10:00:00Z" },
+    anime: { title: "Unified Anime Season 3", ids: { simkl: 502, tvdb: 900 } },
+    _addonTvdbMeta: { ...sharedMeta, matchedSeasonNumber: 3, matchedEpisodeOffset: 0, matchedVideoId: "tt7654000:3:2" },
   });
 
-  const { catalog, metadata } = buildCatalog({ "501": seasonOne, "502": seasonTwo }, { now: "2026-08-02T00:00:00Z" });
-  assert.equal(catalog.metas.length, 1);
-  assert.equal(metadata[0].behaviorHints.defaultVideoId, "mal:5022:1");
-});
-
-
-test("default video uses the local cour episode after applying the TMDB offset", () => {
-  const courTwo = watching({
-    next_to_watch_info: { episode: 5, title: "Local episode five", date: "2026-08-01T00:00:00Z" },
-    anime: { title: "Split Cour 2", ids: { simkl: 902, mal: 7002 } },
-    _addonSeriesMeta: {
-      parentId: "simkl-unified:990",
-      name: "Split Cour",
-      matchedSeasonNumber: 2,
-      matchedEpisodeOffset: 12,
-      seasonCount: 2,
-      episodeCount: 1,
-      videos: [
-        { id: "mal:7002:5", title: "TMDB episode 17", released: "2026-08-01T00:00:00.000Z", season: 2, episode: 17 },
-      ],
-    },
-  });
-
-  const { metadata } = buildCatalog({ "902": courTwo }, { now: "2026-08-02T00:00:00Z" });
-  assert.equal(metadata[0].behaviorHints.defaultVideoId, "mal:7002:5");
+  const result = buildCatalog({ "501": seasonTwo, "502": seasonThree }, { now: "2026-08-05T00:00:00Z" });
+  assert.equal(result.catalog.metas.length, 1);
+  assert.equal(result.catalog.metas[0].id, "tt7654000");
+  assert.equal(result.catalog.metas[0].name, "Unified Anime");
+  assert.equal(result.metadata[0].videos.length, 4);
+  assert.equal(result.metadata[0].behaviorHints.defaultVideoId, "tt7654000:3:2");
+  assert.deepEqual(result.unifiedStats, { titles: 1, seasons: 3, episodes: 4, trackingEpisodes: 4 });
 });

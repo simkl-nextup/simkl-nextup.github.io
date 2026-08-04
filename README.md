@@ -2,7 +2,9 @@
 
 A personal, single-row Stremio/Nuvio addon. It combines anime from your Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** anime that receive an additional episode, and bumps a title to the top whenever a new episode airs.
 
-Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters, `w1280` backdrops, and original-resolution episode stills. Missing episode stills fall back to the show backdrop or season artwork. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
+Optional **TheTVDB v4 metadata** turns a seasonal Simkl card into a complete series page using TheTVDB's configured season order. The generated page includes every returned season and episode, episode descriptions, air dates, full TheTVDB episode stills, and canonical episode IDs such as `tt7654000:2:3`. When multiple eligible Simkl season entries resolve to the same TVDB series, the row publishes one card. Nuvio can then reconcile its Simkl watched state against ordinary IMDb/TVDB-style season and episode positions instead of a private synthetic ID. Nuvio ultimately controls watched checkmarks, so the addon improves compatibility but cannot force a marker when upstream IDs or season numbering disagree.
+
+Optional TMDB enrichment remains available for poster and backdrop fallback. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
 
 Each generated poster includes two large left-edge ribbons. The first identifies the source as green **NEW EPISODE** for Watching, gold **PLAN TO WATCH**, or purple **NEW SEASON** for a revived Completed title. The second shows the relevant episode, such as **EP 5** or **S03 · E06**. Heavy lettering, layered gradients, a gloss streak, highlighted edges, and deep shadows keep the labels readable on Nuvio's compact cards. The ribbons sit together at the top-left so Nuvio's native top-right checkmark remains unobstructed.
 
@@ -61,6 +63,15 @@ Open **Repository → Settings → Secrets and variables → Actions** and creat
 | `SIMKL_CLIENT_ID` | The app's Simkl client ID |
 | `SIMKL_ACCESS_TOKEN` | The token returned by the PIN authorization |
 
+Recommended unified-season metadata secret:
+
+| Secret | Value |
+|---|---|
+| `TVDB_API_KEY` | A newly issued TheTVDB v4 project API key. Never commit it or paste it into an issue, screenshot, manifest, or source file. |
+| `TVDB_SUBSCRIBER_PIN` | Optional. Add this only when your TVDB key model requires a subscriber PIN. |
+
+A key exposed in a screenshot or chat must be revoked or rotated before deployment. The workflow authenticates through `/login`, keeps the bearer token only in memory during the run, and never publishes the key, PIN, or token.
+
 Recommended artwork secret:
 
 | Secret | Value |
@@ -73,11 +84,13 @@ Optional metadata fallback:
 |---|---|
 | `MDBLIST_API_KEY` | Your MDBList API key; queried only when strong external IDs are missing |
 
-Optional repository variable:
+Optional repository variables:
 
 | Variable | Value |
 |---|---|
 | `PUBLIC_BASE_URL` | Only needed for a custom domain; for example `https://anime.example.com` |
+| `TVDB_SEASON_TYPE` | Leave blank to use `default`, normally the series' default/aired order. Advanced users may supply another season type accepted by TheTVDB v4. |
+| `TVDB_LANGUAGE` | Leave blank to use English episode metadata (`eng`). |
 
 ### 6. Run the personalized deployment
 
@@ -113,8 +126,10 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 - `/sync/all-items` is called only when Simkl reports changed anime activity.
 - Delta changes are merged into a private GitHub Actions cache.
 - The Simkl v2 rolling calendar plus the unversioned current/previous-month archives correct rescheduled air times and track the latest aired episode for all eligible statuses.
+- TVDB series metadata and episodes are cached in the private sync state for 30 days; failed lookups retry after six hours. Only titles currently eligible for the row are queried.
+- TVDB first uses a Simkl-provided TVDB ID; when only IMDb is available, it resolves the matching TVDB series through the remote-ID endpoint.
 - TMDB artwork and resolved IDs are cached in the private sync state for 30 days, keeping API usage low.
-- Simkl artwork remains the automatic fallback when TMDB has no match or no TMDB token is configured.
+- TVDB artwork is preferred on unified pages; TMDB and Simkl remain automatic fallbacks.
 - The workflow downloads each published poster from an allowlisted HTTPS image host, adds the status and episode badges, and serves the resulting WebP from your own Pages site.
 - Poster filenames are deterministic. If an image is unavailable or cannot be processed, that card keeps its original clean poster instead of failing the catalog deployment.
 - If a token is revoked, deployment fails and the existing Pages version remains online.
@@ -135,20 +150,21 @@ Version 1.6 adds generated poster labels, 1.6.2 converts them into left-edge rib
 
 `status.json` reports `posterBadgesGenerated` and `posterBadgeWarnings`. A warning means that title safely retained its original poster. Set the workflow environment variable `POSTER_BADGES` to `false` only if you intentionally want to disable the generated overlays.
 
-## Updating to 1.7.1
+## Updating from 1.6.4 to 1.8.0
 
-Version 1.7.0 introduced one TMDB-backed detail page containing every season. Version 1.7.1 fixes the important tracking mismatch on that unified page:
+Version 1.8.0 is rebuilt directly from the original 1.6.4 repository and adds optional TheTVDB support without depending on the earlier synthetic-season implementation. Replace the repository files, add a rotated `TVDB_API_KEY` secret, and run the personalized workflow.
 
-- The visible parent remains `simkl-unified:<TMDB ID>`, so separate Simkl sequel entries still collapse into one card.
-- Episodes now use each seasonal anime entry's own `mal:<MAL ID>:<local episode>` or Kitsu equivalent whenever Simkl supplies that mapping. This allows Nuvio to reconcile watched markers even though the visible parent ID is synthetic.
-- Completed sibling seasons are included during metadata mapping even when they do not currently qualify for the Up Next row. Their watched episodes can therefore be marked inside a currently airing later season's unified page.
-- Split cours are aligned by release date when possible, preserving local cour episode numbers while keeping the correct TMDB season and episode placement.
-- Episode thumbnails use TMDB's original image size and fall back to the series backdrop or season image instead of disappearing. Episode runtime and availability are also published.
-- The private state version advances to 6. The first personalized workflow run after upgrading performs a clean full-library rebuild automatically. It can take longer than normal because all tracked anime are checked once for seasonal IDs; later runs reuse the cached results.
+The private state format advances to version 6, so the first run performs a clean Simkl bootstrap and builds fresh TVDB metadata. The first TVDB-enabled run can take longer than later hourly refreshes. After deployment, remove and re-import the addon or clear Nuvio's metadata cache so it stops using the old per-season response.
 
-Replace the repository files and run **Refresh Simkl catalog and deploy Pages** manually once. After deployment, remove and re-add the addon in Nuvio, or otherwise clear its cached metadata, because the episode IDs have intentionally changed. Nuvio 0.4.1 or newer is recommended.
+When TVDB succeeds, `status.json` reports:
 
-After the run, `status.json` includes `unifiedMetadataTrackingEpisodes`. This is the number of unified episodes that received a MAL/Kitsu tracking-compatible ID. Episodes without a reliable seasonal mapping safely retain their canonical IMDb/TMDB episode ID rather than being guessed.
+- `tvdbMetadataEnabled`
+- `tvdbUnifiedTitles`
+- `tvdbUnifiedSeasons`
+- `tvdbUnifiedEpisodes`
+- `tvdbCanonicalTrackingEpisodes`
+
+A nonzero canonical-tracking count means the generated episodes use an IMDb parent ID in `tt…:season:episode` form. It confirms the addon output, not that Nuvio has successfully matched every watched episode.
 
 ## Local development
 
@@ -156,7 +172,7 @@ After the run, `status.json` includes `unifiedMetadataTrackingEpisodes`. This is
 npm test
 npm run build:placeholder
 npm run keepalive
-SIMKL_CLIENT_ID=... SIMKL_ACCESS_TOKEN=... TMDB_READ_ACCESS_TOKEN=... npm run refresh
+SIMKL_CLIENT_ID=... SIMKL_ACCESS_TOKEN=... TVDB_API_KEY=... TMDB_READ_ACCESS_TOKEN=... npm run refresh
 npm run verify
 ```
 
@@ -172,6 +188,8 @@ Node.js 20.9+ is required. Sharp is the only runtime package and performs the po
 
 Tracking and schedule data is provided by [Simkl](https://simkl.com). This project uses Simkl's documented two-phase sync model, v2 rolling calendar, and monthly calendar archives. It is intended for personal, non-commercial use.
 
-Artwork can be provided by [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.
+Unified metadata and episode artwork can be provided by [TheTVDB](https://thetvdb.com). The generated landing page includes a direct TheTVDB attribution link whenever that integration is enabled.
+
+Artwork can also be provided by [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 TOP Posters is intentionally not called directly because its API key would appear inside each poster URL. Version 1.6 creates the badges locally in GitHub Actions instead, without another API or credential.

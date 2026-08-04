@@ -167,92 +167,96 @@ test("end-to-end refresh publishes Watching, monthly Plan to Watch, and revived 
   assert.equal(status.trackedCompletedItems, 1);
 });
 
-test("end-to-end refresh publishes a unified page with watched-compatible seasonal IDs", async () => {
-  const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-unified-"));
+test("end-to-end TVDB refresh publishes all seasons with canonical episode IDs and the current default", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-tvdb-"));
   const stateFile = path.join(temp, "state.json");
   const outputDirectory = path.join(temp, "public");
+  const tvdbApiKey = "test-tvdb-key-not-a-real-secret";
+  let tvdbSeriesCalls = 0;
+  let tvdbEpisodeCalls = 0;
+
   const library = [
     {
       status: "completed",
-      watched_episodes_count: 1,
-      total_episodes_count: 1,
+      watched_episodes_count: 12,
       anime: {
         title: "Unified Anime",
-        ids: { simkl: 9001, imdb: "tt7654001" },
+        year: 2021,
+        ids: { simkl: 7001, tvdb: 900, imdb: "tt7654000" },
       },
     },
     {
       status: "watching",
-      watched_episodes_count: 4,
-      total_episodes_count: 12,
-      next_to_watch_info: { episode: 5, title: "Next", date: "2026-08-01T10:00:00Z" },
+      watched_episodes_count: 2,
+      next_to_watch_info: {
+        episode: 3,
+        title: "Season Two, Episode Three",
+        date: "2026-07-15T10:00:00Z",
+      },
       anime: {
         title: "Unified Anime Season 2",
-        ids: { simkl: 901, imdb: "tt7654002" },
+        year: 2026,
+        ids: { simkl: 7002, tvdb: 900, imdb: "tt7654000" },
       },
     },
   ];
-  const seasonCalls = [];
 
-  const fetchImpl = async (input) => {
+  const fetchImpl = async (input, options = {}) => {
     const url = new URL(input);
-    if (url.hostname === "api.simkl.com" && url.pathname === "/sync/all-items/anime") {
-      return jsonResponse({ anime: library });
+    if (url.hostname === "api4.thetvdb.com") {
+      if (url.pathname === "/v4/login") {
+        assert.deepEqual(JSON.parse(options.body), { apikey: tvdbApiKey });
+        return jsonResponse({ data: { token: "tvdb-bearer" } });
+      }
+      assert.equal(options.headers.Authorization, "Bearer tvdb-bearer");
+      if (url.pathname === "/v4/series/900/extended") {
+        tvdbSeriesCalls += 1;
+        return jsonResponse({
+          data: {
+            id: 900,
+            name: "Unified Anime",
+            overview: "The complete TVDB series overview.",
+            image: "/banners/series/900-poster.jpg",
+            firstAired: "2021-01-01",
+            remoteIds: [{ sourceName: "IMDB", id: "tt7654000" }],
+            artworks: [
+              { typeName: "Background", image: "/banners/series/900-background.jpg", width: 1920, height: 1080 },
+            ],
+          },
+        });
+      }
+      if (url.pathname === "/v4/series/900/episodes/default/eng") {
+        tvdbEpisodeCalls += 1;
+        assert.equal(url.searchParams.get("page"), "0");
+        return jsonResponse({
+          data: {
+            episodes: [
+              { id: 101, seasonNumber: 1, number: 1, name: "Beginning", aired: "2021-01-01", image: "/banners/episodes/101.jpg" },
+              { id: 201, seasonNumber: 2, number: 1, name: "Season Two, Episode One", aired: "2026-07-01", image: "/banners/episodes/201.jpg" },
+              { id: 202, seasonNumber: 2, number: 2, name: "Season Two, Episode Two", aired: "2026-07-08", image: "/banners/episodes/202.jpg" },
+              { id: 203, seasonNumber: 2, number: 3, name: "Season Two, Episode Three", aired: "2026-07-15", image: "/banners/episodes/203.jpg" },
+            ],
+          },
+          links: { next: null },
+        });
+      }
+      throw new Error(`Unexpected TVDB request: ${url}`);
     }
-    if (url.hostname === "api.simkl.com" && url.pathname === "/sync/activities") {
+
+    if (url.pathname === "/sync/all-items/anime") return jsonResponse({ anime: library });
+    if (url.pathname === "/sync/activities") {
       return jsonResponse({ anime: { all: "2026-08-05T00:00:00Z", removed_from_list: null } });
     }
-    if (url.hostname === "api.simkl.com" && url.pathname === "/anime/9001") {
-      return jsonResponse({ title: "Unified Anime", ids: { simkl: 9001, mal: 111, imdb: "tt7654001" } });
-    }
-    if (url.hostname === "api.simkl.com" && url.pathname === "/anime/901") {
-      return jsonResponse({ title: "Unified Anime Season 2", ids: { simkl: 901, mal: 222, imdb: "tt7654002" } });
-    }
-    if (url.hostname === "data.simkl.in") return jsonResponse({ calendar: [], metadata: {} });
-    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/find/tt7654001") {
-      return jsonResponse({ tv_season_results: [{ show_id: 900, season_number: 1 }] });
-    }
-    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/find/tt7654002") {
-      return jsonResponse({ tv_season_results: [{ show_id: 900, season_number: 2 }] });
-    }
-    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/tv/900") {
-      return jsonResponse({
-        id: 900,
-        name: "Unified Anime",
-        overview: "One detail page.",
-        first_air_date: "2024-01-01",
-        status: "Returning Series",
-        poster_path: "/poster.jpg",
-        backdrop_path: "/background.jpg",
-        episode_run_time: [24],
-        seasons: [
-          { season_number: 1, episode_count: 1 },
-          { season_number: 2, episode_count: 1 },
-        ],
-        external_ids: { imdb_id: "tt7654000", tvdb_id: 111 },
-      });
-    }
-    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/tv/900/season/1") {
-      seasonCalls.push(url.pathname);
-      return jsonResponse({
-        season_number: 1,
-        episodes: [{ season_number: 1, episode_number: 1, name: "Start", air_date: "2024-01-01", still_path: "/start.jpg" }],
-      });
-    }
-    if (url.hostname === "api.themoviedb.org" && url.pathname === "/3/tv/900/season/2") {
-      seasonCalls.push(url.pathname);
-      return jsonResponse({
-        season_number: 2,
-        episodes: [{ season_number: 2, episode_number: 5, name: "Next", air_date: "2026-08-01", still_path: "/next.jpg" }],
-      });
-    }
+    if (url.pathname === "/calendar/v2/anime.json") return jsonResponse({ calendar: [], metadata: {} });
+    if (url.pathname === "/calendar/2026/8/anime.json") return jsonResponse([]);
+    if (url.pathname === "/calendar/2026/7/anime.json") return jsonResponse([]);
     throw new Error(`Unexpected request: ${url}`);
   };
 
   const result = await refresh({
     clientId: "client",
     accessToken: "token",
-    tmdbAccessToken: "tmdb-token",
+    tvdbApiKey,
     fetchImpl,
     now: new Date("2026-08-05T01:00:00Z"),
     stateFile,
@@ -260,18 +264,29 @@ test("end-to-end refresh publishes a unified page with watched-compatible season
     posterBadgesEnabled: false,
   });
 
-  assert.deepEqual(result.unifiedStats, { titles: 1, seasons: 2, episodes: 2, trackingEpisodes: 2 });
-  assert.deepEqual(seasonCalls, ["/3/tv/900/season/1", "/3/tv/900/season/2"]);
-  const catalog = JSON.parse(await readFile(
-    path.join(outputDirectory, "catalog", "series", `${CATALOG_ID}.json`),
-    "utf8",
-  ));
-  assert.equal(catalog.metas[0].id, "simkl-unified:900");
-  const detail = JSON.parse(await readFile(
-    path.join(outputDirectory, "meta", "series", "simkl-unified:900.json"),
-    "utf8",
-  ));
-  assert.deepEqual(detail.meta.videos.map((video) => video.id), ["mal:111:1", "mal:222:5"]);
-  assert.equal(detail.meta.videos[1].thumbnail, "https://image.tmdb.org/t/p/original/next.jpg");
-  assert.equal(detail.meta.behaviorHints.defaultVideoId, "mal:222:5");
+  assert.equal(tvdbSeriesCalls, 1);
+  assert.equal(tvdbEpisodeCalls, 1);
+  assert.equal(result.catalog.metas.length, 1);
+  assert.equal(result.catalog.metas[0].id, "tt7654000");
+  assert.equal(result.catalog.metas[0].name, "Unified Anime");
+
+  const metaResponse = JSON.parse(await readFile(path.join(outputDirectory, "meta", "series", "tt7654000.json"), "utf8"));
+  assert.deepEqual(metaResponse.meta.videos.map((video) => video.id), [
+    "tt7654000:1:1",
+    "tt7654000:2:1",
+    "tt7654000:2:2",
+    "tt7654000:2:3",
+  ]);
+  assert.equal(metaResponse.meta.behaviorHints.defaultVideoId, "tt7654000:2:3");
+  assert.equal(metaResponse.meta.videos[3].thumbnail, "https://artworks.thetvdb.com/banners/episodes/203.jpg");
+
+  const status = JSON.parse(await readFile(path.join(outputDirectory, "status.json"), "utf8"));
+  assert.equal(status.tvdbMetadataEnabled, true);
+  assert.equal(status.tvdbUnifiedTitles, 1);
+  assert.equal(status.tvdbUnifiedSeasons, 2);
+  assert.equal(status.tvdbUnifiedEpisodes, 4);
+  assert.equal(status.tvdbCanonicalTrackingEpisodes, 4);
+
+  const published = await readFile(path.join(outputDirectory, "meta", "series", "tt7654000.json"), "utf8");
+  assert.equal(published.includes(tvdbApiKey), false);
 });

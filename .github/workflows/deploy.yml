@@ -67,6 +67,10 @@ jobs:
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
           TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
           MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
+          TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
+          TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
+          TVDB_SEASON_TYPE: ${{ vars.TVDB_SEASON_TYPE }}
+          TVDB_LANGUAGE: ${{ vars.TVDB_LANGUAGE }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           MAX_CATALOG_ITEMS: 50
           POSTER_BADGES: "true"
@@ -77,6 +81,8 @@ jobs:
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
           TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
           MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
+          TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
+          TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
         run: npm run verify
 
       - name: Save private sync state

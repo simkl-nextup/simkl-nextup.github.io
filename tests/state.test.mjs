@@ -37,7 +37,7 @@ test("ID snapshot prunes items removed from the Simkl library", () => {
 
 test("an older cache triggers a clean version 6 bootstrap", () => {
   const state = normalizeState({
-    version: 5,
+    version: 4,
     lastAnimeActivity: "2026-08-01T00:00:00Z",
     items: { "1": item(1) },
   });

@@ -34,7 +34,7 @@ export function chooseCatalogId(ids = {}) {
 }
 
 function publishedCatalogId(item, media) {
-  const unified = item?._addonSeriesMeta;
+  const unified = item?._addonTvdbMeta;
   if (unified?.parentId && Array.isArray(unified.videos) && unified.videos.length) return unified.parentId;
   return chooseCatalogId(media?.ids);
 }
@@ -159,6 +159,7 @@ function finiteNumber(value) {
 }
 
 function findDefaultVideoId(seriesMeta, info) {
+  if (seriesMeta?.matchedVideoId) return seriesMeta.matchedVideoId;
   if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
   const localEpisode = Number(info.episode);
   const episode = localEpisode + Number(seriesMeta.matchedEpisodeOffset ?? 0);
@@ -192,7 +193,7 @@ function buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInf
   return `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. ${sortAt > airedAt && latestAiredInfo?.episode ? `Latest release: ${episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}Data from Simkl.`;
 }
 
-function buildLinks(item, visuals) {
+function buildLinks(item, visuals, seriesMeta) {
   const links = [
     {
       name: "View on Simkl",
@@ -200,6 +201,13 @@ function buildLinks(item, visuals) {
       url: simklUrl(item),
     },
   ];
+  if (seriesMeta?.tvdbId) {
+    links.push({
+      name: "View on TheTVDB",
+      category: "tvdb",
+      url: `https://thetvdb.com/series/${seriesMeta.tvdbId}`,
+    });
+  }
   if (visuals.tmdbId) {
     const tmdbMediaType = visuals.tmdbMediaType === "movie" ? "movie" : "tv";
     links.push({
@@ -236,14 +244,14 @@ export function buildCatalog(items, options = {}) {
       continue;
     }
 
-    const seriesMeta = item._addonSeriesMeta;
+    const seriesMeta = item._addonTvdbMeta;
     const episode = episodeLabel(info);
     const visuals = item._addonVisuals ?? {};
-    const links = buildLinks(item, visuals);
+    const links = buildLinks(item, visuals, seriesMeta);
     const description = buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo });
     const name = seriesMeta?.name || media.title;
-    const poster = visuals.poster || posterUrl(media.poster);
-    const background = visuals.background || fanartUrl(media.fanart);
+    const poster = seriesMeta?.poster || visuals.poster || posterUrl(media.poster);
+    const background = seriesMeta?.background || visuals.background || fanartUrl(media.fanart);
     const defaultVideoId = findDefaultVideoId(seriesMeta, info);
 
     const preview = {
@@ -289,7 +297,7 @@ ${seriesMeta.description}` : description,
       unified: Boolean(seriesMeta?.videos?.length),
       unifiedSeasonCount: seriesMeta?.seasonCount ?? 0,
       unifiedEpisodeCount: seriesMeta?.episodeCount ?? 0,
-      unifiedTrackingEpisodeCount: seriesMeta?.trackingMappedEpisodeCount ?? 0,
+      unifiedTrackingEpisodeCount: seriesMeta?.parentId?.startsWith("tt") ? seriesMeta?.episodeCount ?? 0 : 0,
     };
 
     const existing = includedById.get(id);
@@ -340,13 +348,13 @@ export function buildManifest() {
     id: ADDON_ID,
     version: APP_VERSION,
     name: "Simkl Anime Up Next",
-    description: "A personalized anime row with unified TMDB seasons, Simkl-aware anime episode IDs, and high-resolution episode artwork.",
+    description: "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
     resources: [
       "catalog",
       {
         name: "meta",
         types: ["series"],
-        idPrefixes: ["simkl-unified:", "tmdb:", "tvdb:", "kitsu:", "mal:", "simkl:"],
+        idPrefixes: ["tt", "tvdb:", "tmdb:", "kitsu:", "mal:", "simkl:"],
       },
     ],
     types: ["series"],

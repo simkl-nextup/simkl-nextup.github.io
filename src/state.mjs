@@ -23,9 +23,8 @@ export function simklIdFor(item) {
 export function normalizeState(input) {
   const base = createEmptyState();
   if (!input || typeof input !== "object") return base;
-  // Version 6 forces a one-time full library rebuild so seasonal MAL/Kitsu IDs
-  // are fetched for Nuvio watched-state reconciliation and old IMDb-only
-  // unified episode metadata cannot survive in the GitHub Actions cache.
+  // Version 6 forces one clean rebuild so cached pre-TVDB metadata cannot
+  // keep separate seasonal cards or stale episode identifiers alive.
   if (input.version !== STATE_VERSION) return base;
   return {
     ...base,

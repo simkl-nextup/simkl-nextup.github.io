@@ -15,6 +15,7 @@ import {
   simklIdFor,
 } from "../src/state.mjs";
 import { deriveBaseUrl, writeSite } from "../src/site.mjs";
+import { enrichTvdbMetadata, TvdbApiError } from "../src/tvdb.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const statePath = path.join(root, "state", "simkl-state.json");
@@ -34,21 +35,20 @@ async function saveState(filePath, state) {
   await writeFile(filePath, `${JSON.stringify(state, null, 2)}\n`);
 }
 
-const METADATA_ENRICHMENT_VERSION = 2;
+const METADATA_ENRICHMENT_VERSION = 3;
 
-async function enrichMissingMappings(client, state, now, { unifiedSeasonsEnabled = false } = {}) {
+async function enrichMissingMappings(client, state, now, { tvdbEnabled = false } = {}) {
   const next = structuredClone(state);
   for (const [key, item] of Object.entries(next.items)) {
-    const trackedAnime = ["watching", "plantowatch", "completed"].includes(item?.status);
-    if (!isCatalogCandidate(item, now) && !(unifiedSeasonsEnabled && trackedAnime)) continue;
+    if (!isCatalogCandidate(item, now)) continue;
     if (item._addonMetadataEnrichmentVersion === METADATA_ENRICHMENT_VERSION) continue;
     const media = mediaFor(item);
     const usable = chooseCatalogId(media?.ids);
     const weakOnly = usable?.startsWith("simkl:") || usable?.startsWith("mal:") || usable?.startsWith("kitsu:");
-    const hasTrackingAnimeId = Boolean(media?.ids?.mal || media?.ids?.kitsu);
-    const needsTrackingAnimeId = unifiedSeasonsEnabled && !hasTrackingAnimeId;
+    const hasTvdbBridge = Boolean(media?.ids?.tvdb || media?.ids?.imdb);
+    const needsTvdbBridge = tvdbEnabled && !hasTvdbBridge;
 
-    if (!weakOnly && !needsTrackingAnimeId) {
+    if (!weakOnly && !needsTvdbBridge) {
       item._addonMetadataEnrichmentVersion = METADATA_ENRICHMENT_VERSION;
       item._addonMetadataEnriched = true;
       continue;
@@ -84,6 +84,10 @@ export async function refresh({
   githubRepository = process.env.GITHUB_REPOSITORY,
   tmdbAccessToken = process.env.TMDB_READ_ACCESS_TOKEN,
   mdblistApiKey = process.env.MDBLIST_API_KEY,
+  tvdbApiKey = process.env.TVDB_API_KEY,
+  tvdbPin = process.env.TVDB_SUBSCRIBER_PIN,
+  tvdbSeasonType = process.env.TVDB_SEASON_TYPE || "default",
+  tvdbLanguage = process.env.TVDB_LANGUAGE || "eng",
   posterBadgesEnabled = process.env.POSTER_BADGES !== "false",
   stateFile = statePath,
   outputDirectory = outputDir,
@@ -130,17 +134,31 @@ export async function refresh({
     }
   }
 
-  state = await enrichMissingMappings(client, state, now, { unifiedSeasonsEnabled: Boolean(tmdbAccessToken) });
+  state = await enrichMissingMappings(client, state, now, { tvdbEnabled: Boolean(tvdbApiKey) });
   const metadata = await enrichCatalogMetadata(state.items, {
     tmdbAccessToken,
     mdblistApiKey,
     fetchImpl,
     now,
-    itemFilter: (item) => ["watching", "plantowatch", "completed"].includes(item?.status),
+    itemFilter: (item) => isCatalogCandidate(item, now),
   });
   state.items = metadata.items;
   for (const warning of metadata.warnings) {
     console.warn(`Artwork enrichment skipped for Simkl ${warning.simklId ?? "unknown"}: ${warning.message}`);
+  }
+
+  const tvdb = await enrichTvdbMetadata(state.items, {
+    apiKey: tvdbApiKey,
+    pin: tvdbPin,
+    seasonType: tvdbSeasonType,
+    language: tvdbLanguage,
+    fetchImpl,
+    now,
+    itemFilter: (item) => isCatalogCandidate(item, now),
+  });
+  state.items = tvdb.items;
+  for (const warning of tvdb.warnings) {
+    console.warn(`TVDB metadata skipped for Simkl ${warning.simklId ?? "unknown"}: ${warning.message}`);
   }
   state.lastSuccessfulRefresh = new Date(now).toISOString();
 
@@ -155,6 +173,7 @@ export async function refresh({
     sourceCounts,
     baseUrl,
     usesTmdb: metadata.usesTmdb,
+    usesTvdb: tvdb.usesTvdb,
     posterBadges,
     posterBadgesEnabled,
     metadata: detailMetadata,
@@ -170,7 +189,7 @@ export async function refresh({
     skipped,
     sourceCounts,
     state,
-    metadataWarnings: metadata.warnings,
+    metadataWarnings: [...metadata.warnings, ...tvdb.warnings],
     posterBadgesGenerated: site.posterBadgesGenerated,
     posterBadgeWarnings: site.posterBadgeWarnings,
     unifiedStats,
@@ -189,8 +208,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } catch (error) {
     if (error instanceof SimklApiError && error.status === 401) {
       console.error("Simkl authorization was revoked or expired. Run the authorization step again and replace SIMKL_ACCESS_TOKEN.");
-    } else if (error instanceof MetadataApiError && (error.status === 401 || error.status === 403)) {
-      console.error(`${error.provider} rejected its configured API credential. Replace the corresponding GitHub secret.`);
+    } else if ((error instanceof MetadataApiError || error instanceof TvdbApiError) && (error.status === 401 || error.status === 403)) {
+      console.error(`${error.provider} rejected its configured API credential. Replace or rotate the corresponding GitHub secret.`);
     } else {
       console.error(error.stack || error.message);
     }

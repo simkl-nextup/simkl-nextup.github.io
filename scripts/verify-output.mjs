@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CATALOG_ID } from "../src/constants.mjs";
@@ -14,35 +14,66 @@ if (!manifest.resources || !manifest.catalogs?.some((item) => item.id === CATALO
 }
 if (!Array.isArray(catalog.metas)) throw new Error("Catalog response must contain a metas array.");
 
-for (const preview of catalog.metas.filter((meta) => meta.id?.startsWith("simkl-unified:"))) {
-  const detailPath = path.join(publicDir, "meta", "series", `${preview.id}.json`);
-  const detail = JSON.parse(await readFile(detailPath, "utf8"));
-  if (!Array.isArray(detail?.meta?.videos) || detail.meta.videos.length === 0) {
-    throw new Error(`Unified metadata for ${preview.id} is missing episodes.`);
-  }
-  for (const video of detail.meta.videos) {
-    if (!video.id || !Number.isInteger(video.season) || !Number.isInteger(video.episode) || !video.released) {
-      throw new Error(`Unified metadata for ${preview.id} contains an invalid episode.`);
-    }
-    const trackingAnimeId = /^(mal|kitsu):[^:]+:\d+$/.test(video.id);
-    const canonicalSeriesId = /^(tt\d+|tmdb:[^:]+):\d+:\d+$/.test(video.id);
-    if (!trackingAnimeId && !canonicalSeriesId) {
-      throw new Error(`Unified metadata for ${preview.id} contains an unsupported episode ID: ${video.id}`);
-    }
-    if (video.thumbnail && !/^https:\/\//.test(video.thumbnail)) {
-      throw new Error(`Unified metadata for ${preview.id} contains a non-HTTPS episode thumbnail.`);
-    }
-  }
-}
-
 const setupScript = setupHtml.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
 if (!setupScript) throw new Error("Setup page is missing its authorization script.");
 new Function(setupScript);
+
+function safeMetaFilename(id) {
+  if (typeof id !== "string" || !id || /[\\/]/.test(id)) throw new Error(`Unsafe metadata ID: ${id}`);
+  return `${id}.json`;
+}
+
+function validEpisodeId(parentId, video) {
+  const season = Number(video?.season);
+  const episode = Number(video?.episode);
+  if (!Number.isInteger(season) || season < 0 || !Number.isInteger(episode) || episode < 1) return false;
+  return video.id === `${parentId}:${season}:${episode}`;
+}
+
+let fullMetadataFiles = 0;
+let fullMetadataEpisodes = 0;
+for (const preview of catalog.metas) {
+  const target = path.join(publicDir, "meta", "series", safeMetaFilename(preview.id));
+  try {
+    await access(target);
+  } catch {
+    if (!preview.id.startsWith("tt")) throw new Error(`Missing metadata response for ${preview.id}`);
+    continue;
+  }
+
+  const response = JSON.parse(await readFile(target, "utf8"));
+  const meta = response?.meta;
+  if (!meta || meta.id !== preview.id || meta.type !== "series") {
+    throw new Error(`Invalid metadata response for ${preview.id}`);
+  }
+  if (!meta.videos) continue;
+  if (!Array.isArray(meta.videos) || !meta.videos.length) {
+    throw new Error(`Unified metadata for ${preview.id} has no episodes.`);
+  }
+  const seen = new Set();
+  for (const video of meta.videos) {
+    if (!validEpisodeId(meta.id, video)) {
+      throw new Error(`Invalid canonical episode ID in ${preview.id}: ${video?.id ?? "missing"}`);
+    }
+    if (seen.has(video.id)) throw new Error(`Duplicate episode ID in ${preview.id}: ${video.id}`);
+    seen.add(video.id);
+    if (video.thumbnail && !/^https:\/\//i.test(video.thumbnail)) {
+      throw new Error(`Non-HTTPS episode image in ${preview.id}: ${video.thumbnail}`);
+    }
+  }
+  if (meta.behaviorHints?.defaultVideoId && !seen.has(meta.behaviorHints.defaultVideoId)) {
+    throw new Error(`Default episode does not exist in ${preview.id}: ${meta.behaviorHints.defaultVideoId}`);
+  }
+  fullMetadataFiles += 1;
+  fullMetadataEpisodes += meta.videos.length;
+}
 
 const secrets = [
   process.env.SIMKL_ACCESS_TOKEN,
   process.env.TMDB_READ_ACCESS_TOKEN,
   process.env.MDBLIST_API_KEY,
+  process.env.TVDB_API_KEY,
+  process.env.TVDB_SUBSCRIBER_PIN,
 ].filter(Boolean);
 if (secrets.length) {
   async function scan(dir) {
@@ -60,4 +91,6 @@ if (secrets.length) {
   await scan(publicDir);
 }
 
-console.log(`Verified manifest and ${catalog.metas.length} catalog item(s), including unified season metadata; no credential leakage detected.`);
+console.log(
+  `Verified manifest and ${catalog.metas.length} catalog item(s), including ${fullMetadataFiles} unified title(s) and ${fullMetadataEpisodes} episode(s); no credential leakage detected.`,
+);

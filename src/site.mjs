@@ -14,7 +14,7 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb }) {
+function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb, usesTvdb }) {
   const manifestUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/manifest.json` : "./manifest.json";
   return `<!doctype html>
 <html lang="en">
@@ -32,7 +32,7 @@ function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb }) {
     .pill{background:#1d2027;border:1px solid #303541;border-radius:999px;padding:8px 12px;color:#dfe3ec}
     a.button{display:inline-block;background:#f4f5f7;color:#090a0d;text-decoration:none;font-weight:800;padding:13px 18px;border-radius:12px}
     code{display:block;margin-top:16px;padding:14px;background:#090a0d;border-radius:10px;overflow-wrap:anywhere;color:#bfc8ff}
-    footer{margin-top:28px;font-size:.9rem;color:#808694}footer a{color:#aebcff}.tmdb{display:flex;align-items:center;gap:12px;margin-top:16px}.tmdb img{width:72px;height:auto}.tmdb span{font-size:.78rem;line-height:1.35}
+    footer{margin-top:28px;font-size:.9rem;color:#808694}footer a{color:#aebcff}.tmdb{display:flex;align-items:center;gap:12px;margin-top:16px}.tmdb img{width:72px;height:auto}.tmdb span{font-size:.78rem;line-height:1.35}.tvdb{margin-top:14px;font-size:.78rem;line-height:1.45}
   </style>
 </head>
 <body>
@@ -49,6 +49,7 @@ function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb }) {
     <code>${escapeHtml(manifestUrl)}</code>
     <footer>
       <div>Anime tracking and schedule data from <a href="https://simkl.com">Simkl</a>.</div>
+      ${usesTvdb ? `<div class="tvdb">Metadata and episode ordering provided by <a href="https://thetvdb.com">TheTVDB</a>. Please consider adding missing information or subscribing.</div>` : ""}
       ${usesTmdb ? `<div class="tmdb"><a href="https://www.themoviedb.org"><img src="${TMDB_LOGO}" alt="TMDB"></a><span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span></div>` : ""}
     </footer>
   </main>
@@ -94,6 +95,7 @@ export async function writeSite({
   sourceCounts = { watching: 0, planToWatch: 0, completed: 0 },
   baseUrl = "",
   usesTmdb = false,
+  usesTvdb = false,
   posterBadges = [],
   posterBadgesEnabled = false,
   metadata = [],
@@ -136,6 +138,7 @@ export async function writeSite({
     updatedAt,
     skippedCount: skipped.length,
     usesTmdb,
+    usesTvdb,
   }));
   await writeFile(path.join(outputDir, "setup.html"), setupHtml());
   await writeFile(path.join(outputDir, ".nojekyll"), "");
@@ -149,9 +152,14 @@ export async function writeSite({
     trackedPlanToWatchItems: Object.values(items ?? {}).filter((item) => item.status === "plantowatch").length,
     trackedCompletedItems: Object.values(items ?? {}).filter((item) => item.status === "completed").length,
     tmdbArtworkEnabled: usesTmdb,
+    tvdbMetadataEnabled: usesTvdb,
     posterBadgesEnabled,
     posterBadgesGenerated: posterResult.generated,
     posterBadgeWarnings: posterResult.warnings,
+    tvdbUnifiedTitles: unifiedStats.titles,
+    tvdbUnifiedSeasons: unifiedStats.seasons,
+    tvdbUnifiedEpisodes: unifiedStats.episodes,
+    tvdbCanonicalTrackingEpisodes: unifiedStats.trackingEpisodes ?? 0,
     unifiedMetadataTitles: unifiedStats.titles,
     unifiedMetadataSeasons: unifiedStats.seasons,
     unifiedMetadataEpisodes: unifiedStats.episodes,
