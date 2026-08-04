@@ -162,6 +162,59 @@ test("calendar refresh records the latest aired Plan to Watch episode", () => {
   assert.equal(merged["201"].anime.ids.tmdb, "456");
 });
 
+test("raw monthly archives backfill the latest aired Plan to Watch episodes", () => {
+  const items = {
+    "867371": planned({
+      anime: {
+        title: "Nijuuseiki Denki Mokuroku: Eureka Evrika",
+        ids: { simkl: 867371, imdb: "tt8888888" },
+      },
+      _addonLatestAiredInfo: undefined,
+    }),
+    "2754332": planned({
+      anime: {
+        title: "Tenmaku no Jaadugar",
+        ids: { simkl: 2754332, imdb: "tt9999999" },
+      },
+      _addonLatestAiredInfo: undefined,
+    }),
+  };
+  const rawMonthlyArchive = [
+    {
+      title: "Nijuuseiki Denki Mokuroku: Eureka Evrika",
+      poster: "10/eureka",
+      fanart: "10/eureka-fanart",
+      date: "2026-08-02T00:00:00+09:00",
+      ids: { simkl_id: 867371, tmdb: 456 },
+      episode: { episode: 5 },
+    },
+    {
+      title: "Tenmaku no Jaadugar",
+      date: "2026-08-01T23:30:00+09:00",
+      ids: { simkl_id: 2754332 },
+      episode: { episode: 6 },
+    },
+    {
+      title: "Nijuuseiki Denki Mokuroku: Eureka Evrika",
+      date: "2026-08-09T00:00:00+09:00",
+      ids: { simkl_id: 867371 },
+      episode: { episode: 6 },
+    },
+  ];
+
+  const merged = mergeCalendar(items, rawMonthlyArchive, { now: "2026-08-04T15:01:43Z" });
+  assert.equal(merged["867371"]._addonLatestAiredInfo.episode, 5);
+  assert.equal(merged["2754332"]._addonLatestAiredInfo.episode, 6);
+  assert.equal(merged["867371"].anime.ids.tmdb, 456);
+
+  const { catalog } = buildCatalog(merged, { now: "2026-08-04T15:01:43Z" });
+  assert.deepEqual(catalog.metas.map((meta) => meta.name), [
+    "Nijuuseiki Denki Mokuroku: Eureka Evrika",
+    "Tenmaku no Jaadugar",
+  ]);
+  assert.match(catalog.metas[0].description, /From your Plan to Watch list/);
+});
+
 test("calendar refresh also records a newly aired episode for Completed anime", () => {
   const completed = watching({
     status: "completed",

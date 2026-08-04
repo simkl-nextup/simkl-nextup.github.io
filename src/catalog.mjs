@@ -41,10 +41,44 @@ export function simklUrl(item) {
   return `https://simkl.com/anime/${id}${slug}`;
 }
 
+function normalizeCalendarPayload(payload) {
+  if (!Array.isArray(payload)) {
+    return {
+      calendar: Array.isArray(payload?.calendar) ? payload.calendar : [],
+      metadata: payload?.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
+    };
+  }
+
+  const calendar = [];
+  const metadata = {};
+  for (const entry of payload) {
+    const simklId = entry?.simkl_id ?? entry?.ids?.simkl ?? entry?.ids?.simkl_id;
+    if (simklId === undefined || simklId === null) continue;
+    const key = String(simklId);
+    calendar.push({
+      simkl_id: simklId,
+      date: entry.date,
+      episode: entry.episode,
+    });
+    const existing = metadata[key] ?? {};
+    metadata[key] = {
+      title: existing.title || entry.title,
+      poster: existing.poster || entry.poster,
+      fanart: existing.fanart || entry.fanart,
+      year: existing.year || entry.year,
+      ids: {
+        ...(existing.ids ?? {}),
+        ...(entry.ids ?? {}),
+        simkl: simklId,
+      },
+    };
+  }
+  return { calendar, metadata };
+}
+
 export function mergeCalendar(items, calendarPayload, options = {}) {
   const next = structuredClone(items ?? {});
-  const calendar = calendarPayload?.calendar ?? [];
-  const metadata = calendarPayload?.metadata ?? {};
+  const { calendar, metadata } = normalizeCalendarPayload(calendarPayload);
   const now = options.now ? new Date(options.now) : new Date();
 
   for (const entry of calendar) {
@@ -158,6 +192,7 @@ export function buildCatalog(items, options = {}) {
     }
     included.push({
       airedAt: sortAt,
+      status: item.status,
       meta: {
         id,
         type: "series",
@@ -176,9 +211,16 @@ export function buildCatalog(items, options = {}) {
   }
 
   included.sort((a, b) => b.airedAt - a.airedAt || a.meta.name.localeCompare(b.meta.name));
+  const selected = included.slice(0, maxItems);
+  const sourceCounts = {
+    watching: selected.filter((entry) => entry.status === "watching").length,
+    planToWatch: selected.filter((entry) => entry.status === "plantowatch").length,
+    completed: selected.filter((entry) => entry.status === "completed").length,
+  };
   return {
-    catalog: { metas: included.slice(0, maxItems).map((entry) => entry.meta) },
+    catalog: { metas: selected.map((entry) => entry.meta) },
     skipped,
+    sourceCounts,
   };
 }
 

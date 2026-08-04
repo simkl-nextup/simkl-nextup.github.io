@@ -1,4 +1,4 @@
-const STATE_VERSION = 4;
+const STATE_VERSION = 5;
 const INCLUDED_STATUSES = new Set(["watching", "plantowatch", "completed"]);
 
 export function createEmptyState() {
@@ -23,8 +23,9 @@ export function simklIdFor(item) {
 export function normalizeState(input) {
   const base = createEmptyState();
   if (!input || typeof input !== "object") return base;
-  // Version 4 retains Completed anime so a newly added episode can revive a
-  // title the user had previously finished.
+  // Version 5 forces a one-time full library rebuild after fixing monthly
+  // calendar ingestion, preventing incomplete v4 calendar state from being
+  // restored indefinitely from the GitHub Actions cache.
   if (input.version !== STATE_VERSION) return base;
   return {
     ...base,

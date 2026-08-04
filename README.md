@@ -82,7 +82,7 @@ Optional repository variable:
 1. Open **Actions → Refresh Simkl catalog and deploy Pages**.
 2. Select **Run workflow**.
 
-The workflow runs tests, refreshes Simkl, verifies that no token reached the public files, and deploys the addon. It then refreshes at minute 7 and 37 of every hour.
+The workflow runs tests, refreshes Simkl, verifies that no token reached the public files, and deploys the addon. It then refreshes once per hour at minute 23.
 
 The same workflow also updates a harmless `.github/keepalive` marker once per month. That automated commit keeps the public repository active, preventing GitHub's 60-day inactivity rule from disabling the scheduled refresh. You do not need to remember to touch or re-enable it manually.
 
@@ -110,7 +110,7 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 - Later runs call `/sync/activities` first.
 - `/sync/all-items` is called only when Simkl reports changed anime activity.
 - Delta changes are merged into a private GitHub Actions cache.
-- The public Simkl v2 rolling and monthly anime calendars correct rescheduled air times and track the latest aired episode for all eligible statuses.
+- The Simkl v2 rolling calendar plus the unversioned current/previous-month archives correct rescheduled air times and track the latest aired episode for all eligible statuses.
 - TMDB artwork and resolved IDs are cached in the private sync state for 30 days, keeping API usage low.
 - Simkl artwork remains the automatic fallback when TMDB has no match or no TMDB token is configured.
 - If a token is revoked, deployment fails and the existing Pages version remains online.
@@ -118,6 +118,12 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 GitHub schedules are best-effort and can occasionally run late. Use **Run workflow** for an immediate manual refresh.
 
 GitHub automatically disables scheduled workflows in a public repository after 60 days without repository activity. This project avoids that condition through its monthly keepalive commit. Keep the default branch unprotected so `github-actions[bot]` can write that marker. If you later add branch protection that blocks automated pushes, explicitly allow GitHub Actions to push or the keepalive will fail. A private repository is not subject to the public-repository inactivity rule, although private Actions usage counts against your plan's included minutes.
+
+## Updating from 1.4.0
+
+Version 1.5.0 fixes the monthly calendar archive URL and normalizes its raw-array response. It also advances the private state format to version 5, so the first workflow run after replacement automatically performs one clean Simkl library pull. Do not delete your GitHub secrets or Actions caches manually.
+
+After deployment, `status.json` reports both tracked and actually published counts for Watching, Plan to Watch, and revived Completed titles. This makes it possible to distinguish a healthy deployment from a row that silently omitted one of its sources.
 
 ## Local development
 
@@ -139,7 +145,7 @@ Node.js 20+ is required. There are no third-party runtime packages.
 
 ## Simkl attribution and API use
 
-Tracking and schedule data is provided by [Simkl](https://simkl.com). This project uses Simkl's documented two-phase sync model and v2 calendar CDN. It is intended for personal, non-commercial use.
+Tracking and schedule data is provided by [Simkl](https://simkl.com). This project uses Simkl's documented two-phase sync model, v2 rolling calendar, and monthly calendar archives. It is intended for personal, non-commercial use.
 
 Artwork can be provided by [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.
 

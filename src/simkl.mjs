@@ -37,8 +37,7 @@ function calendarUrl(clientId) {
 }
 
 function calendarMonthUrl(clientId, year, month) {
-  const normalizedMonth = String(month).padStart(2, "0");
-  const url = new URL(`${SIMKL_CALENDAR_BASE}/${year}/${normalizedMonth}/anime.json`);
+  const url = new URL(`${SIMKL_CALENDAR_BASE}/${year}/${Number(month)}/anime.json`);
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("app-name", APP_NAME);
   url.searchParams.set("app-version", APP_VERSION);

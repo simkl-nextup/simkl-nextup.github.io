@@ -1,8 +1,12 @@
 {
   "updatedAt": "Not connected yet",
   "catalogItems": 0,
+  "publishedWatchingItems": 0,
+  "publishedPlanToWatchItems": 0,
+  "publishedCompletedItems": 0,
   "trackedWatchingItems": 0,
   "trackedPlanToWatchItems": 0,
+  "trackedCompletedItems": 0,
   "tmdbArtworkEnabled": false,
   "skipped": []
 }

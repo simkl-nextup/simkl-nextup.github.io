@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CATALOG_ID } from "./constants.mjs";
+import { APP_VERSION, CATALOG_ID } from "./constants.mjs";
 import { buildManifest } from "./catalog.mjs";
 
 const TMDB_LOGO = "https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg";
@@ -65,7 +65,7 @@ function setupHtml() {
 <p class="warn">Treat the final access token like a password. Save it only as the GitHub repository secret <strong>SIMKL_ACCESS_TOKEN</strong>.</p>
 <script type="module">
 const out=document.querySelector('#out');const button=document.querySelector('#start');
-const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'1.4.0'});
+const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'${APP_VERSION}'});
 const get=async url=>{const response=await fetch(url);const body=await response.json();if(!response.ok||body.error)throw new Error(body.message||body.error||('Simkl returned HTTP '+response.status));return body};
 button.onclick=async()=>{button.disabled=true;try{const id=document.querySelector('#client').value.trim();if(!id)throw new Error('Enter a client ID.');
 const pin=await get('https://api.simkl.com/oauth/pin?'+params(id));if(!pin.user_code||!pin.verification_uri)throw new Error('Simkl did not return a usable PIN.');
@@ -84,7 +84,16 @@ export function deriveBaseUrl({ explicitBaseUrl, githubRepository }) {
   return repo.toLowerCase() === `${owner.toLowerCase()}.github.io` ? host : `${host}/${repo}`;
 }
 
-export async function writeSite({ outputDir, catalog, items, updatedAt, skipped = [], baseUrl = "", usesTmdb = false }) {
+export async function writeSite({
+  outputDir,
+  catalog,
+  items,
+  updatedAt,
+  skipped = [],
+  sourceCounts = { watching: 0, planToWatch: 0, completed: 0 },
+  baseUrl = "",
+  usesTmdb = false,
+}) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
   await mkdir(path.join(outputDir, "meta", "series"), { recursive: true });
@@ -111,8 +120,12 @@ export async function writeSite({ outputDir, catalog, items, updatedAt, skipped 
   await writeFile(path.join(outputDir, "status.json"), json({
     updatedAt,
     catalogItems: catalog.metas.length,
+    publishedWatchingItems: sourceCounts.watching,
+    publishedPlanToWatchItems: sourceCounts.planToWatch,
+    publishedCompletedItems: sourceCounts.completed,
     trackedWatchingItems: Object.values(items ?? {}).filter((item) => item.status === "watching").length,
     trackedPlanToWatchItems: Object.values(items ?? {}).filter((item) => item.status === "plantowatch").length,
+    trackedCompletedItems: Object.values(items ?? {}).filter((item) => item.status === "completed").length,
     tmdbArtworkEnabled: usesTmdb,
     skipped,
   }));

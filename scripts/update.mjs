@@ -122,7 +122,7 @@ export async function refresh({
   }
   state.lastSuccessfulRefresh = new Date(now).toISOString();
 
-  const { catalog, skipped } = buildCatalog(state.items, { now, maxItems });
+  const { catalog, skipped, sourceCounts } = buildCatalog(state.items, { now, maxItems });
   const baseUrl = deriveBaseUrl({ explicitBaseUrl, githubRepository });
   await writeSite({
     outputDir: outputDirectory,
@@ -130,11 +130,12 @@ export async function refresh({
     items: state.items,
     updatedAt: state.lastSuccessfulRefresh,
     skipped,
+    sourceCounts,
     baseUrl,
     usesTmdb: metadata.usesTmdb,
   });
   await saveState(stateFile, state);
-  return { catalog, skipped, state, metadataWarnings: metadata.warnings };
+  return { catalog, skipped, sourceCounts, state, metadataWarnings: metadata.warnings };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
