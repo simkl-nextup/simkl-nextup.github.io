@@ -4,7 +4,7 @@ A personal, single-row Stremio/Nuvio addon. It combines anime from your Simkl **
 
 Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
 
-Each generated poster includes two left-edge ribbons. The first identifies the source as green **NEW EPISODE** for Watching, gold **PLAN TO WATCH**, or purple **NEW SEASON** for a revived Completed title. The second shows the relevant episode, such as **EP 5** or **S03 · E06**. The ribbons sit together at the top-left so Nuvio's native top-right checkmark remains unobstructed.
+Each generated poster includes two large left-edge ribbons. The first identifies the source as green **NEW EPISODE** for Watching, gold **PLAN TO WATCH**, or purple **NEW SEASON** for a revived Completed title. The second shows the relevant episode, such as **EP 5** or **S03 · E06**. Heavy lettering, layered gradients, a gloss streak, highlighted edges, and deep shadows keep the labels readable on Nuvio's compact cards. The ribbons sit together at the top-left so Nuvio's native top-right checkmark remains unobstructed.
 
 For Watching titles, the card still identifies your next unwatched episode. The sorting timestamp comes from the show's latest aired episode, so a title is bumped even when you are several episodes behind. Plan to Watch titles display their latest aired episode and are bumped on every subsequent release. A Completed title re-enters only when the calendar reports an episode number beyond its saved watched count, then disappears after the new episode is recorded. Future-only titles remain excluded until an episode actually airs.
 
@@ -129,9 +129,9 @@ Version 1.5.0 fixes the monthly calendar archive URL and normalizes its raw-arra
 
 After deployment, `status.json` reports both tracked and actually published counts for Watching, Plan to Watch, and revived Completed titles. This makes it possible to distinguish a healthy deployment from a row that silently omitted one of its sources.
 
-## Updating to 1.6.3
+## Updating to 1.6.4
 
-Version 1.6 adds generated poster labels, 1.6.1 enlarges them for Nuvio's compact home-row cards, and 1.6.2 converts them into left-edge ribbons. Version 1.6.3 maps Watching to green New Episode and revived Completed titles to purple New Season. The poster style version changes so clients receive fresh image URLs instead of reusing cached artwork. Replace the repository files, commit `package-lock.json`, and run the personalized workflow. The workflow runs `npm ci` before testing and generation, so no new GitHub secret is required.
+Version 1.6 adds generated poster labels, 1.6.2 converts them into left-edge ribbons, and 1.6.3 maps Watching to green New Episode and revived Completed titles to purple New Season. Version 1.6.4 makes both ribbons substantially taller and heavier, with layered gradients and gloss for stronger small-card visibility. The poster style version changes so clients receive fresh image URLs instead of reusing cached artwork. Replace the repository files, commit `package-lock.json`, and run the personalized workflow. The workflow runs `npm ci` before testing and generation, so no new GitHub secret is required.
 
 `status.json` reports `posterBadgesGenerated` and `posterBadgeWarnings`. A warning means that title safely retained its original poster. Set the workflow environment variable `POSTER_BADGES` to `false` only if you intentionally want to disable the generated overlays.
 

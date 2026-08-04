@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
-const POSTER_BADGE_STYLE_VERSION = 4;
+const POSTER_BADGE_STYLE_VERSION = 5;
 const MAX_POSTER_BYTES = 12 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 const ALLOWED_POSTER_HOSTS = new Set([
@@ -15,9 +15,24 @@ const ALLOWED_POSTER_HOSTS = new Set([
 ]);
 
 const STATUS_STYLES = {
-  watching: { label: "NEW EPISODE", color: "#139A67" },
-  plantowatch: { label: "PLAN TO WATCH", color: "#D88A00" },
-  completed: { label: "NEW SEASON", color: "#6D5DFC" },
+  watching: {
+    label: "NEW EPISODE",
+    start: "#12D98A",
+    middle: "#0FAE73",
+    end: "#087A56",
+  },
+  plantowatch: {
+    label: "PLAN TO WATCH",
+    start: "#FFC247",
+    middle: "#ED970A",
+    end: "#B85C00",
+  },
+  completed: {
+    label: "NEW SEASON",
+    start: "#9B8CFF",
+    middle: "#765BFF",
+    end: "#5136D5",
+  },
 };
 
 function escapeXml(value) {
@@ -40,8 +55,12 @@ function normalizedEpisodeLabel(value) {
   return label.toUpperCase().slice(0, 18);
 }
 
-function pillWidth(label, minimum) {
-  return Math.max(minimum, Math.round(label.length * 19 + 44));
+function statusRibbonWidth(label) {
+  return Math.max(260, Math.round(label.length * 21.5 + 68));
+}
+
+function episodeRibbonWidth(label) {
+  return Math.max(144, Math.round(label.length * 18 + 48));
 }
 
 export function buildPosterBadgeSvg({ status, episode }) {
@@ -51,29 +70,56 @@ export function buildPosterBadgeSvg({ status, episode }) {
   const episodeLabel = normalizedEpisodeLabel(episode);
   if (!episodeLabel) throw new Error("Poster badge episode label is required.");
 
-  const statusWidth = pillWidth(statusLabel, 214);
-  const episodeWidth = pillWidth(episodeLabel, 116);
+  const statusWidth = statusRibbonWidth(statusLabel);
+  const episodeWidth = episodeRibbonWidth(episodeLabel);
   const statusTop = 18;
-  const statusBottom = 78;
+  const statusBottom = 96;
   const statusPoint = statusWidth;
-  const statusBody = statusWidth - 18;
-  const episodeTop = 90;
-  const episodeBottom = 146;
+  const statusBody = statusWidth - 22;
+  const episodeTop = 108;
+  const episodeBottom = 176;
   const episodePoint = episodeWidth;
-  const episodeBody = episodeWidth - 15;
+  const episodeBody = episodeWidth - 18;
+  const statusMiddle = (statusTop + statusBottom) / 2;
+  const episodeMiddle = (episodeTop + episodeBottom) / 2;
 
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" viewBox="0 0 ${POSTER_WIDTH} ${POSTER_HEIGHT}">
   <defs>
-    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
-      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.62"/>
+    <linearGradient id="statusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${style.start}"/>
+      <stop offset="52%" stop-color="${style.middle}"/>
+      <stop offset="100%" stop-color="${style.end}"/>
+    </linearGradient>
+    <linearGradient id="episodeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#252A35"/>
+      <stop offset="52%" stop-color="#10131A"/>
+      <stop offset="100%" stop-color="#020306"/>
+    </linearGradient>
+    <linearGradient id="glossGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.52"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="statusClip">
+      <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z"/>
+    </clipPath>
+    <clipPath id="episodeClip">
+      <path d="M0 ${episodeTop} H${episodeBody} L${episodePoint} ${episodeMiddle} L${episodeBody} ${episodeBottom} H0 Z"/>
+    </clipPath>
+    <filter id="shadow" x="-30%" y="-35%" width="170%" height="190%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000000" flood-opacity="0.72"/>
     </filter>
   </defs>
-  <g filter="url(#shadow)" font-family="Inter, Arial, Helvetica, sans-serif" font-weight="800">
-    <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${(statusTop + statusBottom) / 2} L${statusBody} ${statusBottom} H0 Z" fill="${style.color}" fill-opacity="0.98" stroke="#FFFFFF" stroke-opacity="0.24"/>
-    <path d="M0 ${statusTop} H${statusBody}" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="2"/>
-    <text x="${statusBody / 2}" y="58" fill="#FFFFFF" text-anchor="middle" font-size="30" letter-spacing="0.4">${escapeXml(statusLabel)}</text>
-    <path d="M0 ${episodeTop} H${episodeBody} L${episodePoint} ${(episodeTop + episodeBottom) / 2} L${episodeBody} ${episodeBottom} H0 Z" fill="#090B10" fill-opacity="0.94" stroke="#FFFFFF" stroke-opacity="0.3"/>
-    <text x="${episodeBody / 2}" y="${episodeTop + 38}" fill="#FFFFFF" text-anchor="middle" font-size="28" letter-spacing="0.3">${escapeXml(episodeLabel)}</text>
+  <g filter="url(#shadow)" font-family="Arial Black, Inter, Arial, Helvetica, sans-serif" font-weight="900">
+    <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z" fill="url(#statusGradient)" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="1.5"/>
+    <path d="M${Math.round(statusWidth * 0.24)} ${statusTop - 18} L${Math.round(statusWidth * 0.53)} ${statusTop - 18} L${Math.round(statusWidth * 0.31)} ${statusBottom + 18} L${Math.round(statusWidth * 0.02)} ${statusBottom + 18} Z" fill="url(#glossGradient)" opacity="0.62" clip-path="url(#statusClip)"/>
+    <path d="M0 ${statusTop + 2} H${statusBody - 2}" fill="none" stroke="#FFFFFF" stroke-opacity="0.58" stroke-width="3"/>
+    <path d="M0 ${statusBottom - 2} H${statusBody - 2}" fill="none" stroke="#000000" stroke-opacity="0.24" stroke-width="3"/>
+    <text x="${statusBody / 2}" y="70" fill="#FFFFFF" stroke="#000000" stroke-opacity="0.2" stroke-width="1.2" paint-order="stroke fill" text-anchor="middle" font-size="39" letter-spacing="0.15">${escapeXml(statusLabel)}</text>
+    <path d="M0 ${episodeTop} H${episodeBody} L${episodePoint} ${episodeMiddle} L${episodeBody} ${episodeBottom} H0 Z" fill="url(#episodeGradient)" stroke="#FFFFFF" stroke-opacity="0.36" stroke-width="1.5"/>
+    <path d="M${Math.round(episodeWidth * 0.18)} ${episodeTop - 12} L${Math.round(episodeWidth * 0.5)} ${episodeTop - 12} L${Math.round(episodeWidth * 0.28)} ${episodeBottom + 12} L0 ${episodeBottom + 12} Z" fill="url(#glossGradient)" opacity="0.34" clip-path="url(#episodeClip)"/>
+    <path d="M0 ${episodeTop + 2} H${episodeBody - 2}" fill="none" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="2.5"/>
+    <text x="${episodeBody / 2}" y="${episodeTop + 47}" fill="#FFFFFF" stroke="#000000" stroke-opacity="0.28" stroke-width="1.1" paint-order="stroke fill" text-anchor="middle" font-size="35" letter-spacing="0.1">${escapeXml(episodeLabel)}</text>
   </g>
 </svg>`);
 }

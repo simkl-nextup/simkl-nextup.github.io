@@ -33,13 +33,15 @@ test("poster ribbon SVG distinguishes every tracked-list status", () => {
 
   assert.match(watching, /NEW EPISODE/);
   assert.match(watching, /EP 5/);
-  assert.match(watching, /#139A67/);
+  assert.match(watching, /#12D98A/);
   assert.match(watching, /<path d="M0 18 H/);
+  assert.match(watching, /font-weight="900"/);
+  assert.match(watching, /statusGradient/);
   assert.match(planned, /PLAN TO WATCH/);
   assert.match(planned, /S03 · E06/);
-  assert.match(planned, /#D88A00/);
+  assert.match(planned, /#FFC247/);
   assert.match(revived, /NEW SEASON/);
-  assert.match(revived, /#6D5DFC/);
+  assert.match(revived, /#9B8CFF/);
 });
 
 test("poster decoration creates a deterministic 500x750 WebP and publishes its URL", async () => {
