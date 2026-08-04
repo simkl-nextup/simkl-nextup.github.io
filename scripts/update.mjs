@@ -63,6 +63,7 @@ export async function refresh({
   githubRepository = process.env.GITHUB_REPOSITORY,
   tmdbAccessToken = process.env.TMDB_READ_ACCESS_TOKEN,
   mdblistApiKey = process.env.MDBLIST_API_KEY,
+  posterBadgesEnabled = process.env.POSTER_BADGES !== "false",
   stateFile = statePath,
   outputDirectory = outputDir,
 } = {}) {
@@ -122,9 +123,9 @@ export async function refresh({
   }
   state.lastSuccessfulRefresh = new Date(now).toISOString();
 
-  const { catalog, skipped, sourceCounts } = buildCatalog(state.items, { now, maxItems });
+  const { catalog, posterBadges, skipped, sourceCounts } = buildCatalog(state.items, { now, maxItems });
   const baseUrl = deriveBaseUrl({ explicitBaseUrl, githubRepository });
-  await writeSite({
+  const site = await writeSite({
     outputDir: outputDirectory,
     catalog,
     items: state.items,
@@ -133,9 +134,23 @@ export async function refresh({
     sourceCounts,
     baseUrl,
     usesTmdb: metadata.usesTmdb,
+    posterBadges,
+    posterBadgesEnabled,
+    fetchImpl,
   });
+  for (const warning of site.posterBadgeWarnings) {
+    console.warn(`Poster badge skipped for ${warning.name ?? warning.id ?? "unknown"}: ${warning.message}`);
+  }
   await saveState(stateFile, state);
-  return { catalog, skipped, sourceCounts, state, metadataWarnings: metadata.warnings };
+  return {
+    catalog: site.catalog,
+    skipped,
+    sourceCounts,
+    state,
+    metadataWarnings: metadata.warnings,
+    posterBadgesGenerated: site.posterBadgesGenerated,
+    posterBadgeWarnings: site.posterBadgeWarnings,
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

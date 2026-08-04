@@ -193,6 +193,11 @@ export function buildCatalog(items, options = {}) {
     included.push({
       airedAt: sortAt,
       status: item.status,
+      posterBadge: {
+        id,
+        status: item.status,
+        episode,
+      },
       meta: {
         id,
         type: "series",
@@ -219,6 +224,7 @@ export function buildCatalog(items, options = {}) {
   };
   return {
     catalog: { metas: selected.map((entry) => entry.meta) },
+    posterBadges: selected.map((entry) => entry.posterBadge),
     skipped,
     sourceCounts,
   };

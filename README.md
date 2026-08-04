@@ -4,6 +4,8 @@ A personal, single-row Stremio/Nuvio addon. It combines anime from your Simkl **
 
 Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
 
+Each generated poster includes two compact badges. The first identifies the source as purple **WATCHING**, gold **PLAN TO WATCH**, or green **NEW EPISODE** for a revived Completed title. The second shows the relevant episode, such as **EP 5** or **S03 · E06**. The badges sit together at the top-left so Nuvio's native top-right checkmark remains unobstructed.
+
 For Watching titles, the card still identifies your next unwatched episode. The sorting timestamp comes from the show's latest aired episode, so a title is bumped even when you are several episodes behind. Plan to Watch titles display their latest aired episode and are bumped on every subsequent release. A Completed title re-enters only when the calendar reports an episode number beyond its saved watched count, then disappears after the new episode is recorded. Future-only titles remain excluded until an episode actually airs.
 
 Anime seasons are often separate Simkl titles. If a sequel season has a different Simkl ID, add that sequel itself to Watching or Plan to Watch; the addon intentionally does not infer that every sequel is wanted from a completed prequel.
@@ -113,6 +115,8 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 - The Simkl v2 rolling calendar plus the unversioned current/previous-month archives correct rescheduled air times and track the latest aired episode for all eligible statuses.
 - TMDB artwork and resolved IDs are cached in the private sync state for 30 days, keeping API usage low.
 - Simkl artwork remains the automatic fallback when TMDB has no match or no TMDB token is configured.
+- The workflow downloads each published poster from an allowlisted HTTPS image host, adds the status and episode badges, and serves the resulting WebP from your own Pages site.
+- Poster filenames are deterministic. If an image is unavailable or cannot be processed, that card keeps its original clean poster instead of failing the catalog deployment.
 - If a token is revoked, deployment fails and the existing Pages version remains online.
 
 GitHub schedules are best-effort and can occasionally run late. Use **Run workflow** for an immediate manual refresh.
@@ -125,6 +129,12 @@ Version 1.5.0 fixes the monthly calendar archive URL and normalizes its raw-arra
 
 After deployment, `status.json` reports both tracked and actually published counts for Watching, Plan to Watch, and revived Completed titles. This makes it possible to distinguish a healthy deployment from a row that silently omitted one of its sources.
 
+## Updating to 1.6.0
+
+Version 1.6.0 adds generated poster badges. Replace the repository files, commit `package-lock.json`, and run the personalized workflow. The workflow now runs `npm ci` before testing and generation, so no new GitHub secret is required. The next deployment automatically publishes the badged poster URLs.
+
+`status.json` reports `posterBadgesGenerated` and `posterBadgeWarnings`. A warning means that title safely retained its original poster. Set the workflow environment variable `POSTER_BADGES` to `false` only if you intentionally want to disable the generated overlays.
+
 ## Local development
 
 ```bash
@@ -135,13 +145,13 @@ SIMKL_CLIENT_ID=... SIMKL_ACCESS_TOKEN=... TMDB_READ_ACCESS_TOKEN=... npm run re
 npm run verify
 ```
 
-Node.js 20+ is required. There are no third-party runtime packages.
+Node.js 20.9+ is required. Sharp is the only runtime package and performs the poster compositing locally inside GitHub Actions.
 
 ## Privacy
 
 - All configured API credentials are read only from GitHub Secrets and are scanned against generated output before deployment.
 - Sync state is stored in the GitHub Actions cache, not committed to the repository or published by Pages.
-- The final catalog itself is public to anyone who knows the Pages URL. This is required so Nuvio/Stremio can request it without authentication.
+- The final catalog and generated poster images are public to anyone who knows the Pages URL. This is required so Nuvio/Stremio can request them without authentication.
 
 ## Simkl attribution and API use
 
@@ -149,4 +159,4 @@ Tracking and schedule data is provided by [Simkl](https://simkl.com). This proje
 
 Artwork can be provided by [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-TOP Posters is intentionally not called directly from the static catalog because its API key must appear inside each poster URL. A future image-cache mode can add badge posters without publishing that key.
+TOP Posters is intentionally not called directly because its API key would appear inside each poster URL. Version 1.6 creates the badges locally in GitHub Actions instead, without another API or credential.

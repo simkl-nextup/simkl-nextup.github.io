@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { APP_VERSION, CATALOG_ID } from "./constants.mjs";
 import { buildManifest } from "./catalog.mjs";
+import { decorateCatalogPosters } from "./poster-badges.mjs";
 
 const TMDB_LOGO = "https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg";
 
@@ -93,24 +94,35 @@ export async function writeSite({
   sourceCounts = { watching: 0, planToWatch: 0, completed: 0 },
   baseUrl = "",
   usesTmdb = false,
+  posterBadges = [],
+  posterBadgesEnabled = false,
+  fetchImpl = fetch,
 }) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
   await mkdir(path.join(outputDir, "meta", "series"), { recursive: true });
 
+  const posterResult = await decorateCatalogPosters(catalog, posterBadges, {
+    outputDirectory: outputDir,
+    baseUrl,
+    enabled: posterBadgesEnabled,
+    fetchImpl,
+  });
+  const publishedCatalog = posterResult.catalog;
+
   const manifest = buildManifest();
   const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
   await writeFile(path.join(outputDir, "manifest.json"), json(manifest));
-  await writeFile(path.join(outputDir, "catalog", "series", `${CATALOG_ID}.json`), json(catalog));
+  await writeFile(path.join(outputDir, "catalog", "series", `${CATALOG_ID}.json`), json(publishedCatalog));
 
-  for (const meta of catalog.metas) {
+  for (const meta of publishedCatalog.metas) {
     if (meta.id.startsWith("tt")) continue;
     await writeFile(path.join(outputDir, "meta", "series", `${meta.id}.json`), json({ meta }));
   }
 
   await writeFile(path.join(outputDir, "index.html"), indexHtml({
     baseUrl,
-    count: catalog.metas.length,
+    count: publishedCatalog.metas.length,
     updatedAt,
     skippedCount: skipped.length,
     usesTmdb,
@@ -119,7 +131,7 @@ export async function writeSite({
   await writeFile(path.join(outputDir, ".nojekyll"), "");
   await writeFile(path.join(outputDir, "status.json"), json({
     updatedAt,
-    catalogItems: catalog.metas.length,
+    catalogItems: publishedCatalog.metas.length,
     publishedWatchingItems: sourceCounts.watching,
     publishedPlanToWatchItems: sourceCounts.planToWatch,
     publishedCompletedItems: sourceCounts.completed,
@@ -127,6 +139,15 @@ export async function writeSite({
     trackedPlanToWatchItems: Object.values(items ?? {}).filter((item) => item.status === "plantowatch").length,
     trackedCompletedItems: Object.values(items ?? {}).filter((item) => item.status === "completed").length,
     tmdbArtworkEnabled: usesTmdb,
+    posterBadgesEnabled,
+    posterBadgesGenerated: posterResult.generated,
+    posterBadgeWarnings: posterResult.warnings,
     skipped,
   }));
+
+  return {
+    catalog: publishedCatalog,
+    posterBadgesGenerated: posterResult.generated,
+    posterBadgeWarnings: posterResult.warnings,
+  };
 }

@@ -8,5 +8,8 @@
   "trackedPlanToWatchItems": 0,
   "trackedCompletedItems": 0,
   "tmdbArtworkEnabled": false,
+  "posterBadgesEnabled": false,
+  "posterBadgesGenerated": 0,
+  "posterBadgeWarnings": [],
   "skipped": []
 }

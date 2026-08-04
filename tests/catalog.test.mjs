@@ -56,11 +56,16 @@ test("catalog combines Watching and Plan to Watch titles with aired episodes", (
       _addonLatestAiredInfo: { episode: 2, date: "2026-08-05T09:00:00Z" },
     }),
   };
-  const { catalog } = buildCatalog(items, { now: "2026-08-02T00:00:00Z" });
+  const { catalog, posterBadges } = buildCatalog(items, { now: "2026-08-02T00:00:00Z" });
   assert.equal(catalog.metas.length, 3);
   assert.deepEqual(catalog.metas.map((meta) => meta.name), ["Example Anime", "Planned Premiere", "Old Planned Anime"]);
   assert.equal(catalog.metas[0].releaseInfo, "Ep. 5");
   assert.equal(catalog.metas[1].releaseInfo, "Ep. 4");
+  assert.deepEqual(posterBadges, [
+    { id: "tt1234567", status: "watching", episode: "Ep. 5" },
+    { id: "tt3333333", status: "plantowatch", episode: "Ep. 4" },
+    { id: "tt4444444", status: "plantowatch", episode: "Ep. 7" },
+  ]);
 });
 
 test("catalog revives a Completed title only when a newly aired episode exceeds its watched count", () => {

@@ -60,6 +60,7 @@ test("end-to-end refresh builds the row and hides a caught-up completed anime on
     now: new Date("2026-08-02T00:00:00Z"),
     stateFile,
     outputDirectory,
+    posterBadgesEnabled: false,
   });
   let catalog = JSON.parse(
     await readFile(path.join(outputDirectory, "catalog", "series", `${CATALOG_ID}.json`), "utf8"),
@@ -74,6 +75,7 @@ test("end-to-end refresh builds the row and hides a caught-up completed anime on
     now: new Date("2026-08-02T12:00:00Z"),
     stateFile,
     outputDirectory,
+    posterBadgesEnabled: false,
   });
   catalog = JSON.parse(
     await readFile(path.join(outputDirectory, "catalog", "series", `${CATALOG_ID}.json`), "utf8"),
@@ -146,6 +148,7 @@ test("end-to-end refresh publishes Watching, monthly Plan to Watch, and revived 
     now: new Date("2026-08-04T12:00:00Z"),
     stateFile,
     outputDirectory,
+    posterBadgesEnabled: false,
   });
 
   assert.deepEqual(result.catalog.metas.map((meta) => meta.name), [

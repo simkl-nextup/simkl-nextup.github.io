@@ -1,6 +1,6 @@
 {
   "name": "simkl-new-episodes-addon",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "description": "A personal Stremio/Nuvio catalog that bumps tracked anime on every new episode, including revived Completed titles.",
@@ -13,7 +13,10 @@
     "verify": "node scripts/verify-output.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "sharp": "^0.35.3"
+  }
 }
