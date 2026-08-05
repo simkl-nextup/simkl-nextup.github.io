@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
-const POSTER_BADGE_STYLE_VERSION = 6;
+const POSTER_BADGE_STYLE_VERSION = 7;
 const MAX_POSTER_BYTES = 12 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 const ALLOWED_POSTER_HOSTS = new Set([
@@ -59,8 +59,9 @@ function statusRibbonWidth(label) {
   return Math.max(270, Math.min(450, Math.round(label.length * 23 + 70)));
 }
 
-function infoRibbonWidth(cue, episode) {
-  return Math.max(178, Math.min(360, Math.round(cue.length * 13 + episode.length * 18 + 64)));
+function infoRibbonWidth(cue, episode, rowCount) {
+  if (rowCount === 2) return 238;
+  return Math.max(255, Math.min(370, Math.round(cue.length * 12 + episode.length * 17 + 80)));
 }
 
 function infoRows({ status, episode, latestEpisode, nextEpisode }) {
@@ -86,30 +87,33 @@ function infoRows({ status, episode, latestEpisode, nextEpisode }) {
   }
 
   return [{
-    cue: status === "plantowatch" ? "LATEST" : "NEW",
+    cue: status === "plantowatch" ? "LATEST" : "START",
     episode: latest || fallback,
     gradient: "episodeGradient",
     accent: status === "plantowatch" ? "#FFD66B" : "#B6A8FF",
   }];
 }
 
-function infoRibbonSvg(row, index) {
-  const top = 110 + index * 70;
-  const bottom = top + 58;
+function infoRibbonSvg(row, index, rowCount) {
+  const top = 110;
+  const bottom = 174;
   const middle = (top + bottom) / 2;
-  const width = infoRibbonWidth(row.cue, row.episode);
-  const body = width - 18;
-  const cueWidth = Math.max(66, Math.round(row.cue.length * 14 + 24));
-  const dividerX = Math.min(cueWidth, body - 72);
+  const gap = 12;
+  const x = rowCount === 2 ? index * (238 + gap) : 0;
+  const width = infoRibbonWidth(row.cue, row.episode, rowCount);
+  const body = width - 16;
+  const cueWidth = Math.max(72, Math.round(row.cue.length * 12 + 24));
+  const dividerX = Math.min(cueWidth, body - 94);
   const episodeX = dividerX + (body - dividerX) / 2;
 
   return `
     <g>
-      <path d="M0 ${top} H${body} L${width} ${middle} L${body} ${bottom} H0 Z" fill="url(#${row.gradient})" stroke="#FFFFFF" stroke-opacity="0.46" stroke-width="2"/>
-      <path d="M0 ${top} H8 V${bottom} H0 Z" fill="${row.accent}"/>
-      <path d="M${dividerX} ${top + 10} V${bottom - 10}" stroke="#FFFFFF" stroke-opacity="0.46" stroke-width="2"/>
-      <text x="${Math.round(dividerX / 2 + 4)}" y="${top + 38}" class="infoCue" text-anchor="middle">${escapeXml(row.cue)}</text>
-      <text x="${Math.round(episodeX)}" y="${top + 40}" class="infoEpisode" text-anchor="middle">${escapeXml(row.episode)}</text>
+      <path d="M${x} ${top} H${x + body} L${x + width} ${middle} L${x + body} ${bottom} H${x} Z" fill="url(#${row.gradient})" stroke="#FFFFFF" stroke-opacity="0.34" stroke-width="2"/>
+      <path d="M${x} ${top} H${x + 7} V${bottom} H${x} Z" fill="${row.accent}"/>
+      <path d="M${x + 10} ${top + 2} H${x + body - 3}" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"/>
+      <path d="M${x + dividerX} ${top + 12} V${bottom - 12}" stroke="#FFFFFF" stroke-opacity="0.38" stroke-width="2"/>
+      <text x="${Math.round(x + dividerX / 2 + 4)}" y="${top + 40}" class="infoCue" text-anchor="middle">${escapeXml(row.cue)}</text>
+      <text x="${Math.round(x + episodeX)}" y="${top + 42}" class="infoEpisode" text-anchor="middle">${escapeXml(row.episode)}</text>
     </g>`;
 }
 
@@ -135,48 +139,48 @@ export function buildPosterBadgeSvg({ status, episode, latestEpisode, nextEpisod
       <stop offset="100%" stop-color="${style.end}"/>
     </linearGradient>
     <linearGradient id="newInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#11694F"/>
-      <stop offset="56%" stop-color="#083F34"/>
-      <stop offset="100%" stop-color="#021A17"/>
+      <stop offset="0%" stop-color="#0F5A45" stop-opacity="0.96"/>
+      <stop offset="58%" stop-color="#082F29" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#020E0D" stop-opacity="0.96"/>
     </linearGradient>
     <linearGradient id="nextInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#183C5F"/>
-      <stop offset="56%" stop-color="#10243A"/>
-      <stop offset="100%" stop-color="#050A12"/>
+      <stop offset="0%" stop-color="#153753" stop-opacity="0.96"/>
+      <stop offset="58%" stop-color="#0B2034" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#02070D" stop-opacity="0.96"/>
     </linearGradient>
     <linearGradient id="episodeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#303641"/>
-      <stop offset="52%" stop-color="#151922"/>
-      <stop offset="100%" stop-color="#030407"/>
+      <stop offset="0%" stop-color="#2B3038" stop-opacity="0.96"/>
+      <stop offset="55%" stop-color="#141820" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#030407" stop-opacity="0.96"/>
     </linearGradient>
     <linearGradient id="glossGradient" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
-      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.50"/>
       <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
     </linearGradient>
     <clipPath id="statusClip">
       <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z"/>
     </clipPath>
     <filter id="ribbonShadow" x="-30%" y="-35%" width="175%" height="200%">
-      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#000000" flood-opacity="0.78"/>
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.76"/>
     </filter>
     <filter id="textShadow" x="-30%" y="-40%" width="170%" height="200%">
-      <feDropShadow dx="0" dy="2" stdDeviation="1.8" flood-color="#000000" flood-opacity="1"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#000000" flood-opacity="1"/>
     </filter>
     <style>
-      .statusText,.infoCue,.infoEpisode{font-family:Arial,Helvetica,sans-serif;font-weight:900;fill:#FFFFFF;stroke:#000000;stroke-opacity:.96;paint-order:stroke fill;filter:url(#textShadow)}
-      .statusText{font-size:39px;stroke-width:3.4px;letter-spacing:.1px}
-      .infoCue{font-size:22px;stroke-width:2.5px;letter-spacing:.7px}
-      .infoEpisode{font-size:31px;stroke-width:2.8px;letter-spacing:.2px}
+      .statusText,.infoCue,.infoEpisode{font-family:Arial,Helvetica,sans-serif;font-weight:900;fill:#FFFFFF;stroke:#000000;stroke-opacity:.98;paint-order:stroke fill;filter:url(#textShadow)}
+      .statusText{font-size:40px;stroke-width:3.8px;letter-spacing:.1px}
+      .infoCue{font-size:19px;stroke-width:2.7px;letter-spacing:.5px}
+      .infoEpisode{font-size:30px;stroke-width:3px;letter-spacing:.1px}
     </style>
   </defs>
   <g filter="url(#ribbonShadow)">
     <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z" fill="url(#statusGradient)" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="2"/>
-    <path d="M${Math.round(statusWidth * 0.24)} ${statusTop - 18} L${Math.round(statusWidth * 0.53)} ${statusTop - 18} L${Math.round(statusWidth * 0.31)} ${statusBottom + 18} L${Math.round(statusWidth * 0.02)} ${statusBottom + 18} Z" fill="url(#glossGradient)" opacity="0.58" clip-path="url(#statusClip)"/>
+    <path d="M${Math.round(statusWidth * 0.24)} ${statusTop - 18} L${Math.round(statusWidth * 0.53)} ${statusTop - 18} L${Math.round(statusWidth * 0.31)} ${statusBottom + 18} L${Math.round(statusWidth * 0.02)} ${statusBottom + 18} Z" fill="url(#glossGradient)" opacity="0.52" clip-path="url(#statusClip)"/>
     <path d="M0 ${statusTop + 2} H${statusBody - 2}" fill="none" stroke="#FFFFFF" stroke-opacity="0.72" stroke-width="3"/>
     <path d="M0 ${statusBottom - 2} H${statusBody - 2}" fill="none" stroke="#000000" stroke-opacity="0.46" stroke-width="3"/>
     <text x="${statusBody / 2}" y="70" class="statusText" text-anchor="middle">${escapeXml(statusLabel)}</text>
-    ${rows.map(infoRibbonSvg).join("")}
+    ${rows.map((row, index) => infoRibbonSvg(row, index, rows.length)).join("")}
   </g>
 </svg>`);
 }

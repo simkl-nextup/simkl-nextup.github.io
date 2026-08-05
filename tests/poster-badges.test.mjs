@@ -29,27 +29,29 @@ function imageResponse(buffer, status = 200) {
 test("poster ribbon SVG distinguishes status, latest release, and next episode with TV-safe outlines", () => {
   const watching = buildPosterBadgeSvg({
     status: "watching",
-    episode: "Ep. 5",
-    latestEpisode: "Ep. 11",
-    nextEpisode: "Ep. 5",
+    episode: "S2 E5",
+    latestEpisode: "S2 E11",
+    nextEpisode: "S2 E5",
   }).toString();
   const planned = buildPosterBadgeSvg({ status: "plantowatch", episode: "S3E6" }).toString();
-  const revived = buildPosterBadgeSvg({ status: "completed", episode: "Ep. 13" }).toString();
+  const revived = buildPosterBadgeSvg({ status: "completed", episode: "S3 E1" }).toString();
 
   assert.match(watching, /NEW EPISODE/);
   assert.match(watching, />NEW</);
   assert.match(watching, />NEXT</);
-  assert.match(watching, />EP 11</);
-  assert.match(watching, />EP 5</);
+  assert.match(watching, />S2 E11</);
+  assert.match(watching, />S2 E5</);
   assert.match(watching, /#12D98A/);
-  assert.match(watching, /stroke-opacity:\.96/);
-  assert.match(watching, /stroke-width:3\.4px/);
+  assert.match(watching, /stroke-opacity:\.98/);
+  assert.match(watching, /stroke-width:3\.8px/);
   assert.match(watching, /textShadow/);
   assert.match(planned, /PLAN TO WATCH/);
   assert.match(planned, />LATEST</);
   assert.match(planned, />S3 E6</);
   assert.match(planned, /#FFC247/);
   assert.match(revived, /NEW SEASON/);
+  assert.match(revived, />START</);
+  assert.match(revived, />S3 E1</);
   assert.match(revived, /#9B8CFF/);
 });
 

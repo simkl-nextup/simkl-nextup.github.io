@@ -65,22 +65,22 @@ test("catalog combines Watching and Plan to Watch titles with aired episodes", (
     {
       id: "tt1234567",
       status: "watching",
-      episode: "Ep. 5",
-      latestEpisode: "Ep. 5",
-      nextEpisode: "Ep. 5",
+      episode: "S1 E5",
+      latestEpisode: "S1 E5",
+      nextEpisode: "S1 E5",
     },
     {
       id: "tt3333333",
       status: "plantowatch",
-      episode: "Ep. 4",
-      latestEpisode: "Ep. 4",
+      episode: "S1 E4",
+      latestEpisode: "S1 E4",
       nextEpisode: null,
     },
     {
       id: "tt4444444",
       status: "plantowatch",
-      episode: "Ep. 7",
-      latestEpisode: "Ep. 7",
+      episode: "S1 E7",
+      latestEpisode: "S1 E7",
       nextEpisode: null,
     },
   ]);
@@ -275,8 +275,8 @@ test("a new release bumps a behind Watching title while keeping its next-unwatch
   assert.deepEqual(catalog.metas.map((meta) => meta.name), ["Example Anime", "Other Show"]);
   assert.equal(catalog.metas[0].releaseInfo, "Ep. 5");
   assert.match(catalog.metas[0].description, /Latest release: Ep\. 10/);
-  assert.equal(posterBadges[0].latestEpisode, "Ep. 10");
-  assert.equal(posterBadges[0].nextEpisode, "Ep. 5");
+  assert.equal(posterBadges[0].latestEpisode, "S1 E10");
+  assert.equal(posterBadges[0].nextEpisode, "S1 E5");
 });
 
 test("TVDB metadata collapses separate Simkl seasons into one canonical show with a default episode", () => {
@@ -316,6 +316,13 @@ test("TVDB metadata collapses separate Simkl seasons into one canonical show wit
   assert.equal(result.catalog.metas[0].videos.length, 4);
   assert.equal(result.catalog.metas[0].behaviorHints.defaultVideoId, "tt7654000:3:2");
   assert.equal(result.metadata[0].behaviorHints.defaultVideoId, "tt7654000:3:2");
+  assert.deepEqual(result.posterBadges, [{
+    id: "tt7654000",
+    status: "watching",
+    episode: "S3 E2",
+    latestEpisode: "S3 E2",
+    nextEpisode: "S3 E2",
+  }]);
   assert.deepEqual(result.unifiedStats, { titles: 1, seasons: 3, episodes: 4, trackingEpisodes: 4 });
 });
 
