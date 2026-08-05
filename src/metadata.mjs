@@ -67,6 +67,10 @@ export function createTmdbClient({ accessToken, fetchImpl = fetch }) {
           external_source: externalSource,
           language: "en-US",
         });
+        const episodeMatch = found?.tv_episode_results?.[0];
+        if (episodeMatch?.show_id) return details("tv", episodeMatch.show_id);
+        const seasonMatch = found?.tv_season_results?.[0];
+        if (seasonMatch?.show_id) return details("tv", seasonMatch.show_id);
         const tvMatch = found?.tv_results?.[0];
         if (tvMatch?.id) return details("tv", tvMatch.id);
         const movieMatch = found?.movie_results?.[0];
@@ -131,7 +135,7 @@ function tmdbImage(path, size) {
 
 function sourceSignature(ids, sources) {
   return JSON.stringify({
-    version: 1,
+    version: 2,
     sources,
     imdb: ids?.imdb ?? null,
     tmdb: ids?.tmdb ?? null,
@@ -203,6 +207,18 @@ export async function enrichCatalogMetadata(items, {
           background: tmdbImage(tmdbResult.backdrop_path, "w1280"),
           tmdbId: tmdbResult.id,
           tmdbMediaType: tmdbResult._addonTmdbMediaType || "tv",
+          tmdbName: tmdbResult.name || tmdbResult.title || null,
+          tmdbOriginalName: tmdbResult.original_name || tmdbResult.original_title || null,
+          tmdbFirstAirDate: tmdbResult.first_air_date || tmdbResult.release_date || null,
+          tmdbSeasons: Array.isArray(tmdbResult.seasons)
+            ? tmdbResult.seasons.map((season) => ({
+                seasonNumber: Number(season?.season_number),
+                airDate: season?.air_date || null,
+                episodeCount: Number(season?.episode_count) || null,
+                name: season?.name || null,
+              }))
+              .filter((season) => Number.isInteger(season.seasonNumber))
+            : [],
         };
       } else if (mdblistResult) {
         item._addonVisuals = {

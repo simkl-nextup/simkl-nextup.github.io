@@ -4,7 +4,7 @@ const TVDB_API_BASE = "https://api4.thetvdb.com/v4/";
 const TVDB_ARTWORK_BASE = "https://artworks.thetvdb.com/banners/";
 const SUCCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 6 * 60 * 60 * 1000;
-const TVDB_METADATA_VERSION = 1;
+const TVDB_METADATA_VERSION = 2;
 const MAX_EPISODE_PAGES = 100;
 
 export class TvdbApiError extends Error {
@@ -160,6 +160,16 @@ export function createTvdbClient({ apiKey, pin, fetchImpl = fetch } = {}) {
       return unwrapData(await get(`series/${encodeURIComponent(seriesId)}/extended`, { meta: "translations" }));
     },
 
+    async getSeriesTranslation(seriesId, language = "eng") {
+      if (!language) return null;
+      try {
+        return unwrapData(await get(`series/${encodeURIComponent(seriesId)}/translations/${encodeURIComponent(language)}`));
+      } catch (error) {
+        if (!(error instanceof TvdbApiError) || ![400, 404].includes(error.status)) throw error;
+        return null;
+      }
+    },
+
     async getSeriesEpisodes(seriesId, { seasonType = "default", language = "eng" } = {}) {
       try {
         return await episodePages(seriesId, seasonType, language, true);
@@ -266,6 +276,43 @@ function runtimeFor(series, episode) {
   return runtime ? `${runtime}m` : undefined;
 }
 
+function translationValue(translation, fields) {
+  const records = Array.isArray(translation)
+    ? translation
+    : Array.isArray(translation?.translations)
+      ? translation.translations
+      : [translation];
+  for (const record of records) {
+    for (const field of fields) {
+      const value = record?.[field];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  return null;
+}
+
+function embeddedEnglishName(series) {
+  const translations = series?.translations;
+  const candidates = [
+    translations?.nameTranslations?.eng,
+    translations?.nameTranslations?.en,
+    translations?.eng?.name,
+    translations?.en?.name,
+  ];
+  return candidates.find((value) => typeof value === "string" && value.trim())?.trim() ?? null;
+}
+
+function embeddedEnglishOverview(series) {
+  const translations = series?.translations;
+  const candidates = [
+    translations?.overviewTranslations?.eng,
+    translations?.overviewTranslations?.en,
+    translations?.eng?.overview,
+    translations?.en?.overview,
+  ];
+  return candidates.find((value) => typeof value === "string" && value.trim())?.trim() ?? null;
+}
+
 function episodeRecord(series, episode, parentId, fallbackImage, now) {
   const season = integer(episode?.seasonNumber ?? episode?.season_number ?? episode?.airedSeason);
   const number = integer(episode?.number ?? episode?.episodeNumber ?? episode?.episode_number ?? episode?.airedEpisodeNumber);
@@ -307,6 +354,8 @@ export function buildTvdbSeriesMetadata(series, episodes, {
   language = "eng",
   now = new Date(),
   signature = null,
+  translation = null,
+  fallbackName = null,
 } = {}) {
   const tvdbId = positiveInteger(series?.id);
   if (!tvdbId) return null;
@@ -324,6 +373,10 @@ export function buildTvdbSeriesMetadata(series, episodes, {
   const genres = (Array.isArray(series?.genres) ? series.genres : [])
     .map((genre) => genre?.name || genre)
     .filter(Boolean);
+  const translatedName = translationValue(translation, ["name", "title"])
+    || embeddedEnglishName(series);
+  const translatedOverview = translationValue(translation, ["overview", "description"])
+    || embeddedEnglishOverview(series);
   return {
     version: TVDB_METADATA_VERSION,
     signature,
@@ -334,8 +387,9 @@ export function buildTvdbSeriesMetadata(series, episodes, {
     parentId,
     seasonType,
     language,
-    name: series?.name || series?.translations?.nameTranslations?.eng || null,
-    description: series?.overview || null,
+    name: translatedName || fallbackName || series?.name || null,
+    originalName: series?.name || null,
+    description: translatedOverview || series?.overview || null,
     releaseInfo: releaseInfoForSeries(series, videos),
     genres,
     runtime: runtimeFor(series, {}),
@@ -385,8 +439,247 @@ function itemHints(item) {
 function seasonFromTitle(title) {
   const value = String(title ?? "");
   const match = value.match(/(?:^|\s)(?:season|series)\s*(\d{1,2})(?:\s|$|:|-)/i)
-    || value.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+season\b/i);
-  return match ? positiveInteger(match[1]) : null;
+    || value.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+season\b/i)
+    || value.match(/\bseason\s+(ii|iii|iv|v|vi|vii|viii|ix|x)\b/i)
+    || value.match(/\b(ii|iii|iv|v|vi|vii|viii|ix|x)(?:\s*[:\-]|\s*$)/i);
+  if (!match) return /\bfinal\s+season\b/i.test(value) ? Number.MAX_SAFE_INTEGER : null;
+  if (/^\d+$/.test(match[1])) return positiveInteger(match[1]);
+  const roman = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+  return roman[String(match[1]).toLowerCase()] ?? null;
+}
+
+function trackedLibraryItem(item) {
+  return ["watching", "plantowatch", "completed"].includes(item?.status);
+}
+
+function firstReleasedAt(meta) {
+  const times = (meta?.videos ?? [])
+    .map((video) => new Date(video?.released ?? "").getTime())
+    .filter(Number.isFinite);
+  return times.length ? Math.min(...times) : Number.POSITIVE_INFINITY;
+}
+
+function tmdbSeasonHint(item) {
+  const media = mediaFor(item);
+  const visuals = item?._addonVisuals;
+  const seasons = Array.isArray(visuals?.tmdbSeasons)
+    ? visuals.tmdbSeasons.filter((season) => Number(season?.seasonNumber) > 0)
+    : [];
+  const explicit = seasonFromTitle(media?.title);
+  if (explicit !== null && explicit !== Number.MAX_SAFE_INTEGER) return explicit;
+
+  const firstYear = yearOf(item?._addonTvdbMeta?.videos?.find((video) => video.season > 0)?.released);
+  const mediaYear = positiveInteger(media?.year) ?? firstYear;
+  if (mediaYear) {
+    const matches = seasons.filter((season) => yearOf(season?.airDate) === mediaYear);
+    if (matches.length === 1) return positiveInteger(matches[0].seasonNumber);
+  }
+  return null;
+}
+
+function hasSequelMarker(value) {
+  const title = String(value ?? "");
+  return /\b(?:season|series|part|cour)\s*(?:\d+|ii|iii|iv|v|vi|vii|viii|ix|x)\b/i.test(title)
+    || /\b\d+(?:st|nd|rd|th)\s+season\b/i.test(title)
+    || /\bfinal\s+season\b/i.test(title)
+    || /\b(?:ii|iii|iv|v|vi|vii|viii|ix|x)(?:\s*[:\-]|\s*$)/i.test(title);
+}
+
+function titleFamilyKey(item) {
+  const mediaTitle = mediaFor(item)?.title;
+  const tvdbTitle = item?._addonTvdbMeta?.name;
+  let value = String(mediaTitle || tvdbTitle || "").trim();
+  if (!value) return null;
+
+  const colon = value.indexOf(":");
+  if (colon >= 4) {
+    const prefix = value.slice(0, colon);
+    const suffix = value.slice(colon + 1);
+    if (hasSequelMarker(prefix) || hasSequelMarker(suffix) || prefix.split(/\s+/).length >= 2) value = prefix;
+  }
+
+  value = value
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(?:the\s+)?final\s+season\b/gi, " ")
+    .replace(/\b(?:season|series|part|cour)\s*(?:\d+|ii|iii|iv|v|vi|vii|viii|ix|x)\b/gi, " ")
+    .replace(/\b\d+(?:st|nd|rd|th)\s+season\b/gi, " ")
+    .replace(/\b(?:ii|iii|iv|v|vi|vii|viii|ix|x)\b(?=\s*$)/gi, " ")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase();
+  return value.length >= 4 ? value : null;
+}
+
+function tvdbGroupingKey(item) {
+  const meta = item?._addonTvdbMeta;
+  if (!meta?.tvdbId || !Array.isArray(meta.videos) || !meta.videos.length) return null;
+  const visuals = item?._addonVisuals;
+  if (visuals?.tmdbMediaType === "tv" && positiveInteger(visuals?.tmdbId)) {
+    return `tmdb:${positiveInteger(visuals.tmdbId)}`;
+  }
+  const family = titleFamilyKey(item);
+  return family ? `title:${family}` : `tvdb:${meta.tvdbId}`;
+}
+
+function sourceIdentity(meta) {
+  return String(meta?.tvdbId ?? meta?.parentId ?? "");
+}
+
+function nextUnusedSeason(used, preferred = null) {
+  if (preferred && preferred !== Number.MAX_SAFE_INTEGER && !used.has(preferred)) return preferred;
+  let candidate = 1;
+  while (used.has(candidate)) candidate += 1;
+  return candidate;
+}
+
+function releaseInfoForVideos(videos) {
+  const years = videos.map((video) => yearOf(video?.released)).filter(Number.isFinite);
+  if (!years.length) return null;
+  const start = Math.min(...years);
+  const end = Math.max(...years);
+  return start === end ? `${start}-` : `${start}-${end}`;
+}
+
+function deduplicateMergedVideos(videos) {
+  const byId = new Map();
+  for (const video of videos) {
+    const existing = byId.get(video.id);
+    if (!existing) byId.set(video.id, video);
+  }
+  return [...byId.values()].sort((a, b) => a.season - b.season || a.episode - b.episode);
+}
+
+/**
+ * TVDB occasionally stores anime sequels as separate series even when TMDB
+ * represents the franchise as one multi-season TV show. This merges those
+ * TVDB records into one static parent while retaining every source episode ID,
+ * so Nuvio keeps its working watched-state reconciliation.
+ */
+export function unifyTvdbMetadata(items) {
+  const next = structuredClone(items ?? {});
+  const groups = new Map();
+
+  for (const [key, item] of Object.entries(next)) {
+    if (!trackedLibraryItem(item)) continue;
+    const groupKey = tvdbGroupingKey(item);
+    if (!groupKey) continue;
+    const group = groups.get(groupKey) ?? [];
+    group.push({ key, item });
+    groups.set(groupKey, group);
+  }
+
+  for (const [groupKey, group] of groups) {
+    const sourceEntries = new Map();
+    for (const entry of group) {
+      const identity = sourceIdentity(entry.item._addonTvdbMeta);
+      const existing = sourceEntries.get(identity);
+      if (!existing || (entry.item._addonTvdbMeta?.videos?.length ?? 0) > (existing.item._addonTvdbMeta?.videos?.length ?? 0)) {
+        sourceEntries.set(identity, entry);
+      }
+    }
+
+    const representatives = [...sourceEntries.values()].sort((a, b) => {
+      const aHint = tmdbSeasonHint(a.item);
+      const bHint = tmdbSeasonHint(b.item);
+      return firstReleasedAt(a.item._addonTvdbMeta) - firstReleasedAt(b.item._addonTvdbMeta)
+        || (aHint ?? Number.MAX_SAFE_INTEGER) - (bHint ?? Number.MAX_SAFE_INTEGER)
+        || String(a.key).localeCompare(String(b.key));
+    });
+    if (!representatives.length) continue;
+
+    if (groupKey.startsWith("title:") && representatives.length > 1) {
+      const containsSequel = group.some((entry) => hasSequelMarker(mediaFor(entry.item)?.title)
+        || hasSequelMarker(entry.item?._addonTvdbMeta?.name));
+      if (!containsSequel) continue;
+    }
+
+    const sameSource = representatives.length === 1;
+    const usedSeasons = new Set();
+    const sourceSeasonMaps = new Map();
+    const mergedVideos = [];
+
+    for (const representative of representatives) {
+      const meta = representative.item._addonTvdbMeta;
+      const regularSeasons = [...new Set(meta.videos.filter((video) => video.season > 0).map((video) => video.season))]
+        .sort((a, b) => a - b);
+      const seasonMap = new Map();
+
+      if (sameSource) {
+        for (const season of regularSeasons) {
+          seasonMap.set(season, season);
+          usedSeasons.add(season);
+        }
+      } else {
+        const preferred = tmdbSeasonHint(representative.item);
+        const firstUnified = nextUnusedSeason(usedSeasons, preferred);
+        regularSeasons.forEach((season, index) => {
+          const candidate = index === 0 ? firstUnified : nextUnusedSeason(usedSeasons, firstUnified + index);
+          seasonMap.set(season, candidate);
+          usedSeasons.add(candidate);
+        });
+      }
+
+      sourceSeasonMaps.set(sourceIdentity(meta), seasonMap);
+      for (const video of meta.videos) {
+        mergedVideos.push({
+          ...video,
+          season: video.season === 0 ? 0 : (seasonMap.get(video.season) ?? video.season),
+          sourceTvdbId: meta.tvdbId,
+        });
+      }
+    }
+
+    const videos = deduplicateMergedVideos(mergedVideos);
+    const seasonNumbers = [...new Set(videos.map((video) => video.season))];
+    const newest = representatives.slice().sort((a, b) => firstReleasedAt(b.item._addonTvdbMeta) - firstReleasedAt(a.item._addonTvdbMeta))[0];
+    const earliest = representatives[0];
+    const englishName = group
+      .map((entry) => entry.item?._addonVisuals?.tmdbName)
+      .find((value) => typeof value === "string" && value.trim())
+      || earliest.item._addonTvdbMeta?.name
+      || mediaFor(earliest.item)?.title
+      || null;
+    const tmdbId = groupKey.startsWith("tmdb:") ? positiveInteger(groupKey.slice(5)) : null;
+    const sourceTvdbIds = representatives
+      .map((entry) => positiveInteger(entry.item._addonTvdbMeta.tvdbId))
+      .filter(Boolean)
+      .sort((a, b) => a - b);
+    const parentId = sameSource
+      ? earliest.item._addonTvdbMeta.parentId
+      : `simkl-tvdb-unified:${tmdbId ?? sourceTvdbIds.join("-")}`;
+    const canonical = {
+      ...structuredClone(earliest.item._addonTvdbMeta),
+      parentId,
+      name: englishName,
+      poster: newest.item._addonTvdbMeta?.poster || earliest.item._addonTvdbMeta?.poster,
+      background: newest.item._addonTvdbMeta?.background || earliest.item._addonTvdbMeta?.background,
+      releaseInfo: releaseInfoForVideos(videos) || earliest.item._addonTvdbMeta?.releaseInfo,
+      seasonCount: seasonNumbers.filter((season) => season > 0).length,
+      specialSeasonIncluded: seasonNumbers.includes(0),
+      episodeCount: videos.length,
+      videos,
+      groupedBy: sameSource ? "tvdb" : "tmdb",
+      sourceTvdbIds,
+    };
+    const displaySeasonByVideoId = new Map(videos.map((video) => [video.id, video.season]));
+
+    for (const entry of group) {
+      const own = entry.item._addonTvdbMeta;
+      const seasonMap = sourceSeasonMaps.get(sourceIdentity(own)) ?? new Map();
+      entry.item._addonTvdbMeta = {
+        ...structuredClone(canonical),
+        signature: own.signature,
+        attemptedAt: own.attemptedAt,
+        matchedVideoId: own.matchedVideoId,
+        matchedSeasonNumber: own.matchedVideoId
+          ? displaySeasonByVideoId.get(own.matchedVideoId) ?? own.matchedSeasonNumber
+          : seasonMap.get(own.matchedSeasonNumber) ?? own.matchedSeasonNumber,
+        matchedEpisodeOffset: own.matchedEpisodeOffset ?? 0,
+      };
+    }
+  }
+
+  return next;
 }
 
 export function inferTvdbPosition(item, seriesMeta) {
@@ -522,12 +815,20 @@ export async function enrichTvdbMetadata(items, {
       media.ids.tvdb ||= seriesId;
       const finalSignature = sourceSignature(media.ids, seasonType, language);
       let template = templates.get(String(seriesId));
-      if (!template || template.seasonType !== seasonType || template.language !== language || !Array.isArray(template.videos) || !template.videos.length) {
-        const [series, episodes] = await Promise.all([
+      if (!template || template.version !== TVDB_METADATA_VERSION || template.seasonType !== seasonType || template.language !== language || !Array.isArray(template.videos) || !template.videos.length) {
+        const [series, episodes, translation] = await Promise.all([
           client.getSeriesExtended(seriesId),
           client.getSeriesEpisodes(seriesId, { seasonType, language }),
+          client.getSeriesTranslation(seriesId, language),
         ]);
-        template = buildTvdbSeriesMetadata(series, episodes, { seasonType, language, now, signature: finalSignature });
+        template = buildTvdbSeriesMetadata(series, episodes, {
+          seasonType,
+          language,
+          now,
+          signature: finalSignature,
+          translation,
+          fallbackName: item?._addonVisuals?.tmdbName || media.title,
+        });
         if (template) templates.set(String(seriesId), structuredClone(template));
       }
       if (!template) {
@@ -559,5 +860,5 @@ export async function enrichTvdbMetadata(items, {
     }
   }
 
-  return { items: next, warnings, usesTvdb: true };
+  return { items: unifyTvdbMetadata(next), warnings, usesTvdb: true };
 }

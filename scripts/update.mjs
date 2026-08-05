@@ -37,10 +37,50 @@ async function saveState(filePath, state) {
 
 const METADATA_ENRICHMENT_VERSION = 3;
 
-async function enrichMissingMappings(client, state, now, { tvdbEnabled = false } = {}) {
+function familyTitle(item) {
+  const media = mediaFor(item);
+  let value = String(media?.title ?? "").trim();
+  if (!value) return null;
+  const colon = value.indexOf(":");
+  if (colon >= 4) value = value.slice(0, colon);
+  value = value
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(?:the\s+)?final\s+season\b/gi, " ")
+    .replace(/\b(?:season|series|part|cour)\s*(?:\d+|ii|iii|iv|v|vi|vii|viii|ix|x)\b/gi, " ")
+    .replace(/\b\d+(?:st|nd|rd|th)\s+season\b/gi, " ")
+    .replace(/\b(?:ii|iii|iv|v|vi|vii|viii|ix|x)\b(?=\s*$)/gi, " ")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase();
+  return value.length >= 4 ? value : null;
+}
+
+function strongIds(item) {
+  const ids = mediaFor(item)?.ids ?? {};
+  return [
+    ids.imdb && `imdb:${ids.imdb}`,
+    ids.tmdb && `tmdb:${ids.tmdb}`,
+    ids.tvdb && `tvdb:${ids.tvdb}`,
+  ].filter(Boolean);
+}
+
+function buildMetadataItemFilter(items, now) {
+  const active = Object.values(items ?? {}).filter((item) => isCatalogCandidate(item, now));
+  const activeFamilies = new Set(active.map(familyTitle).filter(Boolean));
+  const activeIds = new Set(active.flatMap(strongIds));
+  return (item) => {
+    if (isCatalogCandidate(item, now)) return true;
+    if (!["watching", "plantowatch", "completed"].includes(item?.status)) return false;
+    if (strongIds(item).some((id) => activeIds.has(id))) return true;
+    const family = familyTitle(item);
+    return Boolean(family && activeFamilies.has(family));
+  };
+}
+
+async function enrichMissingMappings(client, state, now, { tvdbEnabled = false, itemFilter = () => true } = {}) {
   const next = structuredClone(state);
   for (const [key, item] of Object.entries(next.items)) {
-    if (!isCatalogCandidate(item, now)) continue;
+    if (!itemFilter(item)) continue;
     if (item._addonMetadataEnrichmentVersion === METADATA_ENRICHMENT_VERSION) continue;
     const media = mediaFor(item);
     const usable = chooseCatalogId(media?.ids);
@@ -134,13 +174,18 @@ export async function refresh({
     }
   }
 
-  state = await enrichMissingMappings(client, state, now, { tvdbEnabled: Boolean(tvdbApiKey) });
+  let metadataItemFilter = buildMetadataItemFilter(state.items, now);
+  state = await enrichMissingMappings(client, state, now, {
+    tvdbEnabled: Boolean(tvdbApiKey),
+    itemFilter: metadataItemFilter,
+  });
+  metadataItemFilter = buildMetadataItemFilter(state.items, now);
   const metadata = await enrichCatalogMetadata(state.items, {
     tmdbAccessToken,
     mdblistApiKey,
     fetchImpl,
     now,
-    itemFilter: (item) => isCatalogCandidate(item, now),
+    itemFilter: metadataItemFilter,
   });
   state.items = metadata.items;
   for (const warning of metadata.warnings) {
@@ -154,7 +199,7 @@ export async function refresh({
     language: tvdbLanguage,
     fetchImpl,
     now,
-    itemFilter: (item) => isCatalogCandidate(item, now),
+    itemFilter: metadataItemFilter,
   });
   state.items = tvdb.items;
   for (const warning of tvdb.warnings) {

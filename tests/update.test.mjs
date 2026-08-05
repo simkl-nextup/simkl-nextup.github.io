@@ -240,6 +240,9 @@ test("end-to-end TVDB refresh publishes all seasons with canonical episode IDs a
           links: { next: null },
         });
       }
+      if (url.pathname === "/v4/series/900/translations/eng") {
+        return jsonResponse({ data: { name: "Unified Anime", overview: "The complete English overview." } });
+      }
       throw new Error(`Unexpected TVDB request: ${url}`);
     }
 
@@ -289,4 +292,114 @@ test("end-to-end TVDB refresh publishes all seasons with canonical episode IDs a
 
   const published = await readFile(path.join(outputDirectory, "meta", "series", "tt7654000.json"), "utf8");
   assert.equal(published.includes(tvdbApiKey), false);
+});
+
+test("end-to-end TVDB refresh groups separate sequel records and keeps their tracking IDs", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-tvdb-split-series-"));
+  const stateFile = path.join(temp, "state.json");
+  const outputDirectory = path.join(temp, "public");
+  const library = [
+    {
+      status: "completed",
+      watched_episodes_count: 1,
+      anime: {
+        title: "Example Anime: First Arc",
+        year: 2024,
+        ids: { simkl: 8101, tvdb: 901, imdb: "tt1111111" },
+      },
+    },
+    {
+      status: "watching",
+      watched_episodes_count: 0,
+      next_to_watch_info: {
+        episode: 1,
+        title: "The Return",
+        date: "2026-07-01T10:00:00Z",
+      },
+      anime: {
+        title: "Example Anime Season 2: The Return",
+        year: 2026,
+        ids: { simkl: 8102, tvdb: 902, imdb: "tt2222222" },
+      },
+    },
+  ];
+
+  const fetchImpl = async (input, options = {}) => {
+    const url = new URL(input);
+    if (url.hostname === "api4.thetvdb.com") {
+      if (url.pathname === "/v4/login") return jsonResponse({ data: { token: "tvdb-token" } });
+      assert.equal(options.headers.Authorization, "Bearer tvdb-token");
+      const seriesMatch = url.pathname.match(/^\/v4\/series\/(901|902)\/extended$/);
+      if (seriesMatch) {
+        const id = Number(seriesMatch[1]);
+        return jsonResponse({
+          data: {
+            id,
+            name: id === 901 ? "Japanese first title" : "Japanese sequel title",
+            firstAired: id === 901 ? "2024-01-01" : "2026-07-01",
+            remoteIds: [{ sourceName: "IMDB", id: id === 901 ? "tt1111111" : "tt2222222" }],
+          },
+        });
+      }
+      const translationMatch = url.pathname.match(/^\/v4\/series\/(901|902)\/translations\/eng$/);
+      if (translationMatch) {
+        return jsonResponse({ data: { name: translationMatch[1] === "901" ? "Example Anime" : "Example Anime Season 2" } });
+      }
+      const episodesMatch = url.pathname.match(/^\/v4\/series\/(901|902)\/episodes\/default\/eng$/);
+      if (episodesMatch) {
+        const id = Number(episodesMatch[1]);
+        return jsonResponse({
+          data: {
+            episodes: [{
+              id: id * 10 + 1,
+              seasonNumber: 1,
+              number: 1,
+              name: id === 901 ? "Beginning" : "The Return",
+              aired: id === 901 ? "2024-01-01" : "2026-07-01",
+            }],
+          },
+          links: { next: null },
+        });
+      }
+      throw new Error(`Unexpected TVDB request: ${url}`);
+    }
+
+    if (url.pathname === "/sync/all-items/anime") return jsonResponse({ anime: library });
+    if (url.pathname === "/sync/activities") {
+      return jsonResponse({ anime: { all: "2026-08-05T00:00:00Z", removed_from_list: null } });
+    }
+    if (url.pathname === "/calendar/v2/anime.json") return jsonResponse({ calendar: [], metadata: {} });
+    if (url.pathname === "/calendar/2026/8/anime.json") return jsonResponse([]);
+    if (url.pathname === "/calendar/2026/7/anime.json") return jsonResponse([]);
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const result = await refresh({
+    clientId: "client",
+    accessToken: "token",
+    tvdbApiKey: "test-key",
+    fetchImpl,
+    now: new Date("2026-08-05T01:00:00Z"),
+    stateFile,
+    outputDirectory,
+    posterBadgesEnabled: false,
+  });
+
+  assert.equal(result.catalog.metas.length, 1);
+  assert.equal(result.catalog.metas[0].id, "simkl-tvdb-unified:901-902");
+  assert.equal(result.catalog.metas[0].name, "Example Anime");
+
+  const metaResponse = JSON.parse(await readFile(
+    path.join(outputDirectory, "meta", "series", "simkl-tvdb-unified:901-902.json"),
+    "utf8",
+  ));
+  assert.deepEqual(metaResponse.meta.videos.map((video) => [video.id, video.season]), [
+    ["tt1111111:1:1", 1],
+    ["tt2222222:1:1", 2],
+  ]);
+  assert.equal(metaResponse.meta.behaviorHints.defaultVideoId, "tt2222222:1:1");
+  const status = JSON.parse(await readFile(path.join(outputDirectory, "status.json"), "utf8"));
+  assert.equal(status.tvdbUnifiedTitles, 1);
+  assert.equal(status.tvdbUnifiedSeasons, 2);
+  assert.equal(status.tvdbCanonicalTrackingEpisodes, 2);
 });

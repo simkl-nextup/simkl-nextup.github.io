@@ -6,6 +6,7 @@ import {
   enrichTvdbMetadata,
   inferTvdbPosition,
   tvdbImage,
+  unifyTvdbMetadata,
 } from "../src/tvdb.mjs";
 
 function jsonResponse(value, status = 200) {
@@ -33,6 +34,9 @@ test("TVDB client logs in once, resolves an IMDb ID, and follows episode paginat
       assert.equal(url.searchParams.get("meta"), "translations");
       return jsonResponse({ data: { id: 900, name: "Example" } });
     }
+    if (url.pathname === "/v4/series/900/translations/eng") {
+      return jsonResponse({ data: { name: "English Example", overview: "English overview" } });
+    }
     if (url.pathname === "/v4/series/900/episodes/default/eng" && url.searchParams.get("page") === "0") {
       return jsonResponse({
         data: { episodes: [{ id: 1, seasonNumber: 1, number: 1 }] },
@@ -51,6 +55,7 @@ test("TVDB client logs in once, resolves an IMDb ID, and follows episode paginat
   const client = createTvdbClient({ apiKey: "test-key", pin: "test-pin", fetchImpl });
   assert.equal(await client.resolveSeriesId({ imdb: "tt1234567" }), 900);
   assert.equal((await client.getSeriesExtended(900)).name, "Example");
+  assert.equal((await client.getSeriesTranslation(900, "eng")).name, "English Example");
   const episodes = await client.getSeriesEpisodes(900, { seasonType: "default", language: "eng" });
   assert.deepEqual(episodes.map((episode) => episode.id), [1, 2]);
   assert.equal(calls.filter(({ url }) => url.pathname === "/v4/login").length, 1);
@@ -97,7 +102,10 @@ test("TVDB metadata uses a canonical IMDb parent, TVDB order, and full episode a
         aired: "2022-01-01",
       },
     ],
-    { now: new Date("2026-08-05T00:00:00Z") },
+    {
+      now: new Date("2026-08-05T00:00:00Z"),
+      translation: { name: "Unified Anime in English", overview: "English series overview" },
+    },
   );
 
   assert.equal(meta.parentId, "tt7654000");
@@ -112,6 +120,8 @@ test("TVDB metadata uses a canonical IMDb parent, TVDB order, and full episode a
   assert.equal(meta.videos[1].thumbnail, "https://artworks.thetvdb.com/banners/episodes/11.jpg");
   assert.equal(meta.videos[2].thumbnail, "https://artworks.thetvdb.com/banners/episodes/21.jpg");
   assert.equal(meta.releaseInfo, "2021-");
+  assert.equal(meta.name, "Unified Anime in English");
+  assert.equal(meta.description, "English series overview");
   assert.equal(tvdbImage("banners/example.jpg"), "https://artworks.thetvdb.com/banners/example.jpg");
 });
 
@@ -166,6 +176,9 @@ test("TVDB enrichment reuses one fetched series template for multiple Simkl seas
         links: { next: null },
       });
     }
+    if (url.pathname === "/v4/series/900/translations/eng") {
+      return jsonResponse({ data: { name: "Unified Anime" } });
+    }
     throw new Error(`Unexpected request: ${url}`);
   };
 
@@ -192,6 +205,63 @@ test("TVDB enrichment reuses one fetched series template for multiple Simkl seas
   assert.equal(result.items["101"]._addonTvdbMeta.parentId, "tt7654000");
   assert.equal(result.items["102"]._addonTvdbMeta.parentId, "tt7654000");
   assert.equal(result.items["102"]._addonTvdbMeta.matchedVideoId, "tt7654000:2:1");
+});
+
+test("TVDB records that share a TMDB show merge into one parent without changing episode IDs", () => {
+  const result = unifyTvdbMetadata({
+    "101": {
+      status: "completed",
+      anime: { title: "Example Anime", year: 2024, ids: { simkl: 101, tvdb: 901 } },
+      _addonVisuals: {
+        tmdbId: 500,
+        tmdbMediaType: "tv",
+        tmdbName: "Example Anime",
+        tmdbSeasons: [{ seasonNumber: 1, airDate: "2024-01-01" }, { seasonNumber: 2, airDate: "2026-01-01" }],
+      },
+      _addonTvdbMeta: {
+        tvdbId: 901,
+        parentId: "tt1111111",
+        name: "Japanese original title",
+        videos: [
+          { id: "tt1111111:1:1", season: 1, episode: 1, released: "2024-01-01T00:00:00.000Z" },
+        ],
+        matchedSeasonNumber: 1,
+        matchedVideoId: "tt1111111:1:1",
+      },
+    },
+    "102": {
+      status: "watching",
+      anime: { title: "Example Anime Season 2", year: 2026, ids: { simkl: 102, tvdb: 902 } },
+      _addonVisuals: {
+        tmdbId: 500,
+        tmdbMediaType: "tv",
+        tmdbName: "Example Anime",
+        tmdbSeasons: [{ seasonNumber: 1, airDate: "2024-01-01" }, { seasonNumber: 2, airDate: "2026-01-01" }],
+      },
+      _addonTvdbMeta: {
+        tvdbId: 902,
+        parentId: "tt2222222",
+        name: "Japanese sequel title",
+        videos: [
+          { id: "tt2222222:1:1", season: 1, episode: 1, released: "2026-01-01T00:00:00.000Z" },
+        ],
+        matchedSeasonNumber: 1,
+        matchedVideoId: "tt2222222:1:1",
+      },
+    },
+  });
+
+  const first = result["101"]._addonTvdbMeta;
+  const second = result["102"]._addonTvdbMeta;
+  assert.equal(first.parentId, "simkl-tvdb-unified:500");
+  assert.equal(second.parentId, "simkl-tvdb-unified:500");
+  assert.equal(first.name, "Example Anime");
+  assert.deepEqual(first.videos.map((video) => [video.id, video.season]), [
+    ["tt1111111:1:1", 1],
+    ["tt2222222:1:1", 2],
+  ]);
+  assert.equal(second.matchedVideoId, "tt2222222:1:1");
+  assert.equal(second.matchedSeasonNumber, 2);
 });
 
 test("disabling TVDB removes cached TVDB metadata and returns to the original per-title behavior", async () => {

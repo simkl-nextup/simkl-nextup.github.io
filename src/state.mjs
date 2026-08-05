@@ -1,4 +1,4 @@
-const STATE_VERSION = 6;
+const STATE_VERSION = 7;
 const INCLUDED_STATUSES = new Set(["watching", "plantowatch", "completed"]);
 
 export function createEmptyState() {
@@ -23,8 +23,8 @@ export function simklIdFor(item) {
 export function normalizeState(input) {
   const base = createEmptyState();
   if (!input || typeof input !== "object") return base;
-  // Version 6 forces one clean rebuild so cached pre-TVDB metadata cannot
-  // keep separate seasonal cards or stale episode identifiers alive.
+  // Version 7 forces one clean rebuild so cached TVDB records created before
+  // English translations and cross-record season grouping cannot survive.
   if (input.version !== STATE_VERSION) return base;
   return {
     ...base,

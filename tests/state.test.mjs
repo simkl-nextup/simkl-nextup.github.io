@@ -35,13 +35,13 @@ test("ID snapshot prunes items removed from the Simkl library", () => {
   assert.deepEqual(Object.keys(state.items), ["2"]);
 });
 
-test("an older cache triggers a clean version 6 bootstrap", () => {
+test("an older cache triggers a clean version 7 bootstrap", () => {
   const state = normalizeState({
     version: 4,
     lastAnimeActivity: "2026-08-01T00:00:00Z",
     items: { "1": item(1) },
   });
-  assert.equal(state.version, 6);
+  assert.equal(state.version, 7);
   assert.equal(state.lastAnimeActivity, null);
   assert.deepEqual(state.items, {});
 });

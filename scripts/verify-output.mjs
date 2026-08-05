@@ -27,7 +27,11 @@ function validEpisodeId(parentId, video) {
   const season = Number(video?.season);
   const episode = Number(video?.episode);
   if (!Number.isInteger(season) || season < 0 || !Number.isInteger(episode) || episode < 1) return false;
-  return video.id === `${parentId}:${season}:${episode}`;
+  if (video.id === `${parentId}:${season}:${episode}`) return true;
+  if (parentId.startsWith("simkl-tvdb-unified:")) {
+    return /^(?:tt\d+|tvdb:\d+):\d+:\d+$/.test(String(video.id ?? ""));
+  }
+  return false;
 }
 
 let fullMetadataFiles = 0;

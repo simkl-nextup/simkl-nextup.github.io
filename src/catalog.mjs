@@ -183,6 +183,13 @@ function findDefaultVideoId(seriesMeta, info) {
   return matches.length === 1 ? matches[0].id : null;
 }
 
+function trackingEpisodeCount(seriesMeta) {
+  if (!Array.isArray(seriesMeta?.videos)) return 0;
+  return seriesMeta.videos.filter((video) =>
+    /^(?:tt\d+|tvdb:\d+):\d+:\d+$/.test(String(video?.id ?? "")),
+  ).length;
+}
+
 function buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo }) {
   if (item.status === "plantowatch") {
     return `From your Plan to Watch list: latest release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
@@ -297,7 +304,7 @@ ${seriesMeta.description}` : description,
       unified: Boolean(seriesMeta?.videos?.length),
       unifiedSeasonCount: seriesMeta?.seasonCount ?? 0,
       unifiedEpisodeCount: seriesMeta?.episodeCount ?? 0,
-      unifiedTrackingEpisodeCount: seriesMeta?.parentId?.startsWith("tt") ? seriesMeta?.episodeCount ?? 0 : 0,
+      unifiedTrackingEpisodeCount: trackingEpisodeCount(seriesMeta),
     };
 
     const existing = includedById.get(id);
@@ -354,7 +361,7 @@ export function buildManifest() {
       {
         name: "meta",
         types: ["series"],
-        idPrefixes: ["tt", "tvdb:", "tmdb:", "kitsu:", "mal:", "simkl:"],
+        idPrefixes: ["simkl-tvdb-unified:", "tt", "tvdb:", "tmdb:", "kitsu:", "mal:", "simkl:"],
       },
     ],
     types: ["series"],
