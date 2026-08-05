@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
-const POSTER_BADGE_STYLE_VERSION = 5;
+const POSTER_BADGE_STYLE_VERSION = 6;
 const MAX_POSTER_BYTES = 12 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 const ALLOWED_POSTER_HOSTS = new Set([
@@ -45,44 +45,87 @@ function escapeXml(value) {
     .replaceAll("'", "&apos;");
 }
 
-function normalizedEpisodeLabel(value) {
+function compactEpisodeLabel(value) {
   const label = String(value ?? "").trim();
-  const seasonEpisode = label.match(/^S(\d+)E(\d+)$/i);
-  if (seasonEpisode) {
-    return `S${seasonEpisode[1].padStart(2, "0")} · E${seasonEpisode[2].padStart(2, "0")}`;
-  }
-  const episode = label.match(/^Ep\.\s*(\d+)$/i);
+  const seasonEpisode = label.match(/^S0*(\d+)E0*(\d+)$/i)
+    || label.match(/^S0*(\d+)\s*[·-]\s*E0*(\d+)$/i);
+  if (seasonEpisode) return `S${seasonEpisode[1]} E${seasonEpisode[2]}`;
+  const episode = label.match(/^(?:Ep\.?|EP)\s*(\d+)$/i);
   if (episode) return `EP ${episode[1]}`;
-  return label.toUpperCase().slice(0, 18);
+  return label.toUpperCase().slice(0, 16);
 }
 
 function statusRibbonWidth(label) {
-  return Math.max(260, Math.round(label.length * 21.5 + 68));
+  return Math.max(270, Math.min(450, Math.round(label.length * 23 + 70)));
 }
 
-function episodeRibbonWidth(label) {
-  return Math.max(144, Math.round(label.length * 18 + 48));
+function infoRibbonWidth(cue, episode) {
+  return Math.max(178, Math.min(360, Math.round(cue.length * 13 + episode.length * 18 + 64)));
 }
 
-export function buildPosterBadgeSvg({ status, episode }) {
+function infoRows({ status, episode, latestEpisode, nextEpisode }) {
+  const fallback = compactEpisodeLabel(episode);
+  const latest = compactEpisodeLabel(latestEpisode || episode);
+  const next = compactEpisodeLabel(nextEpisode || episode);
+
+  if (status === "watching") {
+    return [
+      {
+        cue: "NEW",
+        episode: latest || fallback,
+        gradient: "newInfoGradient",
+        accent: "#65FFD0",
+      },
+      {
+        cue: "NEXT",
+        episode: next || fallback,
+        gradient: "nextInfoGradient",
+        accent: "#63C7FF",
+      },
+    ];
+  }
+
+  return [{
+    cue: status === "plantowatch" ? "LATEST" : "NEW",
+    episode: latest || fallback,
+    gradient: "episodeGradient",
+    accent: status === "plantowatch" ? "#FFD66B" : "#B6A8FF",
+  }];
+}
+
+function infoRibbonSvg(row, index) {
+  const top = 110 + index * 70;
+  const bottom = top + 58;
+  const middle = (top + bottom) / 2;
+  const width = infoRibbonWidth(row.cue, row.episode);
+  const body = width - 18;
+  const cueWidth = Math.max(66, Math.round(row.cue.length * 14 + 24));
+  const dividerX = Math.min(cueWidth, body - 72);
+  const episodeX = dividerX + (body - dividerX) / 2;
+
+  return `
+    <g>
+      <path d="M0 ${top} H${body} L${width} ${middle} L${body} ${bottom} H0 Z" fill="url(#${row.gradient})" stroke="#FFFFFF" stroke-opacity="0.46" stroke-width="2"/>
+      <path d="M0 ${top} H8 V${bottom} H0 Z" fill="${row.accent}"/>
+      <path d="M${dividerX} ${top + 10} V${bottom - 10}" stroke="#FFFFFF" stroke-opacity="0.46" stroke-width="2"/>
+      <text x="${Math.round(dividerX / 2 + 4)}" y="${top + 38}" class="infoCue" text-anchor="middle">${escapeXml(row.cue)}</text>
+      <text x="${Math.round(episodeX)}" y="${top + 40}" class="infoEpisode" text-anchor="middle">${escapeXml(row.episode)}</text>
+    </g>`;
+}
+
+export function buildPosterBadgeSvg({ status, episode, latestEpisode, nextEpisode }) {
   const style = STATUS_STYLES[status];
   if (!style) throw new Error(`Unsupported poster badge status: ${status}`);
   const statusLabel = style.label;
-  const episodeLabel = normalizedEpisodeLabel(episode);
-  if (!episodeLabel) throw new Error("Poster badge episode label is required.");
+  const rows = infoRows({ status, episode, latestEpisode, nextEpisode });
+  if (!rows.every((row) => row.episode)) throw new Error("Poster badge episode label is required.");
 
   const statusWidth = statusRibbonWidth(statusLabel);
-  const episodeWidth = episodeRibbonWidth(episodeLabel);
   const statusTop = 18;
   const statusBottom = 96;
   const statusPoint = statusWidth;
   const statusBody = statusWidth - 22;
-  const episodeTop = 108;
-  const episodeBottom = 176;
-  const episodePoint = episodeWidth;
-  const episodeBody = episodeWidth - 18;
   const statusMiddle = (statusTop + statusBottom) / 2;
-  const episodeMiddle = (episodeTop + episodeBottom) / 2;
 
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" viewBox="0 0 ${POSTER_WIDTH} ${POSTER_HEIGHT}">
   <defs>
@@ -91,36 +134,49 @@ export function buildPosterBadgeSvg({ status, episode }) {
       <stop offset="52%" stop-color="${style.middle}"/>
       <stop offset="100%" stop-color="${style.end}"/>
     </linearGradient>
+    <linearGradient id="newInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#11694F"/>
+      <stop offset="56%" stop-color="#083F34"/>
+      <stop offset="100%" stop-color="#021A17"/>
+    </linearGradient>
+    <linearGradient id="nextInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#183C5F"/>
+      <stop offset="56%" stop-color="#10243A"/>
+      <stop offset="100%" stop-color="#050A12"/>
+    </linearGradient>
     <linearGradient id="episodeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#252A35"/>
-      <stop offset="52%" stop-color="#10131A"/>
-      <stop offset="100%" stop-color="#020306"/>
+      <stop offset="0%" stop-color="#303641"/>
+      <stop offset="52%" stop-color="#151922"/>
+      <stop offset="100%" stop-color="#030407"/>
     </linearGradient>
     <linearGradient id="glossGradient" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
-      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.52"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.55"/>
       <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
     </linearGradient>
     <clipPath id="statusClip">
       <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z"/>
     </clipPath>
-    <clipPath id="episodeClip">
-      <path d="M0 ${episodeTop} H${episodeBody} L${episodePoint} ${episodeMiddle} L${episodeBody} ${episodeBottom} H0 Z"/>
-    </clipPath>
-    <filter id="shadow" x="-30%" y="-35%" width="170%" height="190%">
-      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000000" flood-opacity="0.72"/>
+    <filter id="ribbonShadow" x="-30%" y="-35%" width="175%" height="200%">
+      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#000000" flood-opacity="0.78"/>
     </filter>
+    <filter id="textShadow" x="-30%" y="-40%" width="170%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.8" flood-color="#000000" flood-opacity="1"/>
+    </filter>
+    <style>
+      .statusText,.infoCue,.infoEpisode{font-family:Arial,Helvetica,sans-serif;font-weight:900;fill:#FFFFFF;stroke:#000000;stroke-opacity:.96;paint-order:stroke fill;filter:url(#textShadow)}
+      .statusText{font-size:39px;stroke-width:3.4px;letter-spacing:.1px}
+      .infoCue{font-size:22px;stroke-width:2.5px;letter-spacing:.7px}
+      .infoEpisode{font-size:31px;stroke-width:2.8px;letter-spacing:.2px}
+    </style>
   </defs>
-  <g filter="url(#shadow)" font-family="Arial Black, Inter, Arial, Helvetica, sans-serif" font-weight="900">
-    <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z" fill="url(#statusGradient)" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="1.5"/>
-    <path d="M${Math.round(statusWidth * 0.24)} ${statusTop - 18} L${Math.round(statusWidth * 0.53)} ${statusTop - 18} L${Math.round(statusWidth * 0.31)} ${statusBottom + 18} L${Math.round(statusWidth * 0.02)} ${statusBottom + 18} Z" fill="url(#glossGradient)" opacity="0.62" clip-path="url(#statusClip)"/>
-    <path d="M0 ${statusTop + 2} H${statusBody - 2}" fill="none" stroke="#FFFFFF" stroke-opacity="0.58" stroke-width="3"/>
-    <path d="M0 ${statusBottom - 2} H${statusBody - 2}" fill="none" stroke="#000000" stroke-opacity="0.24" stroke-width="3"/>
-    <text x="${statusBody / 2}" y="70" fill="#FFFFFF" stroke="#000000" stroke-opacity="0.2" stroke-width="1.2" paint-order="stroke fill" text-anchor="middle" font-size="39" letter-spacing="0.15">${escapeXml(statusLabel)}</text>
-    <path d="M0 ${episodeTop} H${episodeBody} L${episodePoint} ${episodeMiddle} L${episodeBody} ${episodeBottom} H0 Z" fill="url(#episodeGradient)" stroke="#FFFFFF" stroke-opacity="0.36" stroke-width="1.5"/>
-    <path d="M${Math.round(episodeWidth * 0.18)} ${episodeTop - 12} L${Math.round(episodeWidth * 0.5)} ${episodeTop - 12} L${Math.round(episodeWidth * 0.28)} ${episodeBottom + 12} L0 ${episodeBottom + 12} Z" fill="url(#glossGradient)" opacity="0.34" clip-path="url(#episodeClip)"/>
-    <path d="M0 ${episodeTop + 2} H${episodeBody - 2}" fill="none" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="2.5"/>
-    <text x="${episodeBody / 2}" y="${episodeTop + 47}" fill="#FFFFFF" stroke="#000000" stroke-opacity="0.28" stroke-width="1.1" paint-order="stroke fill" text-anchor="middle" font-size="35" letter-spacing="0.1">${escapeXml(episodeLabel)}</text>
+  <g filter="url(#ribbonShadow)">
+    <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z" fill="url(#statusGradient)" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="2"/>
+    <path d="M${Math.round(statusWidth * 0.24)} ${statusTop - 18} L${Math.round(statusWidth * 0.53)} ${statusTop - 18} L${Math.round(statusWidth * 0.31)} ${statusBottom + 18} L${Math.round(statusWidth * 0.02)} ${statusBottom + 18} Z" fill="url(#glossGradient)" opacity="0.58" clip-path="url(#statusClip)"/>
+    <path d="M0 ${statusTop + 2} H${statusBody - 2}" fill="none" stroke="#FFFFFF" stroke-opacity="0.72" stroke-width="3"/>
+    <path d="M0 ${statusBottom - 2} H${statusBody - 2}" fill="none" stroke="#000000" stroke-opacity="0.46" stroke-width="3"/>
+    <text x="${statusBody / 2}" y="70" class="statusText" text-anchor="middle">${escapeXml(statusLabel)}</text>
+    ${rows.map(infoRibbonSvg).join("")}
   </g>
 </svg>`);
 }
@@ -166,7 +222,9 @@ function posterFileName(meta, badge) {
     id: meta.id,
     poster: meta.poster,
     status: badge.status,
-    episode: normalizedEpisodeLabel(badge.episode),
+    episode: compactEpisodeLabel(badge.episode),
+    latestEpisode: compactEpisodeLabel(badge.latestEpisode),
+    nextEpisode: compactEpisodeLabel(badge.nextEpisode),
   });
   return `${createHash("sha256").update(signature).digest("hex").slice(0, 24)}.webp`;
 }

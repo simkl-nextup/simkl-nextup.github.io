@@ -1,28 +1,23 @@
 {
   "id": "community.simkl.new-anime-episodes",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "name": "Simkl Anime Up Next",
   "description": "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
   "resources": [
     "catalog",
-    {
-      "name": "meta",
-      "types": [
-        "series"
-      ],
-      "idPrefixes": [
-        "simkl-tvdb-unified:",
-        "tt",
-        "tvdb:",
-        "tmdb:",
-        "kitsu:",
-        "mal:",
-        "simkl:"
-      ]
-    }
+    "meta"
   ],
   "types": [
     "series"
+  ],
+  "idPrefixes": [
+    "simkl-tvdb-unified:",
+    "tt",
+    "tvdb:",
+    "tmdb:",
+    "kitsu:",
+    "mal:",
+    "simkl:"
   ],
   "catalogs": [
     {
@@ -32,6 +27,7 @@
     }
   ],
   "behaviorHints": {
-    "configurable": false
+    "configurable": false,
+    "newEpisodeNotifications": true
   }
 }

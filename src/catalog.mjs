@@ -261,7 +261,7 @@ export function buildCatalog(items, options = {}) {
     const background = seriesMeta?.background || visuals.background || fanartUrl(media.fanart);
     const defaultVideoId = findDefaultVideoId(seriesMeta, info);
 
-    const preview = {
+    const basePreview = {
       id,
       type: "series",
       name,
@@ -289,7 +289,28 @@ ${seriesMeta.description}` : description,
           links,
           behaviorHints: defaultVideoId ? { defaultVideoId } : undefined,
         }
-      : preview;
+      : basePreview;
+
+    // Nuvio Desktop currently has a less complete custom-meta path than the
+    // Android clients. Publishing the unified videos in the catalog preview
+    // gives it the same season data even when it does not perform the follow-up
+    // /meta request for a private parent ID. Standards-compliant clients still
+    // receive the dedicated full metadata response below.
+    const preview = seriesMeta?.videos?.length
+      ? {
+          ...basePreview,
+          releaseInfo: detail.releaseInfo,
+          genres: detail.genres,
+          runtime: detail.runtime,
+          videos: detail.videos,
+          behaviorHints: detail.behaviorHints,
+        }
+      : basePreview;
+
+    const latestEpisode = latestAiredInfo?.episode
+      ? episodeLabel(latestAiredInfo)
+      : episode;
+    const nextEpisode = item.status === "watching" ? episode : null;
 
     const entry = {
       airedAt: sortAt,
@@ -298,6 +319,8 @@ ${seriesMeta.description}` : description,
         id,
         status: item.status,
         episode,
+        latestEpisode,
+        nextEpisode,
       },
       meta: preview,
       detail,
@@ -356,15 +379,9 @@ export function buildManifest() {
     version: APP_VERSION,
     name: "Simkl Anime Up Next",
     description: "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
-    resources: [
-      "catalog",
-      {
-        name: "meta",
-        types: ["series"],
-        idPrefixes: ["simkl-tvdb-unified:", "tt", "tvdb:", "tmdb:", "kitsu:", "mal:", "simkl:"],
-      },
-    ],
+    resources: ["catalog", "meta"],
     types: ["series"],
+    idPrefixes: ["simkl-tvdb-unified:", "tt", "tvdb:", "tmdb:", "kitsu:", "mal:", "simkl:"],
     catalogs: [
       {
         type: "series",
@@ -374,6 +391,7 @@ export function buildManifest() {
     ],
     behaviorHints: {
       configurable: false,
+      newEpisodeNotifications: true,
     },
   };
 }

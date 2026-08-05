@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCatalog, chooseCatalogId, mergeCalendar } from "../src/catalog.mjs";
+import { buildCatalog, buildManifest, chooseCatalogId, mergeCalendar } from "../src/catalog.mjs";
 
 const watching = (overrides = {}) => ({
   status: "watching",
@@ -62,9 +62,27 @@ test("catalog combines Watching and Plan to Watch titles with aired episodes", (
   assert.equal(catalog.metas[0].releaseInfo, "Ep. 5");
   assert.equal(catalog.metas[1].releaseInfo, "Ep. 4");
   assert.deepEqual(posterBadges, [
-    { id: "tt1234567", status: "watching", episode: "Ep. 5" },
-    { id: "tt3333333", status: "plantowatch", episode: "Ep. 4" },
-    { id: "tt4444444", status: "plantowatch", episode: "Ep. 7" },
+    {
+      id: "tt1234567",
+      status: "watching",
+      episode: "Ep. 5",
+      latestEpisode: "Ep. 5",
+      nextEpisode: "Ep. 5",
+    },
+    {
+      id: "tt3333333",
+      status: "plantowatch",
+      episode: "Ep. 4",
+      latestEpisode: "Ep. 4",
+      nextEpisode: null,
+    },
+    {
+      id: "tt4444444",
+      status: "plantowatch",
+      episode: "Ep. 7",
+      latestEpisode: "Ep. 7",
+      nextEpisode: null,
+    },
   ]);
 });
 
@@ -253,10 +271,12 @@ test("a new release bumps a behind Watching title while keeping its next-unwatch
     next_to_watch_info: { episode: 2, date: "2026-08-02T08:00:00Z" },
     anime: { title: "Other Show", ids: { simkl: 104, imdb: "tt2222222" } },
   });
-  const { catalog } = buildCatalog({ "101": behind, "104": other }, { now: "2026-08-02T12:00:00Z" });
+  const { catalog, posterBadges } = buildCatalog({ "101": behind, "104": other }, { now: "2026-08-02T12:00:00Z" });
   assert.deepEqual(catalog.metas.map((meta) => meta.name), ["Example Anime", "Other Show"]);
   assert.equal(catalog.metas[0].releaseInfo, "Ep. 5");
   assert.match(catalog.metas[0].description, /Latest release: Ep\. 10/);
+  assert.equal(posterBadges[0].latestEpisode, "Ep. 10");
+  assert.equal(posterBadges[0].nextEpisode, "Ep. 5");
 });
 
 test("TVDB metadata collapses separate Simkl seasons into one canonical show with a default episode", () => {
@@ -293,6 +313,17 @@ test("TVDB metadata collapses separate Simkl seasons into one canonical show wit
   assert.equal(result.catalog.metas[0].id, "tt7654000");
   assert.equal(result.catalog.metas[0].name, "Unified Anime");
   assert.equal(result.metadata[0].videos.length, 4);
+  assert.equal(result.catalog.metas[0].videos.length, 4);
+  assert.equal(result.catalog.metas[0].behaviorHints.defaultVideoId, "tt7654000:3:2");
   assert.equal(result.metadata[0].behaviorHints.defaultVideoId, "tt7654000:3:2");
   assert.deepEqual(result.unifiedStats, { titles: 1, seasons: 3, episodes: 4, trackingEpisodes: 4 });
+});
+
+
+test("manifest uses the broadly supported top-level meta declaration for desktop clients", () => {
+  const manifest = buildManifest();
+  assert.deepEqual(manifest.resources, ["catalog", "meta"]);
+  assert.ok(manifest.idPrefixes.includes("simkl-tvdb-unified:"));
+  assert.ok(manifest.idPrefixes.includes("tt"));
+  assert.equal(manifest.behaviorHints.newEpisodeNotifications, true);
 });

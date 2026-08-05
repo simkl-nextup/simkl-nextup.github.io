@@ -9,8 +9,15 @@ const manifest = JSON.parse(await readFile(path.join(publicDir, "manifest.json")
 const catalog = JSON.parse(await readFile(path.join(publicDir, "catalog", "series", `${CATALOG_ID}.json`), "utf8"));
 const setupHtml = await readFile(path.join(publicDir, "setup.html"), "utf8");
 
-if (!manifest.resources || !manifest.catalogs?.some((item) => item.id === CATALOG_ID)) {
-  throw new Error("Manifest does not declare the expected catalog.");
+if (!Array.isArray(manifest.resources)
+  || !manifest.resources.includes("catalog")
+  || !manifest.resources.includes("meta")
+  || !manifest.catalogs?.some((item) => item.id === CATALOG_ID)) {
+  throw new Error("Manifest does not declare the expected catalog and metadata resources.");
+}
+if (!Array.isArray(manifest.idPrefixes)
+  || !manifest.idPrefixes.includes("simkl-tvdb-unified:")) {
+  throw new Error("Manifest is missing the unified metadata ID prefix required by desktop clients.");
 }
 if (!Array.isArray(catalog.metas)) throw new Error("Catalog response must contain a metas array.");
 
@@ -53,6 +60,19 @@ for (const preview of catalog.metas) {
   if (!meta.videos) continue;
   if (!Array.isArray(meta.videos) || !meta.videos.length) {
     throw new Error(`Unified metadata for ${preview.id} has no episodes.`);
+  }
+  if (preview.id.startsWith("simkl-tvdb-unified:")) {
+    if (!Array.isArray(preview.videos) || !preview.videos.length) {
+      throw new Error(`Unified catalog preview for ${preview.id} has no inline desktop episode fallback.`);
+    }
+    const previewIds = preview.videos.map((video) => video.id);
+    const metadataIds = meta.videos.map((video) => video.id);
+    if (JSON.stringify(previewIds) !== JSON.stringify(metadataIds)) {
+      throw new Error(`Unified catalog preview episodes differ from dedicated metadata for ${preview.id}.`);
+    }
+    if (preview.behaviorHints?.defaultVideoId !== meta.behaviorHints?.defaultVideoId) {
+      throw new Error(`Unified catalog preview default episode differs from dedicated metadata for ${preview.id}.`);
+    }
   }
   const seen = new Set();
   for (const video of meta.videos) {

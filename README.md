@@ -6,9 +6,9 @@ Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` post
 
 Optional TheTVDB enrichment adds English series/episode metadata, high-resolution episode stills, aired-order seasons, and cross-record grouping. When TheTVDB stores anime sequels as separate series, the addon can merge matching records into one Nuvio detail page while retaining each source episode ID so watched-state sync continues to work.
 
-Each generated poster includes two large left-edge ribbons. The first identifies the source as green **NEW EPISODE** for Watching, gold **PLAN TO WATCH**, or purple **NEW SEASON** for a revived Completed title. The second shows the relevant episode, such as **EP 5** or **S03 · E06**. Heavy lettering, layered gradients, a gloss streak, highlighted edges, and deep shadows keep the labels readable on Nuvio's compact cards. The ribbons sit together at the top-left so Nuvio's native top-right checkmark remains unobstructed.
+Each generated poster uses large left-edge ribbons. Watching cards now show three clearly labelled rows: green **NEW EPISODE**, a dark-green **NEW · EP 11** row for the latest aired release, and a blue **NEXT · EP 5** row for your next unwatched episode. Plan to Watch and revived Completed cards use one labelled detail row beneath their gold or purple status ribbon. Thick black text outlines plus a compact drop shadow improve legibility on television screens without covering Nuvio's native top-right checkmark.
 
-For Watching titles, the card still identifies your next unwatched episode. The sorting timestamp comes from the show's latest aired episode, so a title is bumped even when you are several episodes behind. Plan to Watch titles display their latest aired episode and are bumped on every subsequent release. A Completed title re-enters only when the calendar reports an episode number beyond its saved watched count, then disappears after the new episode is recorded. Future-only titles remain excluded until an episode actually airs.
+For Watching titles, the poster therefore distinguishes the latest available episode from the episode you should play next. The sorting timestamp comes from the show's latest aired episode, so a title is bumped even when you are several episodes behind. Plan to Watch titles display their latest aired episode and are bumped on every subsequent release. A Completed title re-enters only when the calendar reports an episode number beyond its saved watched count, then disappears after the new episode is recorded. Future-only titles remain excluded until an episode actually airs.
 
 Anime seasons are often separate Simkl titles. TheTVDB mode now also scans completed sibling entries in your Simkl library, allowing an active sequel card to expose earlier seasons. The catalog still only surfaces titles that meet the Up Next rules; completed siblings are used as metadata sources rather than added as extra cards.
 
@@ -134,6 +134,7 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 - Watching, Plan to Watch, and Completed library entries are metadata-enriched so an active sequel can be joined to older completed seasons without publishing those older entries as separate cards.
 - If multiple TVDB records map to the same TMDB television show, they are merged using that shared show ID. Without TMDB, a conservative English-title/season-marker fallback can merge obvious sequel records.
 - Merged detail pages use a private parent ID but preserve the original IMDb/TVDB episode IDs. This is intentional: changing those episode IDs would break Nuvio watched markers.
+- For broader desktop-client compatibility, the manifest declares `meta` through the classic top-level resource list and publishes the supported ID prefixes at the manifest root. Unified episode lists and the default episode are also embedded in each catalog preview, in addition to the dedicated `/meta/series/{id}.json` response.
 - Simkl artwork remains the automatic fallback when TMDB has no match or no TMDB token is configured.
 - The workflow downloads each published poster from an allowlisted HTTPS image host, adds the status and episode badges, and serves the resulting WebP from your own Pages site.
 - Poster filenames are deterministic. If an image is unavailable or cannot be processed, that card keeps its original clean poster instead of failing the catalog deployment.
@@ -163,6 +164,17 @@ Version 1.8.1 fixes two problems in the first TVDB build:
 - separate TVDB sequel records can be merged into one parent page, while every episode keeps its original IMDb/TVDB tracking ID.
 
 The private state version advances to 7, so the first deployment after replacing the files performs a clean Simkl/metadata rebuild. That first run can take longer because completed sibling entries are enriched once for grouping. Keep `TVDB_LANGUAGE` blank or set it to `eng`, run the refresh workflow, and then clear Nuvio's metadata cache or remove/re-add the addon.
+
+## Updating from 1.8.1 to 1.8.2
+
+Version 1.8.2 targets Nuvio Desktop's less complete custom-metadata path and improves television readability:
+
+- the manifest now uses the classic top-level `catalog` and `meta` resource declaration with root-level ID prefixes;
+- a unified card carries its complete season/episode list and default episode directly in the catalog preview as a fallback, while the normal dedicated metadata file remains available;
+- Watching posters separately label the latest aired release as **NEW** and your next unwatched episode as **NEXT**;
+- all status and episode lettering has a thicker black outline and stronger shadow for TV displays.
+
+After replacing the repository files, run the refresh workflow, then fully remove and re-add the addon or clear metadata/image caches on Nuvio Desktop. The poster style version changed, so the generated image URLs will also change automatically. If grouping still works on Android but not Desktop after a clean re-import, the remaining issue is in the Desktop client's handling of custom parent metadata rather than the TVDB mapping generated by this addon.
 
 ## Local development
 
