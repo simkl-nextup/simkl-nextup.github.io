@@ -158,51 +158,6 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function seasonFromMediaTitle(title) {
-  const value = String(title ?? "");
-  const match = value.match(/(?:^|\s)(?:season|series)\s*(\d{1,2})(?:\s|$|:|-)/i)
-    || value.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+season\b/i);
-  return match ? finiteNumber(match[1]) : null;
-}
-
-function videoById(seriesMeta, id) {
-  if (!id || !Array.isArray(seriesMeta?.videos)) return null;
-  return seriesMeta.videos.find((video) => video.id === id) ?? null;
-}
-
-function badgeEpisodeLabel(info, seriesMeta, mediaTitle, { preferMatchedVideo = false } = {}) {
-  let episode = finiteNumber(info?.episode);
-  if (episode === null) return episodeLabel(info);
-
-  if (preferMatchedVideo) {
-    const matched = videoById(seriesMeta, seriesMeta?.matchedVideoId);
-    if (matched && finiteNumber(matched.season) !== null && finiteNumber(matched.episode) !== null) {
-      return `S${finiteNumber(matched.season)} E${finiteNumber(matched.episode)}`;
-    }
-  }
-
-  let season = finiteNumber(info?.season);
-  if (season === null) {
-    season = finiteNumber(seriesMeta?.matchedSeasonNumber);
-    if (season !== null) episode += finiteNumber(seriesMeta?.matchedEpisodeOffset) ?? 0;
-  }
-  if (season === null) season = seasonFromMediaTitle(mediaTitle);
-
-  if (season === null && Array.isArray(seriesMeta?.videos)) {
-    const regularSeasons = [...new Set(
-      seriesMeta.videos
-        .map((video) => finiteNumber(video?.season))
-        .filter((value) => value !== null && value > 0),
-    )];
-    if (regularSeasons.length === 1) season = regularSeasons[0];
-  }
-
-  // A standalone anime title without an explicit season is conventionally its
-  // first season. TVDB-enriched grouped titles normally resolve above.
-  if (season === null) season = 1;
-  return `S${season} E${episode}`;
-}
-
 function findDefaultVideoId(seriesMeta, info) {
   if (seriesMeta?.matchedVideoId) return seriesMeta.matchedVideoId;
   if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
@@ -302,7 +257,7 @@ export function buildCatalog(items, options = {}) {
     const links = buildLinks(item, visuals, seriesMeta);
     const description = buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo });
     const name = seriesMeta?.name || media.title;
-    const poster = seriesMeta?.poster || visuals.poster || posterUrl(media.poster);
+    const poster = visuals.poster || seriesMeta?.poster || posterUrl(media.poster);
     const background = seriesMeta?.background || visuals.background || fanartUrl(media.fanart);
     const defaultVideoId = findDefaultVideoId(seriesMeta, info);
 
@@ -352,14 +307,10 @@ ${seriesMeta.description}` : description,
         }
       : basePreview;
 
-    const primaryBadgeEpisode = badgeEpisodeLabel(info, seriesMeta, media.title, {
-      preferMatchedVideo: true,
-    });
-    const latestBadgeInfo = latestAiredInfo?.episode ? latestAiredInfo : info;
-    const latestEpisode = badgeEpisodeLabel(latestBadgeInfo, seriesMeta, media.title, {
-      preferMatchedVideo: Number(latestBadgeInfo?.episode) === Number(info?.episode),
-    });
-    const nextEpisode = item.status === "watching" ? primaryBadgeEpisode : null;
+    const latestEpisode = latestAiredInfo?.episode
+      ? episodeLabel(latestAiredInfo)
+      : episode;
+    const nextEpisode = item.status === "watching" ? episode : null;
 
     const entry = {
       airedAt: sortAt,
@@ -367,9 +318,10 @@ ${seriesMeta.description}` : description,
       posterBadge: {
         id,
         status: item.status,
-        episode: primaryBadgeEpisode,
+        episode,
         latestEpisode,
         nextEpisode,
+        ...(visuals.logo ? { logo: visuals.logo } : {}),
       },
       meta: preview,
       detail,

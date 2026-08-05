@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
-const POSTER_BADGE_STYLE_VERSION = 7;
+const POSTER_BADGE_STYLE_VERSION = 8;
 const MAX_POSTER_BYTES = 12 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 const ALLOWED_POSTER_HOSTS = new Set([
@@ -15,24 +15,39 @@ const ALLOWED_POSTER_HOSTS = new Set([
   "wsrv.nl",
 ]);
 
+// BTTTR-inspired hierarchy for television cards:
+//   1. one compact, centred state pill at the very top;
+//   2. a separate title logo above the lower controls;
+//   3. episode numbers anchored to the bottom edge.
+const BADGE_LAYOUT = {
+  margin: 14,
+  statusY: 14,
+  statusHeight: 64,
+  statusRadius: 11,
+  detailY: 658,
+  detailWidth: 472,
+  detailHeight: 78,
+  detailRadius: 12,
+  logoMaxWidth: 410,
+  logoMaxHeight: 132,
+  logoBottomGap: 18,
+};
+
 const STATUS_STYLES = {
   watching: {
-    label: "NEW EPISODE",
-    start: "#12D98A",
-    middle: "#0FAE73",
-    end: "#087A56",
+    label: "New Episode",
+    accent: "#19D993",
+    detailAccent: "#73FFD3",
   },
   plantowatch: {
-    label: "PLAN TO WATCH",
-    start: "#FFC247",
-    middle: "#ED970A",
-    end: "#B85C00",
+    label: "Plan to Watch",
+    accent: "#FFC14A",
+    detailAccent: "#FFD877",
   },
   completed: {
-    label: "NEW SEASON",
-    start: "#9B8CFF",
-    middle: "#765BFF",
-    end: "#5136D5",
+    label: "New Season",
+    accent: "#A99AFF",
+    detailAccent: "#C9C0FF",
   },
 };
 
@@ -55,13 +70,22 @@ function compactEpisodeLabel(value) {
   return label.toUpperCase().slice(0, 16);
 }
 
-function statusRibbonWidth(label) {
-  return Math.max(270, Math.min(450, Math.round(label.length * 23 + 70)));
+function statusPanelWidth(label) {
+  const estimated = Math.ceil(label.length * 23 + 54);
+  return Math.max(278, Math.min(374, estimated));
 }
 
-function infoRibbonWidth(cue, episode, rowCount) {
-  if (rowCount === 2) return 238;
-  return Math.max(255, Math.min(370, Math.round(cue.length * 12 + episode.length * 17 + 80)));
+function statusFontSize(label) {
+  return label.length > 12 ? 35 : 39;
+}
+
+function episodeFontSize(label, cellCount) {
+  const cellWidth = BADGE_LAYOUT.detailWidth / cellCount;
+  const maxSize = cellCount === 1 ? 39 : 35;
+  const minSize = cellCount === 1 ? 31 : 28;
+  const availableWidth = cellWidth - 24;
+  const estimated = Math.floor(availableWidth / (Math.max(1, label.length) * 0.6));
+  return Math.max(minSize, Math.min(maxSize, estimated));
 }
 
 function infoRows({ status, episode, latestEpisode, nextEpisode }) {
@@ -71,118 +95,135 @@ function infoRows({ status, episode, latestEpisode, nextEpisode }) {
 
   if (status === "watching") {
     return [
-      {
-        cue: "NEW",
-        episode: latest || fallback,
-        gradient: "newInfoGradient",
-        accent: "#65FFD0",
-      },
-      {
-        cue: "NEXT",
-        episode: next || fallback,
-        gradient: "nextInfoGradient",
-        accent: "#63C7FF",
-      },
+      { cue: "NEW", episode: latest || fallback, accent: "#73FFD3" },
+      { cue: "NEXT", episode: next || fallback, accent: "#72CEFF" },
     ];
   }
 
   return [{
-    cue: status === "plantowatch" ? "LATEST" : "START",
+    cue: status === "plantowatch" ? "LATEST" : "NEW",
     episode: latest || fallback,
-    gradient: "episodeGradient",
-    accent: status === "plantowatch" ? "#FFD66B" : "#B6A8FF",
+    accent: STATUS_STYLES[status].detailAccent,
   }];
 }
 
-function infoRibbonSvg(row, index, rowCount) {
-  const top = 110;
-  const bottom = 174;
-  const middle = (top + bottom) / 2;
-  const gap = 12;
-  const x = rowCount === 2 ? index * (238 + gap) : 0;
-  const width = infoRibbonWidth(row.cue, row.episode, rowCount);
-  const body = width - 16;
-  const cueWidth = Math.max(72, Math.round(row.cue.length * 12 + 24));
-  const dividerX = Math.min(cueWidth, body - 94);
-  const episodeX = dividerX + (body - dividerX) / 2;
+function detailPanelSvg(rows) {
+  const {
+    margin,
+    detailY,
+    detailWidth,
+    detailHeight,
+    detailRadius,
+  } = BADGE_LAYOUT;
+  const cellWidth = detailWidth / rows.length;
+  const cueY = detailY + 27;
+  const episodeY = detailY + 64;
+
+  const cells = rows.map((row, index) => {
+    const x = margin + cellWidth * index;
+    const centerX = x + cellWidth / 2;
+    const fontSize = episodeFontSize(row.episode, rows.length);
+    return `
+      <rect x="${x}" y="${detailY}" width="${cellWidth}" height="5" fill="${row.accent}" clip-path="url(#detailClip)"/>
+      <text x="${centerX}" y="${cueY}" class="infoCue" text-anchor="middle" fill="${row.accent}">${escapeXml(row.cue)}</text>
+      <text x="${centerX}" y="${episodeY}" class="infoEpisode" text-anchor="middle" font-size="${fontSize}px">${escapeXml(row.episode)}</text>`;
+  }).join("");
+
+  const dividers = rows.slice(1).map((_, index) => {
+    const x = margin + cellWidth * (index + 1);
+    return `<path d="M${x} ${detailY + 13} V${detailY + detailHeight - 10}" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="2"/>`;
+  }).join("");
 
   return `
-    <g>
-      <path d="M${x} ${top} H${x + body} L${x + width} ${middle} L${x + body} ${bottom} H${x} Z" fill="url(#${row.gradient})" stroke="#FFFFFF" stroke-opacity="0.34" stroke-width="2"/>
-      <path d="M${x} ${top} H${x + 7} V${bottom} H${x} Z" fill="${row.accent}"/>
-      <path d="M${x + 10} ${top + 2} H${x + body - 3}" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"/>
-      <path d="M${x + dividerX} ${top + 12} V${bottom - 12}" stroke="#FFFFFF" stroke-opacity="0.38" stroke-width="2"/>
-      <text x="${Math.round(x + dividerX / 2 + 4)}" y="${top + 40}" class="infoCue" text-anchor="middle">${escapeXml(row.cue)}</text>
-      <text x="${Math.round(x + episodeX)}" y="${top + 42}" class="infoEpisode" text-anchor="middle">${escapeXml(row.episode)}</text>
-    </g>`;
+    <rect id="bottomEpisodePanel" x="${margin}" y="${detailY}" width="${detailWidth}" height="${detailHeight}" rx="${detailRadius}" fill="#030507" fill-opacity="0.95" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="2"/>
+    ${cells}
+    ${dividers}`;
 }
 
 export function buildPosterBadgeSvg({ status, episode, latestEpisode, nextEpisode }) {
   const style = STATUS_STYLES[status];
   if (!style) throw new Error(`Unsupported poster badge status: ${status}`);
-  const statusLabel = style.label;
   const rows = infoRows({ status, episode, latestEpisode, nextEpisode });
   if (!rows.every((row) => row.episode)) throw new Error("Poster badge episode label is required.");
 
-  const statusWidth = statusRibbonWidth(statusLabel);
-  const statusTop = 18;
-  const statusBottom = 96;
-  const statusPoint = statusWidth;
-  const statusBody = statusWidth - 22;
-  const statusMiddle = (statusTop + statusBottom) / 2;
+  const statusWidth = statusPanelWidth(style.label);
+  const statusX = (POSTER_WIDTH - statusWidth) / 2;
+  const statusTextY = BADGE_LAYOUT.statusY + 44;
 
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" viewBox="0 0 ${POSTER_WIDTH} ${POSTER_HEIGHT}">
   <defs>
-    <linearGradient id="statusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${style.start}"/>
-      <stop offset="52%" stop-color="${style.middle}"/>
-      <stop offset="100%" stop-color="${style.end}"/>
-    </linearGradient>
-    <linearGradient id="newInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0F5A45" stop-opacity="0.96"/>
-      <stop offset="58%" stop-color="#082F29" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#020E0D" stop-opacity="0.96"/>
-    </linearGradient>
-    <linearGradient id="nextInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#153753" stop-opacity="0.96"/>
-      <stop offset="58%" stop-color="#0B2034" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#02070D" stop-opacity="0.96"/>
-    </linearGradient>
-    <linearGradient id="episodeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2B3038" stop-opacity="0.96"/>
-      <stop offset="55%" stop-color="#141820" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#030407" stop-opacity="0.96"/>
-    </linearGradient>
-    <linearGradient id="glossGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
-      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.50"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
     <clipPath id="statusClip">
-      <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z"/>
+      <rect x="${statusX}" y="${BADGE_LAYOUT.statusY}" width="${statusWidth}" height="${BADGE_LAYOUT.statusHeight}" rx="${BADGE_LAYOUT.statusRadius}"/>
     </clipPath>
-    <filter id="ribbonShadow" x="-30%" y="-35%" width="175%" height="200%">
-      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.76"/>
+    <clipPath id="detailClip">
+      <rect x="${BADGE_LAYOUT.margin}" y="${BADGE_LAYOUT.detailY}" width="${BADGE_LAYOUT.detailWidth}" height="${BADGE_LAYOUT.detailHeight}" rx="${BADGE_LAYOUT.detailRadius}"/>
+    </clipPath>
+    <filter id="panelShadow" x="-25%" y="-35%" width="160%" height="190%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#000000" flood-opacity="0.9"/>
     </filter>
-    <filter id="textShadow" x="-30%" y="-40%" width="170%" height="200%">
-      <feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#000000" flood-opacity="1"/>
+    <filter id="textShadow" x="-25%" y="-40%" width="160%" height="190%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.2" flood-color="#000000" flood-opacity="1"/>
     </filter>
     <style>
-      .statusText,.infoCue,.infoEpisode{font-family:Arial,Helvetica,sans-serif;font-weight:900;fill:#FFFFFF;stroke:#000000;stroke-opacity:.98;paint-order:stroke fill;filter:url(#textShadow)}
-      .statusText{font-size:40px;stroke-width:3.8px;letter-spacing:.1px}
-      .infoCue{font-size:19px;stroke-width:2.7px;letter-spacing:.5px}
-      .infoEpisode{font-size:30px;stroke-width:3px;letter-spacing:.1px}
+      .statusText,.infoCue,.infoEpisode{font-family:Arial Black,Arial,Helvetica,sans-serif;font-weight:900;filter:url(#textShadow)}
+      .statusText{font-size:${statusFontSize(style.label)}px;fill:#FFFFFF;letter-spacing:.15px}
+      .infoCue{font-size:${rows.length === 1 ? 23 : 21}px;letter-spacing:.7px}
+      .infoEpisode{fill:#FFFFFF;letter-spacing:.15px}
     </style>
   </defs>
-  <g filter="url(#ribbonShadow)">
-    <path d="M0 ${statusTop} H${statusBody} L${statusPoint} ${statusMiddle} L${statusBody} ${statusBottom} H0 Z" fill="url(#statusGradient)" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="2"/>
-    <path d="M${Math.round(statusWidth * 0.24)} ${statusTop - 18} L${Math.round(statusWidth * 0.53)} ${statusTop - 18} L${Math.round(statusWidth * 0.31)} ${statusBottom + 18} L${Math.round(statusWidth * 0.02)} ${statusBottom + 18} Z" fill="url(#glossGradient)" opacity="0.52" clip-path="url(#statusClip)"/>
-    <path d="M0 ${statusTop + 2} H${statusBody - 2}" fill="none" stroke="#FFFFFF" stroke-opacity="0.72" stroke-width="3"/>
-    <path d="M0 ${statusBottom - 2} H${statusBody - 2}" fill="none" stroke="#000000" stroke-opacity="0.46" stroke-width="3"/>
-    <text x="${statusBody / 2}" y="70" class="statusText" text-anchor="middle">${escapeXml(statusLabel)}</text>
-    ${rows.map((row, index) => infoRibbonSvg(row, index, rows.length)).join("")}
+  <g filter="url(#panelShadow)">
+    <rect id="topStatusPanel" x="${statusX}" y="${BADGE_LAYOUT.statusY}" width="${statusWidth}" height="${BADGE_LAYOUT.statusHeight}" rx="${BADGE_LAYOUT.statusRadius}" fill="#060708" fill-opacity="0.91" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2"/>
+    <rect x="${statusX}" y="${BADGE_LAYOUT.statusY + BADGE_LAYOUT.statusHeight - 5}" width="${statusWidth}" height="5" fill="${style.accent}" clip-path="url(#statusClip)"/>
+    <text x="${POSTER_WIDTH / 2}" y="${statusTextY}" class="statusText" text-anchor="middle">${escapeXml(style.label)}</text>
+    ${detailPanelSvg(rows)}
   </g>
 </svg>`);
+}
+
+function buildLowerVignetteSvg() {
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" viewBox="0 0 ${POSTER_WIDTH} ${POSTER_HEIGHT}">
+    <defs>
+      <linearGradient id="lowerVignette" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
+        <stop offset="48%" stop-color="#000000" stop-opacity="0.12"/>
+        <stop offset="78%" stop-color="#000000" stop-opacity="0.48"/>
+        <stop offset="100%" stop-color="#000000" stop-opacity="0.78"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="430" width="${POSTER_WIDTH}" height="320" fill="url(#lowerVignette)"/>
+  </svg>`);
+}
+
+function splitTitle(value) {
+  const words = String(value ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return ["Untitled"];
+  if (words.join(" ").length <= 22) return [words.join(" ")];
+
+  const lines = ["", ""];
+  for (const word of words) {
+    const target = lines[0].length <= lines[1].length ? 0 : 1;
+    lines[target] = `${lines[target]} ${word}`.trim();
+  }
+  return lines.filter(Boolean).slice(0, 2);
+}
+
+function buildFallbackTitleSvg(name) {
+  const lines = splitTitle(name);
+  const longest = Math.max(...lines.map((line) => line.length));
+  const fontSize = Math.max(30, Math.min(lines.length === 1 ? 49 : 42, Math.floor(620 / Math.max(1, longest))));
+  const lineHeight = Math.round(fontSize * 1.02);
+  const bottom = BADGE_LAYOUT.detailY - BADGE_LAYOUT.logoBottomGap;
+  const firstY = bottom - (lines.length - 1) * lineHeight;
+  const tspans = lines.map((line, index) => `<tspan x="250" y="${firstY + index * lineHeight}">${escapeXml(line.toUpperCase())}</tspan>`).join("");
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" viewBox="0 0 ${POSTER_WIDTH} ${POSTER_HEIGHT}">
+    <defs>
+      <filter id="titleShadow" x="-30%" y="-40%" width="170%" height="200%">
+        <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="1"/>
+      </filter>
+      <style>.fallbackTitle{font-family:Arial Black,Arial,Helvetica,sans-serif;font-size:${fontSize}px;font-weight:900;fill:#FFFFFF;stroke:#000000;stroke-width:4px;paint-order:stroke fill;filter:url(#titleShadow);letter-spacing:.2px}</style>
+    </defs>
+    <text class="fallbackTitle" text-anchor="middle">${tspans}</text>
+  </svg>`);
 }
 
 function validatePosterUrl(value) {
@@ -194,30 +235,48 @@ function validatePosterUrl(value) {
   return url;
 }
 
-async function downloadPoster(url, fetchImpl) {
+async function downloadImage(url, fetchImpl) {
   validatePosterUrl(url);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
   try {
     const response = await fetchImpl(url, {
-      headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,*/*" },
+      headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/svg+xml,*/*" },
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`Poster download returned HTTP ${response.status}.`);
+    if (!response.ok) throw new Error(`Image download returned HTTP ${response.status}.`);
     if (response.url) validatePosterUrl(response.url);
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType && !contentType.toLowerCase().startsWith("image/")) {
-      throw new Error(`Poster download returned ${contentType} instead of an image.`);
+      throw new Error(`Image download returned ${contentType} instead of an image.`);
     }
     const declaredLength = Number(response.headers.get("content-length") ?? 0);
-    if (declaredLength > MAX_POSTER_BYTES) throw new Error("Poster download is larger than 12 MB.");
+    if (declaredLength > MAX_POSTER_BYTES) throw new Error("Image download is larger than 12 MB.");
     const buffer = Buffer.from(await response.arrayBuffer());
-    if (!buffer.length) throw new Error("Poster download was empty.");
-    if (buffer.length > MAX_POSTER_BYTES) throw new Error("Poster download is larger than 12 MB.");
+    if (!buffer.length) throw new Error("Image download was empty.");
+    if (buffer.length > MAX_POSTER_BYTES) throw new Error("Image download is larger than 12 MB.");
     return buffer;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function prepareTitleLogo(buffer) {
+  const logo = sharp(buffer, { failOn: "error" })
+    .ensureAlpha()
+    .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize({
+      width: BADGE_LAYOUT.logoMaxWidth,
+      height: BADGE_LAYOUT.logoMaxHeight,
+      fit: "inside",
+      withoutEnlargement: false,
+    });
+  const output = await logo.png().toBuffer({ resolveWithObject: true });
+  return {
+    input: output.data,
+    left: Math.round((POSTER_WIDTH - output.info.width) / 2),
+    top: Math.max(454, Math.round(BADGE_LAYOUT.detailY - BADGE_LAYOUT.logoBottomGap - output.info.height)),
+  };
 }
 
 function posterFileName(meta, badge) {
@@ -225,6 +284,8 @@ function posterFileName(meta, badge) {
     version: POSTER_BADGE_STYLE_VERSION,
     id: meta.id,
     poster: meta.poster,
+    name: badge.name || meta.name,
+    logo: badge.logo || null,
     status: badge.status,
     episode: compactEpisodeLabel(badge.episode),
     latestEpisode: compactEpisodeLabel(badge.latestEpisode),
@@ -261,12 +322,27 @@ export async function decorateCatalogPosters(catalog, badges, {
       if (!badge || !meta.poster) continue;
 
       try {
-        const originalPoster = await downloadPoster(meta.poster, fetchImpl);
+        const originalPoster = await downloadImage(meta.poster, fetchImpl);
+        let titleComposite = { input: buildFallbackTitleSvg(badge.name || meta.name) };
+        if (badge.logo) {
+          try {
+            const logo = await downloadImage(badge.logo, fetchImpl);
+            titleComposite = await prepareTitleLogo(logo);
+          } catch {
+            // A missing logo must not block poster generation. The show name is
+            // rendered as high-contrast text in the same reserved logo area.
+          }
+        }
+
         const filename = posterFileName(meta, badge);
         await sharp(originalPoster, { failOn: "error" })
           .resize(POSTER_WIDTH, POSTER_HEIGHT, { fit: "cover", position: "centre" })
-          .composite([{ input: buildPosterBadgeSvg(badge), gravity: "northwest" }])
-          .webp({ quality: 88, effort: 5 })
+          .composite([
+            { input: buildLowerVignetteSvg(), gravity: "northwest" },
+            titleComposite,
+            { input: buildPosterBadgeSvg(badge), gravity: "northwest" },
+          ])
+          .webp({ quality: 90, effort: 5 })
           .toFile(path.join(posterDirectory, filename));
         meta.poster = `${baseUrl.replace(/\/$/, "")}/posters/${filename}`;
         generated += 1;

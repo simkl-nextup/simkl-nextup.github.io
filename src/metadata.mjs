@@ -50,7 +50,8 @@ export function createTmdbClient({ accessToken, fetchImpl = fetch }) {
   async function details(mediaType, tmdbId) {
     const result = await get(`/3/${mediaType}/${encodeURIComponent(tmdbId)}`, {
       language: "en-US",
-      append_to_response: "external_ids",
+      append_to_response: "external_ids,images",
+      include_image_language: "en,null",
     });
     return { ...result, _addonTmdbMediaType: mediaType };
   }
@@ -133,9 +134,41 @@ function tmdbImage(path, size) {
   return path ? `https://image.tmdb.org/t/p/${size}${path}` : null;
 }
 
+function artworkScore(artwork = {}) {
+  const voteCount = Number(artwork.vote_count) || 0;
+  const voteAverage = Number(artwork.vote_average) || 0;
+  const width = Number(artwork.width) || 0;
+  return voteCount * 1000 + voteAverage * 100 + Math.min(width, 3000) / 10;
+}
+
+function chooseTextlessPoster(images) {
+  const candidates = Array.isArray(images?.posters)
+    ? images.posters.filter((poster) => poster?.file_path && poster.iso_639_1 == null)
+    : [];
+  candidates.sort((a, b) => artworkScore(b) - artworkScore(a));
+  return candidates[0]?.file_path || null;
+}
+
+function chooseTitleLogo(images, originalLanguage) {
+  const logos = Array.isArray(images?.logos)
+    ? images.logos.filter((logo) => logo?.file_path)
+    : [];
+  const languageRank = (language) => {
+    if (language === "en") return 0;
+    if (originalLanguage && language === originalLanguage) return 1;
+    if (language == null) return 2;
+    return 3;
+  };
+  logos.sort((a, b) => {
+    const languageDifference = languageRank(a.iso_639_1) - languageRank(b.iso_639_1);
+    return languageDifference || artworkScore(b) - artworkScore(a);
+  });
+  return logos[0]?.file_path || null;
+}
+
 function sourceSignature(ids, sources) {
   return JSON.stringify({
-    version: 2,
+    version: 3,
     sources,
     imdb: ids?.imdb ?? null,
     tmdb: ids?.tmdb ?? null,
@@ -203,8 +236,12 @@ export async function enrichCatalogMetadata(items, {
           signature: sourceSignature(media.ids, sources),
           attemptedAt: new Date(now).toISOString(),
           provider: "tmdb",
-          poster: tmdbImage(tmdbResult.poster_path, "w500"),
+          // BetterPosters-style composition works best with a clean textless
+          // poster and a separate title logo. Fall back to TMDB's default
+          // poster whenever no textless artwork is available.
+          poster: tmdbImage(chooseTextlessPoster(tmdbResult.images) || tmdbResult.poster_path, "w500"),
           background: tmdbImage(tmdbResult.backdrop_path, "w1280"),
+          logo: tmdbImage(chooseTitleLogo(tmdbResult.images, tmdbResult.original_language), "w500"),
           tmdbId: tmdbResult.id,
           tmdbMediaType: tmdbResult._addonTmdbMediaType || "tv",
           tmdbName: tmdbResult.name || tmdbResult.title || null,

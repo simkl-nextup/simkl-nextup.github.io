@@ -26,33 +26,38 @@ function imageResponse(buffer, status = 200) {
   });
 }
 
-test("poster ribbon SVG distinguishes status, latest release, and next episode with TV-safe outlines", () => {
+test("poster badge SVG uses a centred top status and bottom episode panel", () => {
   const watching = buildPosterBadgeSvg({
     status: "watching",
-    episode: "S2 E5",
-    latestEpisode: "S2 E11",
-    nextEpisode: "S2 E5",
+    episode: "Ep. 5",
+    latestEpisode: "Ep. 11",
+    nextEpisode: "Ep. 5",
   }).toString();
   const planned = buildPosterBadgeSvg({ status: "plantowatch", episode: "S3E6" }).toString();
-  const revived = buildPosterBadgeSvg({ status: "completed", episode: "S3 E1" }).toString();
+  const revived = buildPosterBadgeSvg({ status: "completed", episode: "Ep. 13" }).toString();
 
-  assert.match(watching, /NEW EPISODE/);
+  assert.match(watching, /New Episode/);
   assert.match(watching, />NEW</);
   assert.match(watching, />NEXT</);
-  assert.match(watching, />S2 E11</);
-  assert.match(watching, />S2 E5</);
-  assert.match(watching, /#12D98A/);
-  assert.match(watching, /stroke-opacity:\.98/);
-  assert.match(watching, /stroke-width:3\.8px/);
-  assert.match(watching, /textShadow/);
-  assert.match(planned, /PLAN TO WATCH/);
+  assert.match(watching, />EP 11</);
+  assert.match(watching, />EP 5</);
+  assert.match(watching, /id="topStatusPanel"/);
+  assert.match(watching, /y="14"/);
+  assert.match(watching, /id="bottomEpisodePanel" x="14" y="658" width="472" height="78" rx="12"/);
+  assert.match(watching, /font-size:39px/);
+  assert.match(watching, /font-size="35px"/);
+  assert.match(watching, /#19D993/);
+  assert.doesNotMatch(watching, /tvInfoPanel|statusPanelGradient|glossGradient/);
+
+  assert.match(planned, /Plan to Watch/);
   assert.match(planned, />LATEST</);
   assert.match(planned, />S3 E6</);
-  assert.match(planned, /#FFC247/);
-  assert.match(revived, /NEW SEASON/);
-  assert.match(revived, />START</);
-  assert.match(revived, />S3 E1</);
-  assert.match(revived, /#9B8CFF/);
+  assert.match(planned, /font-size:35px/);
+  assert.match(planned, /font-size="39px"/);
+  assert.match(planned, /#FFC14A/);
+
+  assert.match(revived, /New Season/);
+  assert.match(revived, /#A99AFF/);
 });
 
 test("poster decoration creates a deterministic 500x750 WebP and publishes its URL", async () => {

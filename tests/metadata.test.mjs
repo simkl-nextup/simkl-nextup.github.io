@@ -111,6 +111,48 @@ test("metadata enrichment stores clean TMDB artwork and external IDs", async () 
   assert.equal(result.usesTmdb, true);
 });
 
+
+test("metadata enrichment prefers a textless TMDB poster and English title logo", async () => {
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    if (url.pathname === "/3/find/tt1234567") return jsonResponse({ tv_results: [{ id: 321 }] });
+    if (url.pathname === "/3/tv/321") {
+      assert.equal(url.searchParams.get("append_to_response"), "external_ids,images");
+      assert.equal(url.searchParams.get("include_image_language"), "en,null");
+      return jsonResponse({
+        id: 321,
+        poster_path: "/default-poster.jpg",
+        backdrop_path: "/backdrop.jpg",
+        original_language: "ja",
+        external_ids: { imdb_id: "tt1234567", tvdb_id: 654 },
+        images: {
+          posters: [
+            { file_path: "/english-poster.jpg", iso_639_1: "en", vote_count: 50, vote_average: 9 },
+            { file_path: "/textless-poster.jpg", iso_639_1: null, vote_count: 2, vote_average: 8 },
+          ],
+          logos: [
+            { file_path: "/japanese-logo.png", iso_639_1: "ja", vote_count: 100, vote_average: 10 },
+            { file_path: "/english-logo.png", iso_639_1: "en", vote_count: 1, vote_average: 7 },
+          ],
+        },
+      });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const result = await enrichCatalogMetadata(
+    { "101": item({ imdb: "tt1234567" }) },
+    {
+      tmdbAccessToken: "tmdb-token",
+      fetchImpl,
+      now: new Date("2026-08-02T00:00:00Z"),
+    },
+  );
+  const visuals = result.items["101"]._addonVisuals;
+  assert.equal(visuals.poster, "https://image.tmdb.org/t/p/w500/textless-poster.jpg");
+  assert.equal(visuals.logo, "https://image.tmdb.org/t/p/w500/english-logo.png");
+});
+
 test("MDBList can bridge a MAL ID into TMDB enrichment", async () => {
   const fetchImpl = async (input) => {
     const url = new URL(input);
