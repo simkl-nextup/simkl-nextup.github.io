@@ -213,3 +213,7 @@ Tracking and schedule data is provided by [Simkl](https://simkl.com). This proje
 Artwork can be provided by [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 TOP Posters is intentionally not called directly because its API key would appear inside each poster URL. Version 1.6 creates the badges locally in GitHub Actions instead, without another API or credential.
+
+## v1.8.6 badge styling
+
+The TV-readable top/bottom composition now uses the exact v1.8.2 badge palette and treatment: green/gold/purple status gradients, green/blue/dark episode gradients, white highlights, dark lower edges, heavy Arial text, black text outlines, gloss, and the original shadow strength. The logo-safe lower composition remains unchanged.

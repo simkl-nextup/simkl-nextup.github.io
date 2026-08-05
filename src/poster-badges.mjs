@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
-const POSTER_BADGE_STYLE_VERSION = 8;
+const POSTER_BADGE_STYLE_VERSION = 10;
 const MAX_POSTER_BYTES = 12 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 const ALLOWED_POSTER_HOSTS = new Set([
@@ -15,39 +15,41 @@ const ALLOWED_POSTER_HOSTS = new Set([
   "wsrv.nl",
 ]);
 
-// BTTTR-inspired hierarchy for television cards:
-//   1. one compact, centred state pill at the very top;
-//   2. a separate title logo above the lower controls;
-//   3. episode numbers anchored to the bottom edge.
+// Layout from the TV-readable branch, visual language from v1.8.2:
+// centred status ribbon, bottom episode panel, and a protected logo/title zone.
 const BADGE_LAYOUT = {
   margin: 14,
   statusY: 14,
-  statusHeight: 64,
-  statusRadius: 11,
-  detailY: 658,
+  statusHeight: 68,
+  statusRadius: 12,
+  detailY: 654,
   detailWidth: 472,
-  detailHeight: 78,
+  detailHeight: 82,
   detailRadius: 12,
   logoMaxWidth: 410,
   logoMaxHeight: 132,
-  logoBottomGap: 18,
+  logoBottomGap: 20,
 };
 
+// Exact v1.8.2 status palettes.
 const STATUS_STYLES = {
   watching: {
-    label: "New Episode",
-    accent: "#19D993",
-    detailAccent: "#73FFD3",
+    label: "NEW EPISODE",
+    start: "#12D98A",
+    middle: "#0FAE73",
+    end: "#087A56",
   },
   plantowatch: {
-    label: "Plan to Watch",
-    accent: "#FFC14A",
-    detailAccent: "#FFD877",
+    label: "PLAN TO WATCH",
+    start: "#FFC247",
+    middle: "#ED970A",
+    end: "#B85C00",
   },
   completed: {
-    label: "New Season",
-    accent: "#A99AFF",
-    detailAccent: "#C9C0FF",
+    label: "NEW SEASON",
+    start: "#9B8CFF",
+    middle: "#765BFF",
+    end: "#5136D5",
   },
 };
 
@@ -71,20 +73,20 @@ function compactEpisodeLabel(value) {
 }
 
 function statusPanelWidth(label) {
-  const estimated = Math.ceil(label.length * 23 + 54);
-  return Math.max(278, Math.min(374, estimated));
+  const estimated = Math.ceil(label.length * 23 + 58);
+  return Math.max(292, Math.min(406, estimated));
 }
 
 function statusFontSize(label) {
-  return label.length > 12 ? 35 : 39;
+  return label.length > 12 ? 37 : 40;
 }
 
 function episodeFontSize(label, cellCount) {
   const cellWidth = BADGE_LAYOUT.detailWidth / cellCount;
-  const maxSize = cellCount === 1 ? 39 : 35;
-  const minSize = cellCount === 1 ? 31 : 28;
-  const availableWidth = cellWidth - 24;
-  const estimated = Math.floor(availableWidth / (Math.max(1, label.length) * 0.6));
+  const maxSize = cellCount === 1 ? 43 : 39;
+  const minSize = cellCount === 1 ? 32 : 29;
+  const availableWidth = cellWidth - 26;
+  const estimated = Math.floor(availableWidth / (Math.max(1, label.length) * 0.59));
   return Math.max(minSize, Math.min(maxSize, estimated));
 }
 
@@ -95,15 +97,26 @@ function infoRows({ status, episode, latestEpisode, nextEpisode }) {
 
   if (status === "watching") {
     return [
-      { cue: "NEW", episode: latest || fallback, accent: "#73FFD3" },
-      { cue: "NEXT", episode: next || fallback, accent: "#72CEFF" },
+      {
+        cue: "NEW",
+        episode: latest || fallback,
+        gradient: "newInfoGradient",
+        accent: "#65FFD0",
+      },
+      {
+        cue: "NEXT",
+        episode: next || fallback,
+        gradient: "nextInfoGradient",
+        accent: "#63C7FF",
+      },
     ];
   }
 
   return [{
     cue: status === "plantowatch" ? "LATEST" : "NEW",
     episode: latest || fallback,
-    accent: STATUS_STYLES[status].detailAccent,
+    gradient: "episodeGradient",
+    accent: status === "plantowatch" ? "#FFD66B" : "#B6A8FF",
   }];
 }
 
@@ -117,26 +130,40 @@ function detailPanelSvg(rows) {
   } = BADGE_LAYOUT;
   const cellWidth = detailWidth / rows.length;
   const cueY = detailY + 27;
-  const episodeY = detailY + 64;
+  const episodeY = detailY + 65;
+
+  const cellClips = rows.map((_, index) => {
+    const x = margin + cellWidth * index;
+    const leftRadius = index === 0 ? detailRadius : 0;
+    const rightRadius = index === rows.length - 1 ? detailRadius : 0;
+    // Each cell is clipped by the full rounded outer panel; this keeps the
+    // two v1.8.2 gradients clean while preserving rounded outer corners.
+    return `<clipPath id="detailCellClip${index}"><rect x="${x}" y="${detailY}" width="${cellWidth}" height="${detailHeight}" rx="${Math.max(leftRadius, rightRadius)}"/></clipPath>`;
+  }).join("");
 
   const cells = rows.map((row, index) => {
     const x = margin + cellWidth * index;
     const centerX = x + cellWidth / 2;
     const fontSize = episodeFontSize(row.episode, rows.length);
     return `
+      <rect x="${x}" y="${detailY}" width="${cellWidth}" height="${detailHeight}" fill="url(#${row.gradient})" clip-path="url(#detailClip)"/>
       <rect x="${x}" y="${detailY}" width="${cellWidth}" height="5" fill="${row.accent}" clip-path="url(#detailClip)"/>
+      <rect x="${x + 1}" y="${detailY + 2}" width="${Math.max(0, cellWidth - 2)}" height="3" fill="#FFFFFF" fill-opacity="0.28" clip-path="url(#detailClip)"/>
       <text x="${centerX}" y="${cueY}" class="infoCue" text-anchor="middle" fill="${row.accent}">${escapeXml(row.cue)}</text>
       <text x="${centerX}" y="${episodeY}" class="infoEpisode" text-anchor="middle" font-size="${fontSize}px">${escapeXml(row.episode)}</text>`;
   }).join("");
 
   const dividers = rows.slice(1).map((_, index) => {
     const x = margin + cellWidth * (index + 1);
-    return `<path d="M${x} ${detailY + 13} V${detailY + detailHeight - 10}" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="2"/>`;
+    return `<path d="M${x} ${detailY + 12} V${detailY + detailHeight - 10}" stroke="#FFFFFF" stroke-opacity="0.46" stroke-width="2"/>`;
   }).join("");
 
   return `
-    <rect id="bottomEpisodePanel" x="${margin}" y="${detailY}" width="${detailWidth}" height="${detailHeight}" rx="${detailRadius}" fill="#030507" fill-opacity="0.95" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="2"/>
+    ${cellClips}
+    <rect id="bottomEpisodePanel" x="${margin}" y="${detailY}" width="${detailWidth}" height="${detailHeight}" rx="${detailRadius}" fill="#030407" fill-opacity="0.98" stroke="#FFFFFF" stroke-opacity="0.46" stroke-width="2"/>
     ${cells}
+    <path d="M${margin + 2} ${detailY + 2} H${margin + detailWidth - 2}" stroke="#FFFFFF" stroke-opacity="0.54" stroke-width="2" clip-path="url(#detailClip)"/>
+    <path d="M${margin + 2} ${detailY + detailHeight - 2} H${margin + detailWidth - 2}" stroke="#000000" stroke-opacity="0.58" stroke-width="3" clip-path="url(#detailClip)"/>
     ${dividers}`;
 }
 
@@ -148,32 +175,59 @@ export function buildPosterBadgeSvg({ status, episode, latestEpisode, nextEpisod
 
   const statusWidth = statusPanelWidth(style.label);
   const statusX = (POSTER_WIDTH - statusWidth) / 2;
-  const statusTextY = BADGE_LAYOUT.statusY + 44;
+  const statusTextY = BADGE_LAYOUT.statusY + 46;
 
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${POSTER_WIDTH}" height="${POSTER_HEIGHT}" viewBox="0 0 ${POSTER_WIDTH} ${POSTER_HEIGHT}">
   <defs>
+    <linearGradient id="statusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${style.start}"/>
+      <stop offset="52%" stop-color="${style.middle}"/>
+      <stop offset="100%" stop-color="${style.end}"/>
+    </linearGradient>
+    <linearGradient id="newInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#11694F"/>
+      <stop offset="56%" stop-color="#083F34"/>
+      <stop offset="100%" stop-color="#021A17"/>
+    </linearGradient>
+    <linearGradient id="nextInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#183C5F"/>
+      <stop offset="56%" stop-color="#10243A"/>
+      <stop offset="100%" stop-color="#050A12"/>
+    </linearGradient>
+    <linearGradient id="episodeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#303641"/>
+      <stop offset="52%" stop-color="#151922"/>
+      <stop offset="100%" stop-color="#030407"/>
+    </linearGradient>
+    <linearGradient id="glossGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
     <clipPath id="statusClip">
       <rect x="${statusX}" y="${BADGE_LAYOUT.statusY}" width="${statusWidth}" height="${BADGE_LAYOUT.statusHeight}" rx="${BADGE_LAYOUT.statusRadius}"/>
     </clipPath>
     <clipPath id="detailClip">
       <rect x="${BADGE_LAYOUT.margin}" y="${BADGE_LAYOUT.detailY}" width="${BADGE_LAYOUT.detailWidth}" height="${BADGE_LAYOUT.detailHeight}" rx="${BADGE_LAYOUT.detailRadius}"/>
     </clipPath>
-    <filter id="panelShadow" x="-25%" y="-35%" width="160%" height="190%">
-      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#000000" flood-opacity="0.9"/>
+    <filter id="panelShadow" x="-30%" y="-35%" width="175%" height="200%">
+      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#000000" flood-opacity="0.78"/>
     </filter>
-    <filter id="textShadow" x="-25%" y="-40%" width="160%" height="190%">
-      <feDropShadow dx="0" dy="2" stdDeviation="1.2" flood-color="#000000" flood-opacity="1"/>
+    <filter id="textShadow" x="-30%" y="-40%" width="170%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.8" flood-color="#000000" flood-opacity="1"/>
     </filter>
     <style>
-      .statusText,.infoCue,.infoEpisode{font-family:Arial Black,Arial,Helvetica,sans-serif;font-weight:900;filter:url(#textShadow)}
-      .statusText{font-size:${statusFontSize(style.label)}px;fill:#FFFFFF;letter-spacing:.15px}
-      .infoCue{font-size:${rows.length === 1 ? 23 : 21}px;letter-spacing:.7px}
-      .infoEpisode{fill:#FFFFFF;letter-spacing:.15px}
+      .statusText,.infoCue,.infoEpisode{font-family:Arial,Helvetica,sans-serif;font-weight:900;fill:#FFFFFF;stroke:#000000;stroke-opacity:.96;paint-order:stroke fill;filter:url(#textShadow)}
+      .statusText{font-size:${statusFontSize(style.label)}px;stroke-width:3.4px;letter-spacing:.1px}
+      .infoCue{font-size:${rows.length === 1 ? 22 : 21}px;stroke-width:2.5px;letter-spacing:.7px}
+      .infoEpisode{stroke-width:2.8px;letter-spacing:.2px}
     </style>
   </defs>
   <g filter="url(#panelShadow)">
-    <rect id="topStatusPanel" x="${statusX}" y="${BADGE_LAYOUT.statusY}" width="${statusWidth}" height="${BADGE_LAYOUT.statusHeight}" rx="${BADGE_LAYOUT.statusRadius}" fill="#060708" fill-opacity="0.91" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2"/>
-    <rect x="${statusX}" y="${BADGE_LAYOUT.statusY + BADGE_LAYOUT.statusHeight - 5}" width="${statusWidth}" height="5" fill="${style.accent}" clip-path="url(#statusClip)"/>
+    <rect id="topStatusPanel" x="${statusX}" y="${BADGE_LAYOUT.statusY}" width="${statusWidth}" height="${BADGE_LAYOUT.statusHeight}" rx="${BADGE_LAYOUT.statusRadius}" fill="url(#statusGradient)" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="2"/>
+    <path d="M${statusX + Math.round(statusWidth * 0.12)} ${BADGE_LAYOUT.statusY - 16} L${statusX + Math.round(statusWidth * 0.48)} ${BADGE_LAYOUT.statusY - 16} L${statusX + Math.round(statusWidth * 0.29)} ${BADGE_LAYOUT.statusY + BADGE_LAYOUT.statusHeight + 16} L${statusX - Math.round(statusWidth * 0.07)} ${BADGE_LAYOUT.statusY + BADGE_LAYOUT.statusHeight + 16} Z" fill="url(#glossGradient)" opacity="0.58" clip-path="url(#statusClip)"/>
+    <path d="M${statusX + 2} ${BADGE_LAYOUT.statusY + 2} H${statusX + statusWidth - 2}" fill="none" stroke="#FFFFFF" stroke-opacity="0.72" stroke-width="3" clip-path="url(#statusClip)"/>
+    <path d="M${statusX + 2} ${BADGE_LAYOUT.statusY + BADGE_LAYOUT.statusHeight - 2} H${statusX + statusWidth - 2}" fill="none" stroke="#000000" stroke-opacity="0.46" stroke-width="3" clip-path="url(#statusClip)"/>
     <text x="${POSTER_WIDTH / 2}" y="${statusTextY}" class="statusText" text-anchor="middle">${escapeXml(style.label)}</text>
     ${detailPanelSvg(rows)}
   </g>
@@ -185,12 +239,12 @@ function buildLowerVignetteSvg() {
     <defs>
       <linearGradient id="lowerVignette" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
-        <stop offset="48%" stop-color="#000000" stop-opacity="0.12"/>
-        <stop offset="78%" stop-color="#000000" stop-opacity="0.48"/>
-        <stop offset="100%" stop-color="#000000" stop-opacity="0.78"/>
+        <stop offset="46%" stop-color="#000000" stop-opacity="0.08"/>
+        <stop offset="76%" stop-color="#000000" stop-opacity="0.45"/>
+        <stop offset="100%" stop-color="#000000" stop-opacity="0.76"/>
       </linearGradient>
     </defs>
-    <rect x="0" y="430" width="${POSTER_WIDTH}" height="320" fill="url(#lowerVignette)"/>
+    <rect x="0" y="420" width="${POSTER_WIDTH}" height="330" fill="url(#lowerVignette)"/>
   </svg>`);
 }
 
@@ -210,7 +264,7 @@ function splitTitle(value) {
 function buildFallbackTitleSvg(name) {
   const lines = splitTitle(name);
   const longest = Math.max(...lines.map((line) => line.length));
-  const fontSize = Math.max(30, Math.min(lines.length === 1 ? 49 : 42, Math.floor(620 / Math.max(1, longest))));
+  const fontSize = Math.max(30, Math.min(lines.length === 1 ? 50 : 42, Math.floor(620 / Math.max(1, longest))));
   const lineHeight = Math.round(fontSize * 1.02);
   const bottom = BADGE_LAYOUT.detailY - BADGE_LAYOUT.logoBottomGap;
   const firstY = bottom - (lines.length - 1) * lineHeight;
@@ -275,7 +329,7 @@ async function prepareTitleLogo(buffer) {
   return {
     input: output.data,
     left: Math.round((POSTER_WIDTH - output.info.width) / 2),
-    top: Math.max(454, Math.round(BADGE_LAYOUT.detailY - BADGE_LAYOUT.logoBottomGap - output.info.height)),
+    top: Math.max(452, Math.round(BADGE_LAYOUT.detailY - BADGE_LAYOUT.logoBottomGap - output.info.height)),
   };
 }
 

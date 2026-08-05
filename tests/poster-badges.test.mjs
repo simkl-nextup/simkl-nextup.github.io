@@ -26,7 +26,7 @@ function imageResponse(buffer, status = 200) {
   });
 }
 
-test("poster badge SVG uses a centred top status and bottom episode panel", () => {
+test("poster badge SVG keeps the TV layout with the exact v1.8.2 palette", () => {
   const watching = buildPosterBadgeSvg({
     status: "watching",
     episode: "Ep. 5",
@@ -36,28 +36,28 @@ test("poster badge SVG uses a centred top status and bottom episode panel", () =
   const planned = buildPosterBadgeSvg({ status: "plantowatch", episode: "S3E6" }).toString();
   const revived = buildPosterBadgeSvg({ status: "completed", episode: "Ep. 13" }).toString();
 
-  assert.match(watching, /New Episode/);
+  assert.match(watching, /NEW EPISODE/);
   assert.match(watching, />NEW</);
   assert.match(watching, />NEXT</);
   assert.match(watching, />EP 11</);
   assert.match(watching, />EP 5</);
   assert.match(watching, /id="topStatusPanel"/);
-  assert.match(watching, /y="14"/);
-  assert.match(watching, /id="bottomEpisodePanel" x="14" y="658" width="472" height="78" rx="12"/);
-  assert.match(watching, /font-size:39px/);
-  assert.match(watching, /font-size="35px"/);
-  assert.match(watching, /#19D993/);
-  assert.doesNotMatch(watching, /tvInfoPanel|statusPanelGradient|glossGradient/);
+  assert.match(watching, /id="bottomEpisodePanel" x="14" y="654" width="472" height="82" rx="12"/);
+  assert.match(watching, /statusGradient/);
+  assert.match(watching, /newInfoGradient/);
+  assert.match(watching, /font-size:40px/);
+  assert.match(watching, /font-size="39px"/);
+  assert.match(watching, /#12D98A/);
 
-  assert.match(planned, /Plan to Watch/);
+  assert.match(planned, /PLAN TO WATCH/);
   assert.match(planned, />LATEST</);
   assert.match(planned, />S3 E6</);
-  assert.match(planned, /font-size:35px/);
-  assert.match(planned, /font-size="39px"/);
-  assert.match(planned, /#FFC14A/);
+  assert.match(planned, /font-size:37px/);
+  assert.match(planned, /font-size="43px"/);
+  assert.match(planned, /#FFC247/);
 
-  assert.match(revived, /New Season/);
-  assert.match(revived, /#A99AFF/);
+  assert.match(revived, /NEW SEASON/);
+  assert.match(revived, /#9B8CFF/);
 });
 
 test("poster decoration creates a deterministic 500x750 WebP and publishes its URL", async () => {
