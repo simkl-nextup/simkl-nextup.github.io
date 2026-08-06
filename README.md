@@ -124,7 +124,7 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 
 ## Second Simkl account for normal TV shows
 
-Version 1.8.8 keeps the existing root anime addon unchanged and publishes account 2 as a fully isolated normal-TV addon:
+Version 1.8.9 keeps the existing root anime addon unchanged and publishes account 2 as a fully isolated normal-TV addon:
 
 ```text
 Primary:  https://simkl-nextup.github.io/manifest.json
@@ -236,3 +236,8 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 ## Updating to 1.8.8 — account 2 reads normal TV shows
 
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
+
+
+## Updating to 1.8.9 — reliable two-account Pages deployment
+
+Version 1.8.9 keeps account 1 as anime and account 2 as normal TV. It splits generation and deployment into separate jobs, cancels stale overlapping refreshes, extends the GitHub Pages deployment wait from 10 to 30 minutes, and explicitly asserts that account 2 generated `mediaType: tv` with the TV addon and catalog IDs before any deployment is attempted. Uploading this release creates a fresh commit/build version, which avoids re-running the already-canceled Pages deployment attached to the previous commit.

@@ -11,16 +11,17 @@ permissions:
   pages: write
   id-token: write
 
+# Only the newest refresh matters. Cancel an older queued/running refresh instead
+# of allowing multiple Pages deployments to block one another.
 concurrency:
-  group: simkl-new-episodes-pages
-  cancel-in-progress: false
+  group: simkl-nextup-pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  refresh-and-deploy:
+  build:
+    name: Build and verify both addons
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -71,7 +72,7 @@ jobs:
           restore-keys: |
             simkl-state-
 
-      - name: Restore account 2 private sync state
+      - name: Restore account 2 private TV sync state
         if: steps.account2.outputs.enabled == 'true'
         id: restore-account2-state
         uses: actions/cache/restore@v4
@@ -84,7 +85,7 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Refresh primary account at root
+      - name: Refresh primary anime account at root
         env:
           SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
@@ -100,7 +101,7 @@ jobs:
           MEDIA_TYPE: anime
         run: npm run refresh
 
-      - name: Verify primary generated addon
+      - name: Verify primary anime addon
         env:
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
           TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
@@ -132,7 +133,7 @@ jobs:
           MEDIA_TYPE: tv
         run: npm run build:placeholder
 
-      - name: Refresh account 2 under /account-2
+      - name: Refresh account 2 TV shows under /account-2
         if: steps.account2.outputs.enabled == 'true'
         env:
           SIMKL_CLIENT_ID_2: ${{ secrets.SIMKL_CLIENT_ID_2 }}
@@ -166,7 +167,7 @@ jobs:
           fi
           npm run refresh
 
-      - name: Verify account 2 generated addon
+      - name: Verify account 2 TV addon
         if: steps.account2.outputs.enabled == 'true'
         env:
           OUTPUT_DIRECTORY: public/account-2
@@ -180,7 +181,26 @@ jobs:
           MEDIA_TYPE: tv
         run: npm run verify
 
-      - name: Save account 2 private sync state
+      - name: Assert account 2 output is TV, not anime
+        if: steps.account2.outputs.enabled == 'true'
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+          const manifest = JSON.parse(await readFile("public/account-2/manifest.json", "utf8"));
+          const status = JSON.parse(await readFile("public/account-2/status.json", "utf8"));
+          if (manifest.id !== "community.simkl.new-tv-episodes.account2") {
+            throw new Error(`Wrong account-2 addon ID: ${manifest.id}`);
+          }
+          if (manifest.catalogs?.[0]?.id !== "simkl-new-tv-episodes-account2") {
+            throw new Error(`Wrong account-2 catalog ID: ${manifest.catalogs?.[0]?.id}`);
+          }
+          if (status.mediaType !== "tv") {
+            throw new Error(`Wrong account-2 mediaType: ${status.mediaType}`);
+          }
+          console.log(`Confirmed account 2 TV output: ${status.catalogItems} title(s).`);
+          NODE
+
+      - name: Save account 2 private TV sync state
         if: steps.account2.outputs.enabled == 'true'
         uses: actions/cache/save@v4
         with:
@@ -195,6 +215,19 @@ jobs:
         with:
           path: public
 
+  deploy:
+    name: Deploy verified site to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
       - name: Deploy both addons to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # GitHub's default is 10 minutes. Allow longer temporary Pages queues.
+          timeout: 1800000

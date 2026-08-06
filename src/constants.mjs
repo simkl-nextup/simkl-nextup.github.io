@@ -1,5 +1,5 @@
 export const APP_NAME = "simkl-new-episodes-addon";
-export const APP_VERSION = "1.8.8";
+export const APP_VERSION = "1.8.9";
 export const CATALOG_ID = "simkl-new-anime-episodes";
 export const CATALOG_NAME = "My Anime Up Next · Simkl";
 export const ADDON_ID = "community.simkl.new-anime-episodes";
