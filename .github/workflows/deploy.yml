@@ -77,9 +77,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: state/account-2/simkl-state.json
-          key: simkl-account-2-state-${{ github.run_id }}-${{ github.run_attempt }}
+          key: simkl-account-2-tv-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            simkl-account-2-state-
+            simkl-account-2-tv-state-
 
       - name: Run tests
         run: npm test
@@ -97,6 +97,7 @@ jobs:
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           MAX_CATALOG_ITEMS: 50
           POSTER_BADGES: "true"
+          MEDIA_TYPE: anime
         run: npm run refresh
 
       - name: Verify primary generated addon
@@ -106,6 +107,7 @@ jobs:
           MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
           TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
           TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
+          MEDIA_TYPE: anime
         run: npm run verify
 
       - name: Save primary private sync state
@@ -120,13 +122,14 @@ jobs:
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           PUBLIC_PATH_PREFIX: account-2
           OUTPUT_DIRECTORY: public/account-2
-          ADDON_ID: community.simkl.new-anime-episodes.account2
-          CATALOG_ID: simkl-new-anime-episodes-account2
-          CATALOG_NAME: Account 2 · Anime Up Next · Simkl
-          ADDON_NAME: Simkl Anime Up Next · Account 2
-          SITE_TITLE: Account 2 Anime Up Next
+          ADDON_ID: community.simkl.new-tv-episodes.account2
+          CATALOG_ID: simkl-new-tv-episodes-account2
+          CATALOG_NAME: Account 2 · TV Up Next · Simkl
+          ADDON_NAME: Simkl TV Up Next · Account 2
+          SITE_TITLE: Account 2 TV Up Next
           ACCOUNT_LABEL: Simkl Account 2
           SETUP_SECRET_NAME: SIMKL_ACCESS_TOKEN_2
+          MEDIA_TYPE: tv
         run: npm run build:placeholder
 
       - name: Refresh account 2 under /account-2
@@ -145,15 +148,16 @@ jobs:
           PUBLIC_PATH_PREFIX: account-2
           OUTPUT_DIRECTORY: public/account-2
           SIMKL_STATE_FILE: state/account-2/simkl-state.json
-          ADDON_ID: community.simkl.new-anime-episodes.account2
-          CATALOG_ID: simkl-new-anime-episodes-account2
-          CATALOG_NAME: Account 2 · Anime Up Next · Simkl
-          ADDON_NAME: Simkl Anime Up Next · Account 2
-          SITE_TITLE: Account 2 Anime Up Next
+          ADDON_ID: community.simkl.new-tv-episodes.account2
+          CATALOG_ID: simkl-new-tv-episodes-account2
+          CATALOG_NAME: Account 2 · TV Up Next · Simkl
+          ADDON_NAME: Simkl TV Up Next · Account 2
+          SITE_TITLE: Account 2 TV Up Next
           ACCOUNT_LABEL: Simkl Account 2
           SETUP_SECRET_NAME: SIMKL_ACCESS_TOKEN_2
           MAX_CATALOG_ITEMS: 50
           POSTER_BADGES: "true"
+          MEDIA_TYPE: tv
         run: |
           export SIMKL_CLIENT_ID="${SIMKL_CLIENT_ID_2:-$SIMKL_CLIENT_ID_PRIMARY}"
           if [ -z "$SIMKL_CLIENT_ID" ]; then
@@ -166,13 +170,14 @@ jobs:
         if: steps.account2.outputs.enabled == 'true'
         env:
           OUTPUT_DIRECTORY: public/account-2
-          ADDON_ID: community.simkl.new-anime-episodes.account2
-          CATALOG_ID: simkl-new-anime-episodes-account2
+          ADDON_ID: community.simkl.new-tv-episodes.account2
+          CATALOG_ID: simkl-new-tv-episodes-account2
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
           TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
           MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
           TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
           TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
+          MEDIA_TYPE: tv
         run: npm run verify
 
       - name: Save account 2 private sync state
@@ -180,7 +185,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: state/account-2/simkl-state.json
-          key: simkl-account-2-state-${{ github.run_id }}-${{ github.run_attempt }}
+          key: simkl-account-2-tv-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

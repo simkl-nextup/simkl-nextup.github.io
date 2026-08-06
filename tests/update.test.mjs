@@ -464,3 +464,89 @@ test("end-to-end refresh can publish an isolated account-2 manifest and catalog"
   assert.match(index, /https:\/\/example\.github\.io\/account-2\/manifest\.json/);
   assert.match(setup, /SIMKL_ACCESS_TOKEN_2/);
 });
+
+test("end-to-end account 2 TV refresh publishes normal Simkl shows", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-account2-tv-"));
+  const stateFile = path.join(temp, "state", "account-2", "simkl-state.json");
+  const outputDirectory = path.join(temp, "public", "account-2");
+  const catalogId = "simkl-new-tv-episodes-account2";
+  const addonId = "community.simkl.new-tv-episodes.account2";
+  const show = {
+    status: "watching",
+    watched_episodes_count: 9,
+    next_to_watch_info: {
+      season: 1,
+      episode: 10,
+      title: "Tolerance Is Extinction — Part 3",
+      date: "2026-08-05T10:00:00Z",
+    },
+    show: {
+      title: "X-Men '97",
+      year: 2024,
+      poster: "example-poster",
+      ids: { simkl: 8489011, imdb: "tt16026746", tvdb: 412432 },
+    },
+  };
+
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    if (url.pathname === "/sync/all-items/shows") return jsonResponse({ shows: [show] });
+    if (url.pathname === "/sync/activities") {
+      return jsonResponse({ tv_shows: { all: "2026-08-06T00:00:00Z", removed_from_list: null } });
+    }
+    if (url.pathname === "/calendar/v2/tv-shows.json") {
+      return jsonResponse([{
+        title: "X-Men '97",
+        date: "2026-08-05T10:00:00Z",
+        season: 1,
+        episode: 10,
+        ids: { simkl: 8489011, imdb: "tt16026746", tvdb: 412432 },
+      }]);
+    }
+    if (url.pathname === "/calendar/2026/8/tv-shows.json") return jsonResponse([]);
+    if (url.pathname === "/calendar/2026/7/tv-shows.json") return jsonResponse([]);
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  await refresh({
+    clientId: "tv-client",
+    accessToken: "account-2-token",
+    mediaType: "tv",
+    fetchImpl,
+    now: new Date("2026-08-06T10:00:00Z"),
+    stateFile,
+    outputDirectory,
+    explicitBaseUrl: "https://example.github.io",
+    publicPathPrefix: "account-2",
+    addonId,
+    catalogId,
+    catalogName: "Account 2 · TV Up Next · Simkl",
+    addonName: "Simkl TV Up Next · Account 2",
+    siteTitle: "Account 2 TV Up Next",
+    accountLabel: "Simkl Account 2",
+    setupSecretName: "SIMKL_ACCESS_TOKEN_2",
+    posterBadgesEnabled: false,
+  });
+
+  const manifest = JSON.parse(await readFile(path.join(outputDirectory, "manifest.json"), "utf8"));
+  const catalog = JSON.parse(await readFile(
+    path.join(outputDirectory, "catalog", "series", `${catalogId}.json`),
+    "utf8",
+  ));
+  const status = JSON.parse(await readFile(path.join(outputDirectory, "status.json"), "utf8"));
+  const index = await readFile(path.join(outputDirectory, "index.html"), "utf8");
+  const state = JSON.parse(await readFile(stateFile, "utf8"));
+
+  assert.equal(manifest.id, addonId);
+  assert.equal(manifest.catalogs[0].id, catalogId);
+  assert.match(manifest.description, /TV Up Next/);
+  assert.equal(catalog.metas.length, 1);
+  assert.equal(catalog.metas[0].name, "X-Men '97");
+  assert.equal(catalog.metas[0].releaseInfo, "S01E10");
+  assert.equal(catalog.metas[0].links[0].url, "https://simkl.com/tv/8489011");
+  assert.equal(status.mediaType, "tv");
+  assert.equal(status.catalogItems, 1);
+  assert.match(index, /previously completed TV shows/);
+  assert.equal(state.mediaType, "tv");
+  assert.equal(state.lastActivity, "2026-08-06T00:00:00Z");
+});

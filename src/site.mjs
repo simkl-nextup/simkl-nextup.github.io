@@ -23,7 +23,11 @@ function indexHtml({
   usesTvdb,
   siteTitle,
   catalogName,
+  mediaType = "anime",
 }) {
+  const isTv = mediaType === "tv";
+  const mediaNoun = isTv ? "TV shows" : "anime";
+  const trackingLabel = isTv ? "TV tracking" : "Anime tracking";
   const manifestUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/manifest.json` : "./manifest.json";
   return `<!doctype html>
 <html lang="en">
@@ -48,7 +52,7 @@ function indexHtml({
   <main>
     <div class="eyebrow">Personal Nuvio / Stremio catalog</div>
     <h1>${escapeHtml(siteTitle)}</h1>
-    <p><strong>${escapeHtml(catalogName)}</strong> combines <strong>Watching</strong>, <strong>Plan to Watch</strong>, and previously completed anime that receive a new episode. Every new release bumps its show to the top.</p>
+    <p><strong>${escapeHtml(catalogName)}</strong> combines <strong>Watching</strong>, <strong>Plan to Watch</strong>, and previously completed ${mediaNoun} that receive a new episode. Every new release bumps its show to the top.</p>
     <div class="stats">
       <span class="pill">${count} title${count === 1 ? "" : "s"} ready</span>
       <span class="pill">Updated ${escapeHtml(updatedAt)}</span>
@@ -57,7 +61,7 @@ function indexHtml({
     <a class="button" href="${escapeHtml(manifestUrl)}">Open manifest</a>
     <code>${escapeHtml(manifestUrl)}</code>
     <footer>
-      <div>Anime tracking and schedule data from <a href="https://simkl.com">Simkl</a>.</div>
+      <div>${trackingLabel} and schedule data from <a href="https://simkl.com">Simkl</a>.</div>
       ${usesTvdb ? `<div class="tvdb">Metadata and episode ordering provided by <a href="https://thetvdb.com">TheTVDB</a>. Please consider adding missing information or subscribing.</div>` : ""}
       ${usesTmdb ? `<div class="tmdb"><a href="https://www.themoviedb.org"><img src="${TMDB_LOGO}" alt="TMDB"></a><span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span></div>` : ""}
     </footer>
@@ -127,6 +131,7 @@ export async function writeSite({
   siteTitle = "My Anime Up Next",
   setupSecretName = "SIMKL_ACCESS_TOKEN",
   accountLabel = siteTitle,
+  mediaType = "anime",
 }) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
@@ -140,7 +145,7 @@ export async function writeSite({
   });
   const publishedCatalog = posterResult.catalog;
 
-  const manifest = buildManifest({ addonId, catalogId, catalogName, addonName });
+  const manifest = buildManifest({ addonId, catalogId, catalogName, addonName, mediaType });
   const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
   await writeFile(path.join(outputDir, "manifest.json"), json(manifest));
   await writeFile(path.join(outputDir, "catalog", "series", `${catalogId}.json`), json(publishedCatalog));
@@ -167,6 +172,7 @@ export async function writeSite({
     usesTvdb,
     siteTitle,
     catalogName,
+    mediaType,
   }));
   await writeFile(path.join(outputDir, "setup.html"), setupHtml({
     secretName: setupSecretName,
@@ -177,6 +183,7 @@ export async function writeSite({
     account: accountLabel,
     addonId,
     catalogId,
+    mediaType,
     updatedAt,
     catalogItems: publishedCatalog.metas.length,
     publishedWatchingItems: sourceCounts.watching,

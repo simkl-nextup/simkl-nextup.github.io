@@ -34,5 +34,6 @@ await writeSite({
   ...(process.env.SITE_TITLE ? { siteTitle: process.env.SITE_TITLE } : {}),
   ...(process.env.SETUP_SECRET_NAME ? { setupSecretName: process.env.SETUP_SECRET_NAME } : {}),
   ...(process.env.ACCOUNT_LABEL ? { accountLabel: process.env.ACCOUNT_LABEL } : {}),
+  mediaType: process.env.MEDIA_TYPE || "anime",
 });
 console.log(`Built placeholder site at ${process.env.OUTPUT_DIRECTORY || "public"}.`);

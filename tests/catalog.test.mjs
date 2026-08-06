@@ -114,6 +114,34 @@ test("catalog revives a Completed title only when a newly aired episode exceeds 
   assert.match(catalog.metas[0].description, /Previously completed/);
 });
 
+test("catalog revives a completed multi-season TV show using cumulative episode totals", () => {
+  const completedTv = {
+    status: "completed",
+    watched_episodes_count: 50,
+    total_episodes_count: 51,
+    show: {
+      title: "Returning TV Show",
+      ids: { simkl: 401, imdb: "tt8888888" },
+    },
+    _addonLatestAiredInfo: {
+      season: 6,
+      episode: 1,
+      title: "Season Premiere",
+      date: "2026-08-02T10:00:00Z",
+    },
+  };
+
+  const { catalog, posterBadges } = buildCatalog(
+    { "401": completedTv },
+    { now: "2026-08-02T12:00:00Z" },
+  );
+
+  assert.deepEqual(catalog.metas.map((meta) => meta.name), ["Returning TV Show"]);
+  assert.equal(catalog.metas[0].releaseInfo, "S06E01");
+  assert.equal(posterBadges[0].status, "completed");
+  assert.equal(posterBadges[0].latestEpisode, "S06E01");
+});
+
 test("catalog sorts the most recently aired episode first", () => {
   const items = {
     "101": watching(),

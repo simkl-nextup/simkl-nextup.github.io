@@ -18,12 +18,14 @@ function configuredProjectPath(value, fallback) {
 const publicDir = configuredProjectPath(process.env.OUTPUT_DIRECTORY, path.join(root, "public"));
 const expectedCatalogId = process.env.CATALOG_ID || CATALOG_ID;
 const expectedAddonId = process.env.ADDON_ID || ADDON_ID;
+const expectedMediaType = process.env.MEDIA_TYPE || null;
 const manifest = JSON.parse(await readFile(path.join(publicDir, "manifest.json"), "utf8"));
 const catalog = JSON.parse(await readFile(
   path.join(publicDir, "catalog", "series", `${expectedCatalogId}.json`),
   "utf8",
 ));
 const setupHtml = await readFile(path.join(publicDir, "setup.html"), "utf8");
+const status = JSON.parse(await readFile(path.join(publicDir, "status.json"), "utf8"));
 
 if (manifest.id !== expectedAddonId) {
   throw new Error(`Manifest ID mismatch: expected ${expectedAddonId}, received ${manifest.id}`);
@@ -39,6 +41,9 @@ if (!Array.isArray(manifest.idPrefixes)
   throw new Error("Manifest is missing the unified metadata ID prefix required by desktop clients.");
 }
 if (!Array.isArray(catalog.metas)) throw new Error("Catalog response must contain a metas array.");
+if (expectedMediaType && status.mediaType !== expectedMediaType) {
+  throw new Error(`Media type mismatch: expected ${expectedMediaType}, received ${status.mediaType}`);
+}
 
 const setupScript = setupHtml.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
 if (!setupScript) throw new Error("Setup page is missing its authorization script.");
