@@ -3,8 +3,39 @@ import {
   APP_VERSION,
   SIMKL_API_BASE,
   SIMKL_CALENDAR_BASE,
-  SIMKL_CALENDAR_URL,
 } from "./constants.mjs";
+
+const MEDIA_CONFIG = {
+  anime: {
+    syncType: "anime",
+    detailPath: "anime",
+    activityKey: "anime",
+    payloadKey: "anime",
+    calendarNames: ["anime"],
+  },
+  tv: {
+    syncType: "shows",
+    detailPath: "tv",
+    activityKey: "tv_shows",
+    payloadKey: "shows",
+    // Simkl has used more than one public CDN name for TV calendars. Try the
+    // canonical show name first and retain safe fallbacks for older mirrors.
+    calendarNames: ["tv-shows", "shows", "tv"],
+  },
+};
+
+export function normalizeMediaType(value = "anime") {
+  const mediaType = String(value || "anime").trim().toLowerCase();
+  if (mediaType === "shows" || mediaType === "show" || mediaType === "series") return "tv";
+  if (mediaType !== "anime" && mediaType !== "tv") {
+    throw new Error(`Unsupported MEDIA_TYPE: ${value}. Use anime or tv.`);
+  }
+  return mediaType;
+}
+
+export function mediaConfigFor(value = "anime") {
+  return MEDIA_CONFIG[normalizeMediaType(value)];
+}
 
 export class SimklApiError extends Error {
   constructor(message, status, body) {
@@ -28,16 +59,11 @@ function apiUrl(path, clientId, params = {}) {
   return url;
 }
 
-function calendarUrl(clientId) {
-  const url = new URL(SIMKL_CALENDAR_URL);
-  url.searchParams.set("client_id", clientId);
-  url.searchParams.set("app-name", APP_NAME);
-  url.searchParams.set("app-version", APP_VERSION);
-  return url;
-}
-
-function calendarMonthUrl(clientId, year, month) {
-  const url = new URL(`${SIMKL_CALENDAR_BASE}/${year}/${Number(month)}/anime.json`);
+function calendarUrl(clientId, name, year, month) {
+  const pathname = year && month
+    ? `${SIMKL_CALENDAR_BASE}/${year}/${Number(month)}/${name}.json`
+    : `${SIMKL_CALENDAR_BASE}/v2/${name}.json`;
+  const url = new URL(pathname);
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("app-name", APP_NAME);
   url.searchParams.set("app-version", APP_VERSION);
@@ -62,6 +88,7 @@ async function getJson(fetchImpl, url, accessToken) {
   const headers = {
     Accept: "application/json",
     "User-Agent": `${APP_NAME}/${APP_VERSION}`,
+    "simkl-api-key": url.searchParams.get("client_id") || "",
   };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
@@ -74,59 +101,96 @@ async function getJson(fetchImpl, url, accessToken) {
   return body;
 }
 
-export function createSimklClient({ clientId, accessToken, fetchImpl = fetch }) {
+async function getFirstAvailableJson(fetchImpl, urls, accessToken) {
+  let lastError;
+  for (const url of urls) {
+    try {
+      return await getJson(fetchImpl, url, accessToken);
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof SimklApiError) || error.status !== 404) throw error;
+    }
+  }
+  throw lastError ?? new Error("No Simkl calendar endpoint was available.");
+}
+
+export function createSimklClient({ clientId, accessToken, mediaType = "anime", fetchImpl = fetch }) {
   if (!clientId) throw new Error("SIMKL_CLIENT_ID is required.");
   if (!accessToken) throw new Error("SIMKL_ACCESS_TOKEN is required.");
+  const normalizedMediaType = normalizeMediaType(mediaType);
+  const config = MEDIA_CONFIG[normalizedMediaType];
+
+  const getInitialLibrary = () => getJson(
+    fetchImpl,
+    apiUrl(`/sync/all-items/${config.syncType}`, clientId, {
+      next_watch_info: "yes",
+      language: "en",
+    }),
+    accessToken,
+  );
+
+  const getDelta = (dateFrom) => {
+    if (!dateFrom) throw new Error("A saved date_from value is required for a delta sync.");
+    return getJson(
+      fetchImpl,
+      apiUrl(`/sync/all-items/${config.syncType}`, clientId, {
+        date_from: dateFrom,
+        next_watch_info: "yes",
+        language: "en",
+      }),
+      accessToken,
+    );
+  };
+
+  const getIdSnapshot = () => getJson(
+    fetchImpl,
+    apiUrl(`/sync/all-items/${config.syncType}`, clientId, {
+      extended: "simkl_ids_only",
+    }),
+    accessToken,
+  );
+
+  const getDetails = (simklId) => getJson(
+    fetchImpl,
+    apiUrl(`/${config.detailPath}/${simklId}`, clientId),
+    null,
+  );
+
+  const getCalendar = () => getFirstAvailableJson(
+    fetchImpl,
+    config.calendarNames.map((name) => calendarUrl(clientId, name)),
+    null,
+  );
+
+  const getCalendarMonth = (year, month) => getFirstAvailableJson(
+    fetchImpl,
+    config.calendarNames.map((name) => calendarUrl(clientId, name, year, month)),
+    null,
+  );
 
   return {
+    mediaType: normalizedMediaType,
+    activityKey: config.activityKey,
+    payloadKey: config.payloadKey,
+
     getActivities() {
       return getJson(fetchImpl, apiUrl("/sync/activities", clientId), accessToken);
     },
 
-    getInitialAnimeLibrary() {
-      return getJson(
-        fetchImpl,
-        apiUrl("/sync/all-items/anime", clientId, {
-          next_watch_info: "yes",
-          language: "en",
-        }),
-        accessToken,
-      );
-    },
+    getInitialLibrary,
+    getDelta,
+    getIdSnapshot,
+    getDetails,
+    getCalendar,
+    getCalendarMonth,
 
-    getAnimeDelta(dateFrom) {
-      if (!dateFrom) throw new Error("A saved date_from value is required for a delta sync.");
-      return getJson(
-        fetchImpl,
-        apiUrl("/sync/all-items/anime", clientId, {
-          date_from: dateFrom,
-          next_watch_info: "yes",
-          language: "en",
-        }),
-        accessToken,
-      );
-    },
-
-    getAnimeIdSnapshot() {
-      return getJson(
-        fetchImpl,
-        apiUrl("/sync/all-items/anime", clientId, {
-          extended: "simkl_ids_only",
-        }),
-        accessToken,
-      );
-    },
-
-    getAnimeDetails(simklId) {
-      return getJson(fetchImpl, apiUrl(`/anime/${simklId}`, clientId), null);
-    },
-
-    getAnimeCalendar() {
-      return getJson(fetchImpl, calendarUrl(clientId), null);
-    },
-
-    getAnimeCalendarMonth(year, month) {
-      return getJson(fetchImpl, calendarMonthUrl(clientId, year, month), null);
-    },
+    // Compatibility aliases keep the original root anime implementation and
+    // its existing tests/API surface intact.
+    getInitialAnimeLibrary: getInitialLibrary,
+    getAnimeDelta: getDelta,
+    getAnimeIdSnapshot: getIdSnapshot,
+    getAnimeDetails: getDetails,
+    getAnimeCalendar: getCalendar,
+    getAnimeCalendarMonth: getCalendarMonth,
   };
 }

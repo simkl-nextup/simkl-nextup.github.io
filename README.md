@@ -1,6 +1,6 @@
 # My Anime Up Next · Simkl
 
-A personal Stremio/Nuvio addon that can publish one isolated row for each of two Simkl accounts from the same GitHub repository. It combines anime from your Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** anime that receive an additional episode, and bumps a title to the top whenever a new episode airs.
+A personal Stremio/Nuvio project that publishes two isolated rows from the same GitHub repository: the existing root addon reads **anime** from account 1, while `/account-2/` reads normal **TV shows** from account 2. Each row combines its Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** titles that receive an additional episode, and bumps a title whenever a new episode airs.
 
 Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
 
@@ -122,16 +122,16 @@ Recommended for Nuvio:
 
 Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TVDB and anime IDs. Direct manifest installation also works best for titles carrying IMDb IDs.
 
-## Optional second Simkl account in the same repository
+## Second Simkl account for normal TV shows
 
-Version 1.8.7 can publish a second fully isolated addon without changing the existing root manifest:
+Version 1.8.9 keeps the existing root anime addon unchanged and publishes account 2 as a fully isolated normal-TV addon:
 
 ```text
 Primary:  https://simkl-nextup.github.io/manifest.json
 Account 2: https://simkl-nextup.github.io/account-2/manifest.json
 ```
 
-The second account uses `SIMKL_ACCESS_TOKEN_2`, an optional `SIMKL_CLIENT_ID_2`, a unique addon/catalog identity, its own output folder, and its own private Actions cache. The existing root account retains its current URL, IDs, secret names, and cache path. When the second token is not configured, the workflow publishes only its setup placeholder. See [`SECOND_ACCOUNT_SETUP.md`](SECOND_ACCOUNT_SETUP.md) for the exact migration and authorization steps.
+Account 2 reads Simkl's `shows` library and `tv_shows` activity timestamps, not the anime library. It uses `SIMKL_ACCESS_TOKEN_2`, an optional `SIMKL_CLIENT_ID_2`, a unique TV addon/catalog identity, its own output folder, and a fresh TV-specific Actions cache. The existing root account retains its current URL, anime IDs, secret names, and cache path. See [`SECOND_ACCOUNT_SETUP.md`](SECOND_ACCOUNT_SETUP.md) for the upload and deployment steps.
 
 ## Refresh behavior
 
@@ -231,4 +231,13 @@ The TV-readable top/bottom composition now uses the exact v1.8.2 badge palette a
 
 ## Updating to 1.8.7 — two isolated Simkl accounts
 
-Version 1.8.7 adds an optional second generation pass under `public/account-2`. The root addon keeps its original manifest URL, addon ID, catalog ID, Simkl secrets, state path, and cache prefix. Account 2 is enabled only when `SIMKL_ACCESS_TOKEN_2` exists. Both outputs are verified before the combined GitHub Pages artifact is deployed.
+Version 1.8.7 added an optional second generation pass under `public/account-2`. The root addon keeps its original manifest URL, addon ID, catalog ID, Simkl secrets, state path, and cache prefix. Account 2 is enabled only when `SIMKL_ACCESS_TOKEN_2` exists. Both outputs are verified before the combined GitHub Pages artifact is deployed.
+
+## Updating to 1.8.8 — account 2 reads normal TV shows
+
+Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
+
+
+## Updating to 1.8.9 — reliable two-account Pages deployment
+
+Version 1.8.9 keeps account 1 as anime and account 2 as normal TV. It splits generation and deployment into separate jobs, cancels stale overlapping refreshes, extends the GitHub Pages deployment wait from 10 to 30 minutes, and explicitly asserts that account 2 generated `mediaType: tv` with the TV addon and catalog IDs before any deployment is attempted. Uploading this release creates a fresh commit/build version, which avoids re-running the already-canceled Pages deployment attached to the previous commit.

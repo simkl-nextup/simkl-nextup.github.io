@@ -23,5 +23,6 @@
   "unifiedMetadataSeasons": 0,
   "unifiedMetadataEpisodes": 0,
   "unifiedMetadataTrackingEpisodes": 0,
-  "skipped": []
+  "skipped": [],
+  "mediaType": "anime"
 }

@@ -44,13 +44,26 @@ export function simklUrl(item) {
   const id = simklIdFor(item);
   if (!id) return "https://simkl.com";
   const slug = media?.ids?.slug ? `/${media.ids.slug}` : "";
-  return `https://simkl.com/anime/${id}${slug}`;
+  const section = item?.show ? "tv" : "anime";
+  return `https://simkl.com/${section}/${id}${slug}`;
+}
+
+function calendarEpisode(entry) {
+  if (entry?.episode && typeof entry.episode === "object") return entry.episode;
+  const episode = Number(entry?.episode ?? entry?.episode_number);
+  const season = Number(entry?.season ?? entry?.season_number);
+  return {
+    episode: Number.isFinite(episode) ? episode : undefined,
+    season: Number.isFinite(season) ? season : undefined,
+    title: entry?.episode_title || entry?.episode_name || undefined,
+  };
 }
 
 function normalizeCalendarPayload(payload) {
   if (!Array.isArray(payload)) {
+    const rawCalendar = Array.isArray(payload?.calendar) ? payload.calendar : [];
     return {
-      calendar: Array.isArray(payload?.calendar) ? payload.calendar : [],
+      calendar: rawCalendar.map((entry) => ({ ...entry, episode: calendarEpisode(entry) })),
       metadata: payload?.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
     };
   }
@@ -64,7 +77,7 @@ function normalizeCalendarPayload(payload) {
     calendar.push({
       simkl_id: simklId,
       date: entry.date,
-      episode: entry.episode,
+      episode: calendarEpisode(entry),
     });
     const existing = metadata[key] ?? {};
     metadata[key] = {
@@ -94,9 +107,14 @@ export function mergeCalendar(items, calendarPayload, options = {}) {
 
     if (item.status === "watching") {
       const info = item.next_to_watch_info;
-      if (info && Number(info.episode) === Number(entry.episode?.episode)) {
+      const sameEpisode = info && Number(info.episode) === Number(entry.episode?.episode);
+      const sameSeason = !Number.isFinite(Number(info?.season))
+        || !Number.isFinite(Number(entry.episode?.season))
+        || Number(info.season) === Number(entry.episode.season);
+      if (sameEpisode && sameSeason) {
         info.date = entry.date || info.date;
         info.title = entry.episode?.title || info.title;
+        if (entry.episode?.season !== undefined) info.season ??= entry.episode.season;
       }
     }
 
@@ -105,6 +123,7 @@ export function mergeCalendar(items, calendarPayload, options = {}) {
     const episodeNumber = Number(entry.episode?.episode);
     if (candidateDate && candidateDate <= now && Number.isFinite(episodeNumber) && (!savedDate || candidateDate >= savedDate)) {
       item._addonLatestAiredInfo = {
+        ...(Number.isFinite(Number(entry.episode?.season)) ? { season: Number(entry.episode.season) } : {}),
         episode: episodeNumber,
         title: entry.episode?.title || undefined,
         date: candidateDate.toISOString(),
@@ -124,7 +143,7 @@ export function mergeCalendar(items, calendarPayload, options = {}) {
   return next;
 }
 
-export function mergeAnimeDetails(item, details) {
+export function mergeMediaDetails(item, details) {
   if (!details || Array.isArray(details)) return item;
   const next = structuredClone(item);
   const media = mediaFor(next);
@@ -135,6 +154,10 @@ export function mergeAnimeDetails(item, details) {
   media.year ||= details.year;
   media.ids = { ...(details.ids ?? {}), ...(media.ids ?? {}) };
   return next;
+}
+
+export function mergeAnimeDetails(item, details) {
+  return mergeMediaDetails(item, details);
 }
 
 function episodeLabel(info) {
@@ -368,6 +391,14 @@ export function isCatalogCandidate(item, nowInput = new Date()) {
 
   if (item.status === "completed") {
     const watchedCount = Number(item.watched_episodes_count ?? 0);
+    const totalCount = Number(item.total_episodes_count);
+
+    // Anime records are often a single numbered run, so comparing the latest
+    // episode number to the watched count works. Normal TV resets its episode
+    // number every season (for example S06E01 after 50 watched episodes), so
+    // prefer Simkl's cumulative totals whenever they are available.
+    if (Number.isFinite(totalCount) && totalCount > watchedCount) return true;
+
     const releasedEpisode = Number(info.episode);
     if (!Number.isFinite(releasedEpisode) || releasedEpisode <= watchedCount) return false;
   }
@@ -380,12 +411,15 @@ export function buildManifest({
   catalogName = CATALOG_NAME,
   addonName = "Simkl Anime Up Next",
   version = APP_VERSION,
+  mediaType = "anime",
 } = {}) {
   return {
     id: addonId,
     version,
     name: addonName,
-    description: "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
+    description: mediaType === "tv"
+      ? "A personalized Simkl TV Up Next row with TheTVDB seasons, canonical episode IDs, and high-resolution episode artwork."
+      : "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
     resources: ["catalog", "meta"],
     types: ["series"],
     idPrefixes: ["simkl-tvdb-unified:", "tt", "tvdb:", "tmdb:", "kitsu:", "mal:", "simkl:"],

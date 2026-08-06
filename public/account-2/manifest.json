@@ -1,8 +1,8 @@
 {
-  "id": "community.simkl.new-anime-episodes.account2",
-  "version": "1.8.7",
-  "name": "Simkl Anime Up Next · Account 2",
-  "description": "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
+  "id": "community.simkl.new-tv-episodes.account2",
+  "version": "1.8.9",
+  "name": "Simkl TV Up Next · Account 2",
+  "description": "A personalized Simkl TV Up Next row with TheTVDB seasons, canonical episode IDs, and high-resolution episode artwork.",
   "resources": [
     "catalog",
     "meta"
@@ -22,8 +22,8 @@
   "catalogs": [
     {
       "type": "series",
-      "id": "simkl-new-anime-episodes-account2",
-      "name": "Account 2 · Anime Up Next · Simkl"
+      "id": "simkl-new-tv-episodes-account2",
+      "name": "Account 2 · TV Up Next · Simkl"
     }
   ],
   "behaviorHints": {
