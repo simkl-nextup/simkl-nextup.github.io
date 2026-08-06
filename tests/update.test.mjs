@@ -403,3 +403,64 @@ test("end-to-end TVDB refresh groups separate sequel records and keeps their tra
   assert.equal(status.tvdbUnifiedSeasons, 2);
   assert.equal(status.tvdbCanonicalTrackingEpisodes, 2);
 });
+
+test("end-to-end refresh can publish an isolated account-2 manifest and catalog", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-account2-"));
+  const stateFile = path.join(temp, "state", "account-2", "simkl-state.json");
+  const outputDirectory = path.join(temp, "public", "account-2");
+  const catalogId = "simkl-new-anime-episodes-account2";
+  const addonId = "community.simkl.new-anime-episodes.account2";
+  const item = {
+    status: "watching",
+    watched_episodes_count: 0,
+    next_to_watch_info: { episode: 1, title: "Start", date: "2026-08-05T10:00:00Z" },
+    anime: { title: "Second Account Anime", ids: { simkl: 9901, imdb: "tt9090909" } },
+  };
+
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    if (url.pathname === "/sync/all-items/anime") return jsonResponse({ anime: [item] });
+    if (url.pathname === "/sync/activities") {
+      return jsonResponse({ anime: { all: "2026-08-06T00:00:00Z", removed_from_list: null } });
+    }
+    if (url.hostname === "data.simkl.in") {
+      return url.pathname === "/calendar/v2/anime.json"
+        ? jsonResponse({ calendar: [], metadata: {} })
+        : jsonResponse([]);
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  await refresh({
+    clientId: "client",
+    accessToken: "account-2-token",
+    fetchImpl,
+    now: new Date("2026-08-06T10:00:00Z"),
+    stateFile,
+    outputDirectory,
+    explicitBaseUrl: "https://example.github.io",
+    publicPathPrefix: "account-2",
+    addonId,
+    catalogId,
+    catalogName: "Account 2 · Anime Up Next · Simkl",
+    addonName: "Simkl Anime Up Next · Account 2",
+    siteTitle: "Account 2 Anime Up Next",
+    accountLabel: "Simkl Account 2",
+    setupSecretName: "SIMKL_ACCESS_TOKEN_2",
+    posterBadgesEnabled: false,
+  });
+
+  const manifest = JSON.parse(await readFile(path.join(outputDirectory, "manifest.json"), "utf8"));
+  const catalog = JSON.parse(await readFile(
+    path.join(outputDirectory, "catalog", "series", `${catalogId}.json`),
+    "utf8",
+  ));
+  const index = await readFile(path.join(outputDirectory, "index.html"), "utf8");
+  const setup = await readFile(path.join(outputDirectory, "setup.html"), "utf8");
+
+  assert.equal(manifest.id, addonId);
+  assert.equal(manifest.catalogs[0].id, catalogId);
+  assert.equal(catalog.metas[0].name, "Second Account Anime");
+  assert.match(index, /https:\/\/example\.github\.io\/account-2\/manifest\.json/);
+  assert.match(setup, /SIMKL_ACCESS_TOKEN_2/);
+});

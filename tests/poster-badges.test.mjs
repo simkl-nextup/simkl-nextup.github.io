@@ -170,3 +170,41 @@ test("poster decoration accepts TheTVDB artwork as an input source", async () =>
   assert.equal(result.generated, 1);
   assert.deepEqual(result.warnings, []);
 });
+
+test("site generation isolates a second account with unique addon and catalog IDs", async () => {
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "simkl-account-2-site-"));
+  const catalogId = "simkl-new-anime-episodes-account2";
+  await writeSite({
+    outputDir: outputDirectory,
+    catalog: { metas: [] },
+    items: {},
+    updatedAt: "2026-08-06T10:00:00.000Z",
+    baseUrl: "https://example.github.io/account-2",
+    addonId: "community.simkl.new-anime-episodes.account2",
+    catalogId,
+    catalogName: "Account 2 · Anime Up Next · Simkl",
+    addonName: "Simkl Anime Up Next · Account 2",
+    siteTitle: "Account 2 Anime Up Next",
+    accountLabel: "Simkl Account 2",
+    setupSecretName: "SIMKL_ACCESS_TOKEN_2",
+  });
+
+  const manifest = JSON.parse(await readFile(path.join(outputDirectory, "manifest.json"), "utf8"));
+  const catalog = JSON.parse(await readFile(
+    path.join(outputDirectory, "catalog", "series", `${catalogId}.json`),
+    "utf8",
+  ));
+  const setup = await readFile(path.join(outputDirectory, "setup.html"), "utf8");
+  const index = await readFile(path.join(outputDirectory, "index.html"), "utf8");
+  const status = JSON.parse(await readFile(path.join(outputDirectory, "status.json"), "utf8"));
+
+  assert.equal(manifest.id, "community.simkl.new-anime-episodes.account2");
+  assert.equal(manifest.catalogs[0].id, catalogId);
+  assert.equal(manifest.catalogs[0].name, "Account 2 · Anime Up Next · Simkl");
+  assert.deepEqual(catalog, { metas: [] });
+  assert.match(setup, /SIMKL_ACCESS_TOKEN_2/);
+  assert.match(index, /https:\/\/example\.github\.io\/account-2\/manifest\.json/);
+  assert.equal(status.account, "Simkl Account 2");
+  assert.equal(status.addonId, manifest.id);
+  assert.equal(status.catalogId, catalogId);
+});

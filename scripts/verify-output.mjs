@@ -1,18 +1,37 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CATALOG_ID } from "../src/constants.mjs";
+import { ADDON_ID, CATALOG_ID } from "../src/constants.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const publicDir = path.join(root, "public");
+
+function configuredProjectPath(value, fallback) {
+  if (!value) return fallback;
+  const resolved = path.resolve(root, value);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Configured path must remain inside the repository: ${value}`);
+  }
+  return resolved;
+}
+
+const publicDir = configuredProjectPath(process.env.OUTPUT_DIRECTORY, path.join(root, "public"));
+const expectedCatalogId = process.env.CATALOG_ID || CATALOG_ID;
+const expectedAddonId = process.env.ADDON_ID || ADDON_ID;
 const manifest = JSON.parse(await readFile(path.join(publicDir, "manifest.json"), "utf8"));
-const catalog = JSON.parse(await readFile(path.join(publicDir, "catalog", "series", `${CATALOG_ID}.json`), "utf8"));
+const catalog = JSON.parse(await readFile(
+  path.join(publicDir, "catalog", "series", `${expectedCatalogId}.json`),
+  "utf8",
+));
 const setupHtml = await readFile(path.join(publicDir, "setup.html"), "utf8");
 
+if (manifest.id !== expectedAddonId) {
+  throw new Error(`Manifest ID mismatch: expected ${expectedAddonId}, received ${manifest.id}`);
+}
 if (!Array.isArray(manifest.resources)
   || !manifest.resources.includes("catalog")
   || !manifest.resources.includes("meta")
-  || !manifest.catalogs?.some((item) => item.id === CATALOG_ID)) {
+  || !manifest.catalogs?.some((item) => item.id === expectedCatalogId)) {
   throw new Error("Manifest does not declare the expected catalog and metadata resources.");
 }
 if (!Array.isArray(manifest.idPrefixes)
@@ -116,5 +135,5 @@ if (secrets.length) {
 }
 
 console.log(
-  `Verified manifest and ${catalog.metas.length} catalog item(s), including ${fullMetadataFiles} unified title(s) and ${fullMetadataEpisodes} episode(s); no credential leakage detected.`,
+  `Verified ${manifest.id}, ${expectedCatalogId}, and ${catalog.metas.length} catalog item(s), including ${fullMetadataFiles} unified title(s) and ${fullMetadataEpisodes} episode(s); no credential leakage detected.`,
 );

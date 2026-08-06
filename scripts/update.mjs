@@ -14,7 +14,7 @@ import {
   replaceWithInitialEligibleAnime,
   simklIdFor,
 } from "../src/state.mjs";
-import { deriveBaseUrl, writeSite } from "../src/site.mjs";
+import { appendPublicPath, deriveBaseUrl, writeSite } from "../src/site.mjs";
 import { enrichTvdbMetadata, TvdbApiError } from "../src/tvdb.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -131,6 +131,14 @@ export async function refresh({
   posterBadgesEnabled = process.env.POSTER_BADGES !== "false",
   stateFile = statePath,
   outputDirectory = outputDir,
+  publicPathPrefix = process.env.PUBLIC_PATH_PREFIX || "",
+  addonId = process.env.ADDON_ID,
+  catalogId = process.env.CATALOG_ID,
+  catalogName = process.env.CATALOG_NAME,
+  addonName = process.env.ADDON_NAME,
+  siteTitle = process.env.SITE_TITLE,
+  setupSecretName = process.env.SETUP_SECRET_NAME,
+  accountLabel = process.env.ACCOUNT_LABEL,
 } = {}) {
   const client = createSimklClient({ clientId, accessToken, fetchImpl });
   let state = await loadState(stateFile);
@@ -208,7 +216,8 @@ export async function refresh({
   state.lastSuccessfulRefresh = new Date(now).toISOString();
 
   const { catalog, metadata: detailMetadata, posterBadges, skipped, sourceCounts, unifiedStats } = buildCatalog(state.items, { now, maxItems });
-  const baseUrl = deriveBaseUrl({ explicitBaseUrl, githubRepository });
+  const rootBaseUrl = deriveBaseUrl({ explicitBaseUrl, githubRepository });
+  const baseUrl = appendPublicPath(rootBaseUrl, publicPathPrefix);
   const site = await writeSite({
     outputDir: outputDirectory,
     catalog,
@@ -224,6 +233,13 @@ export async function refresh({
     metadata: detailMetadata,
     unifiedStats,
     fetchImpl,
+    ...(addonId ? { addonId } : {}),
+    ...(catalogId ? { catalogId } : {}),
+    ...(catalogName ? { catalogName } : {}),
+    ...(addonName ? { addonName } : {}),
+    ...(siteTitle ? { siteTitle } : {}),
+    ...(setupSecretName ? { setupSecretName } : {}),
+    ...(accountLabel ? { accountLabel } : {}),
   });
   for (const warning of site.posterBadgeWarnings) {
     console.warn(`Poster badge skipped for ${warning.name ?? warning.id ?? "unknown"}: ${warning.message}`);
@@ -241,18 +257,31 @@ export async function refresh({
   };
 }
 
+function configuredProjectPath(value, fallback) {
+  if (!value) return fallback;
+  const resolved = path.resolve(root, value);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Configured path must remain inside the repository: ${value}`);
+  }
+  return resolved;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const accessTokenSecretName = process.env.SETUP_SECRET_NAME || "SIMKL_ACCESS_TOKEN";
   try {
     const result = await refresh({
       clientId: process.env.SIMKL_CLIENT_ID,
       accessToken: process.env.SIMKL_ACCESS_TOKEN,
       maxItems: process.env.MAX_CATALOG_ITEMS || DEFAULT_MAX_ITEMS,
+      stateFile: configuredProjectPath(process.env.SIMKL_STATE_FILE, statePath),
+      outputDirectory: configuredProjectPath(process.env.OUTPUT_DIRECTORY, outputDir),
     });
     console.log(`Published ${result.catalog.metas.length} anime title(s) ready to watch.`);
     if (result.skipped.length) console.warn(`Skipped ${result.skipped.length} title(s) with unusable metadata.`);
   } catch (error) {
     if (error instanceof SimklApiError && error.status === 401) {
-      console.error("Simkl authorization was revoked or expired. Run the authorization step again and replace SIMKL_ACCESS_TOKEN.");
+      console.error(`Simkl authorization was revoked or expired. Run the authorization step again and replace ${accessTokenSecretName}.`);
     } else if ((error instanceof MetadataApiError || error instanceof TvdbApiError) && (error.status === 401 || error.status === 403)) {
       console.error(`${error.provider} rejected its configured API credential. Replace or rotate the corresponding GitHub secret.`);
     } else {

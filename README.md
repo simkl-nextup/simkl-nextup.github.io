@@ -1,6 +1,6 @@
 # My Anime Up Next · Simkl
 
-A personal, single-row Stremio/Nuvio addon. It combines anime from your Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** anime that receive an additional episode, and bumps a title to the top whenever a new episode airs.
+A personal Stremio/Nuvio addon that can publish one isolated row for each of two Simkl accounts from the same GitHub repository. It combines anime from your Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** anime that receive an additional episode, and bumps a title to the top whenever a new episode airs.
 
 Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
 
@@ -122,6 +122,17 @@ Recommended for Nuvio:
 
 Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TVDB and anime IDs. Direct manifest installation also works best for titles carrying IMDb IDs.
 
+## Optional second Simkl account in the same repository
+
+Version 1.8.7 can publish a second fully isolated addon without changing the existing root manifest:
+
+```text
+Primary:  https://simkl-nextup.github.io/manifest.json
+Account 2: https://simkl-nextup.github.io/account-2/manifest.json
+```
+
+The second account uses `SIMKL_ACCESS_TOKEN_2`, an optional `SIMKL_CLIENT_ID_2`, a unique addon/catalog identity, its own output folder, and its own private Actions cache. The existing root account retains its current URL, IDs, secret names, and cache path. When the second token is not configured, the workflow publishes only its setup placeholder. See [`SECOND_ACCOUNT_SETUP.md`](SECOND_ACCOUNT_SETUP.md) for the exact migration and authorization steps.
+
 ## Refresh behavior
 
 - The first run pulls your Anime library once and locally keeps Watching, Plan to Watch, and Completed so revived titles can be detected.
@@ -217,3 +228,7 @@ TOP Posters is intentionally not called directly because its API key would appea
 ## v1.8.6 badge styling
 
 The TV-readable top/bottom composition now uses the exact v1.8.2 badge palette and treatment: green/gold/purple status gradients, green/blue/dark episode gradients, white highlights, dark lower edges, heavy Arial text, black text outlines, gloss, and the original shadow strength. The logo-safe lower composition remains unchanged.
+
+## Updating to 1.8.7 — two isolated Simkl accounts
+
+Version 1.8.7 adds an optional second generation pass under `public/account-2`. The root addon keeps its original manifest URL, addon ID, catalog ID, Simkl secrets, state path, and cache prefix. Account 2 is enabled only when `SIMKL_ACCESS_TOKEN_2` exists. Both outputs are verified before the combined GitHub Pages artifact is deployed.

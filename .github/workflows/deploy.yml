@@ -1,4 +1,4 @@
-name: Refresh Simkl catalog and deploy Pages
+name: Refresh two Simkl catalogs and deploy Pages
 
 on:
   workflow_dispatch:
@@ -35,6 +35,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Detect second Simkl account
+        id: account2
+        env:
+          SECOND_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
+        run: |
+          if [ -n "$SECOND_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Second Simkl account is enabled."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SIMKL_ACCESS_TOKEN_2 is absent; deploying the existing root account only."
+          fi
+
       - name: Keep scheduled workflows active
         run: |
           node scripts/update-keepalive.mjs
@@ -49,8 +62,8 @@ jobs:
           git commit -m "chore: keep scheduled workflows active"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
-      - name: Restore private sync state
-        id: restore-state
+      - name: Restore primary private sync state
+        id: restore-primary-state
         uses: actions/cache/restore@v4
         with:
           path: state/simkl-state.json
@@ -58,10 +71,20 @@ jobs:
           restore-keys: |
             simkl-state-
 
+      - name: Restore account 2 private sync state
+        if: steps.account2.outputs.enabled == 'true'
+        id: restore-account2-state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/account-2/simkl-state.json
+          key: simkl-account-2-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            simkl-account-2-state-
+
       - name: Run tests
         run: npm test
 
-      - name: Refresh personalized catalog
+      - name: Refresh primary account at root
         env:
           SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
@@ -76,7 +99,7 @@ jobs:
           POSTER_BADGES: "true"
         run: npm run refresh
 
-      - name: Verify generated addon
+      - name: Verify primary generated addon
         env:
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
           TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
@@ -85,20 +108,88 @@ jobs:
           TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
         run: npm run verify
 
-      - name: Save private sync state
+      - name: Save primary private sync state
         uses: actions/cache/save@v4
         with:
           path: state/simkl-state.json
           key: simkl-state-${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: Publish account 2 authorization placeholder
+        if: steps.account2.outputs.enabled != 'true'
+        env:
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          PUBLIC_PATH_PREFIX: account-2
+          OUTPUT_DIRECTORY: public/account-2
+          ADDON_ID: community.simkl.new-anime-episodes.account2
+          CATALOG_ID: simkl-new-anime-episodes-account2
+          CATALOG_NAME: Account 2 · Anime Up Next · Simkl
+          ADDON_NAME: Simkl Anime Up Next · Account 2
+          SITE_TITLE: Account 2 Anime Up Next
+          ACCOUNT_LABEL: Simkl Account 2
+          SETUP_SECRET_NAME: SIMKL_ACCESS_TOKEN_2
+        run: npm run build:placeholder
+
+      - name: Refresh account 2 under /account-2
+        if: steps.account2.outputs.enabled == 'true'
+        env:
+          SIMKL_CLIENT_ID_2: ${{ secrets.SIMKL_CLIENT_ID_2 }}
+          SIMKL_CLIENT_ID_PRIMARY: ${{ secrets.SIMKL_CLIENT_ID }}
+          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+          MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
+          TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
+          TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
+          TVDB_SEASON_TYPE: ${{ vars.TVDB_SEASON_TYPE }}
+          TVDB_LANGUAGE: ${{ vars.TVDB_LANGUAGE }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          PUBLIC_PATH_PREFIX: account-2
+          OUTPUT_DIRECTORY: public/account-2
+          SIMKL_STATE_FILE: state/account-2/simkl-state.json
+          ADDON_ID: community.simkl.new-anime-episodes.account2
+          CATALOG_ID: simkl-new-anime-episodes-account2
+          CATALOG_NAME: Account 2 · Anime Up Next · Simkl
+          ADDON_NAME: Simkl Anime Up Next · Account 2
+          SITE_TITLE: Account 2 Anime Up Next
+          ACCOUNT_LABEL: Simkl Account 2
+          SETUP_SECRET_NAME: SIMKL_ACCESS_TOKEN_2
+          MAX_CATALOG_ITEMS: 50
+          POSTER_BADGES: "true"
+        run: |
+          export SIMKL_CLIENT_ID="${SIMKL_CLIENT_ID_2:-$SIMKL_CLIENT_ID_PRIMARY}"
+          if [ -z "$SIMKL_CLIENT_ID" ]; then
+            echo "Neither SIMKL_CLIENT_ID_2 nor SIMKL_CLIENT_ID is configured." >&2
+            exit 1
+          fi
+          npm run refresh
+
+      - name: Verify account 2 generated addon
+        if: steps.account2.outputs.enabled == 'true'
+        env:
+          OUTPUT_DIRECTORY: public/account-2
+          ADDON_ID: community.simkl.new-anime-episodes.account2
+          CATALOG_ID: simkl-new-anime-episodes-account2
+          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+          MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
+          TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
+          TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
+        run: npm run verify
+
+      - name: Save account 2 private sync state
+        if: steps.account2.outputs.enabled == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: state/account-2/simkl-state.json
+          key: simkl-account-2-state-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload combined Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: public
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy both addons to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

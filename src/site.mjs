@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { APP_VERSION, CATALOG_ID } from "./constants.mjs";
+import { ADDON_ID, APP_VERSION, CATALOG_ID, CATALOG_NAME } from "./constants.mjs";
 import { buildManifest } from "./catalog.mjs";
 import { decorateCatalogPosters } from "./poster-badges.mjs";
 
@@ -14,14 +14,23 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb, usesTvdb }) {
+function indexHtml({
+  baseUrl,
+  count,
+  updatedAt,
+  skippedCount,
+  usesTmdb,
+  usesTvdb,
+  siteTitle,
+  catalogName,
+}) {
   const manifestUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/manifest.json` : "./manifest.json";
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>My Anime Up Next · Simkl</title>
+  <title>${escapeHtml(siteTitle)} · Simkl</title>
   <style>
     :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#08090b;color:#f7f7f8}
     body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}
@@ -38,8 +47,8 @@ function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb, usesTvdb
 <body>
   <main>
     <div class="eyebrow">Personal Nuvio / Stremio catalog</div>
-    <h1>My Anime Up Next</h1>
-    <p>A focused mix of <strong>Watching</strong>, <strong>Plan to Watch</strong>, and previously completed anime that receive a new episode. Every new release bumps its show to the top.</p>
+    <h1>${escapeHtml(siteTitle)}</h1>
+    <p><strong>${escapeHtml(catalogName)}</strong> combines <strong>Watching</strong>, <strong>Plan to Watch</strong>, and previously completed anime that receive a new episode. Every new release bumps its show to the top.</p>
     <div class="stats">
       <span class="pill">${count} title${count === 1 ? "" : "s"} ready</span>
       <span class="pill">Updated ${escapeHtml(updatedAt)}</span>
@@ -57,14 +66,14 @@ function indexHtml({ baseUrl, count, updatedAt, skippedCount, usesTmdb, usesTvdb
 </html>`;
 }
 
-function setupHtml() {
+function setupHtml({ secretName, accountLabel }) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Authorize Simkl</title><style>
+<title>Authorize ${escapeHtml(accountLabel)}</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#0b0c0f;color:#fff}body{max-width:680px;margin:48px auto;padding:0 20px}input,button{font:inherit;padding:12px;border-radius:10px;border:1px solid #3b4150}input{width:100%;box-sizing:border-box;background:#151820;color:#fff}button{margin-top:12px;background:#fff;color:#08090b;font-weight:800;cursor:pointer}.box{margin-top:20px;padding:18px;background:#151820;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere}.warn{color:#ffcb6b}</style></head>
-<body><h1>Authorize this personal addon</h1><p>Enter the client ID from your Simkl developer app. Your browser will request a PIN directly from Simkl; nothing is sent to this GitHub Pages site.</p>
+<body><h1>Authorize ${escapeHtml(accountLabel)}</h1><p>Enter the client ID from your Simkl developer app. Your browser requests a PIN directly from Simkl; nothing is sent to this GitHub Pages site.</p>
 <label>Simkl client ID<input id="client" autocomplete="off"></label><button id="start">Request PIN</button><div id="out" class="box">Waiting.</div>
-<p class="warn">Treat the final access token like a password. Save it only as the GitHub repository secret <strong>SIMKL_ACCESS_TOKEN</strong>.</p>
+<p class="warn">Before approving the PIN, make sure the browser is signed into the correct Simkl account. Treat the final access token like a password. Save it only as the GitHub repository secret <strong>${escapeHtml(secretName)}</strong>.</p>
 <script type="module">
 const out=document.querySelector('#out');const button=document.querySelector('#start');
 const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'${APP_VERSION}'});
@@ -73,7 +82,7 @@ button.onclick=async()=>{button.disabled=true;try{const id=document.querySelecto
 const pin=await get('https://api.simkl.com/oauth/pin?'+params(id));if(!pin.user_code||!pin.verification_uri)throw new Error('Simkl did not return a usable PIN.');
 out.textContent='Open '+pin.verification_uri+' and enter PIN: '+pin.user_code+'\\n\\nWaiting for approval…';const deadline=Date.now()+pin.expires_in*1000;
 while(Date.now()<deadline){await new Promise(r=>setTimeout(r,pin.interval*1000));const result=await get('https://api.simkl.com/oauth/pin/'+encodeURIComponent(pin.user_code)+'?'+params(id));
-if(result.access_token){out.textContent='SIMKL_ACCESS_TOKEN\\n\\n'+result.access_token+'\\n\\nCopy it now and add it as a GitHub repository secret. Do not commit it.';return}if(result.result==='KO'&&!/pending/i.test(result.message||''))throw new Error(result.message||'Simkl declined the PIN authorization.');}
+if(result.access_token){out.textContent='${escapeHtml(secretName)}\\n\\n'+result.access_token+'\\n\\nCopy it now and add it as a GitHub repository secret. Do not commit it.';return}if(result.result==='KO'&&!/pending/i.test(result.message||''))throw new Error(result.message||'Simkl declined the PIN authorization.');}
 throw new Error('The PIN expired. Start again.')}catch(error){out.textContent='Error: '+error.message}finally{button.disabled=false}};
 </script></body></html>`;
 }
@@ -84,6 +93,16 @@ export function deriveBaseUrl({ explicitBaseUrl, githubRepository }) {
   const [owner, repo] = githubRepository.split("/");
   const host = `https://${owner}.github.io`;
   return repo.toLowerCase() === `${owner.toLowerCase()}.github.io` ? host : `${host}/${repo}`;
+}
+
+export function appendPublicPath(baseUrl, publicPath = "") {
+  const cleanBase = String(baseUrl ?? "").replace(/\/$/, "");
+  const cleanPath = String(publicPath ?? "").trim().replace(/^\/+|\/+$/g, "");
+  if (!cleanPath) return cleanBase;
+  if (!/^[a-z0-9][a-z0-9._/-]*$/i.test(cleanPath) || cleanPath.split("/").includes("..")) {
+    throw new Error(`Unsafe public path: ${publicPath}`);
+  }
+  return cleanBase ? `${cleanBase}/${cleanPath}` : `./${cleanPath}`;
 }
 
 export async function writeSite({
@@ -101,6 +120,13 @@ export async function writeSite({
   metadata = [],
   unifiedStats = { titles: 0, seasons: 0, episodes: 0, trackingEpisodes: 0 },
   fetchImpl = fetch,
+  addonId = ADDON_ID,
+  catalogId = CATALOG_ID,
+  catalogName = CATALOG_NAME,
+  addonName = "Simkl Anime Up Next",
+  siteTitle = "My Anime Up Next",
+  setupSecretName = "SIMKL_ACCESS_TOKEN",
+  accountLabel = siteTitle,
 }) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
@@ -114,10 +140,10 @@ export async function writeSite({
   });
   const publishedCatalog = posterResult.catalog;
 
-  const manifest = buildManifest();
+  const manifest = buildManifest({ addonId, catalogId, catalogName, addonName });
   const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
   await writeFile(path.join(outputDir, "manifest.json"), json(manifest));
-  await writeFile(path.join(outputDir, "catalog", "series", `${CATALOG_ID}.json`), json(publishedCatalog));
+  await writeFile(path.join(outputDir, "catalog", "series", `${catalogId}.json`), json(publishedCatalog));
 
   const metadataById = new Map((metadata ?? []).map((meta) => [meta?.id, meta]));
   for (const preview of publishedCatalog.metas) {
@@ -128,7 +154,7 @@ export async function writeSite({
       poster: preview.poster || detail?.poster,
       background: detail?.background || preview.background,
     };
-    if (/[\/]/.test(meta.id)) throw new Error(`Unsafe metadata ID: ${meta.id}`);
+    if (/[\\/]/.test(meta.id)) throw new Error(`Unsafe metadata ID: ${meta.id}`);
     await writeFile(path.join(outputDir, "meta", "series", `${meta.id}.json`), json({ meta }));
   }
 
@@ -139,10 +165,18 @@ export async function writeSite({
     skippedCount: skipped.length,
     usesTmdb,
     usesTvdb,
+    siteTitle,
+    catalogName,
   }));
-  await writeFile(path.join(outputDir, "setup.html"), setupHtml());
+  await writeFile(path.join(outputDir, "setup.html"), setupHtml({
+    secretName: setupSecretName,
+    accountLabel,
+  }));
   await writeFile(path.join(outputDir, ".nojekyll"), "");
   await writeFile(path.join(outputDir, "status.json"), json({
+    account: accountLabel,
+    addonId,
+    catalogId,
     updatedAt,
     catalogItems: publishedCatalog.metas.length,
     publishedWatchingItems: sourceCounts.watching,

@@ -374,11 +374,17 @@ export function isCatalogCandidate(item, nowInput = new Date()) {
   return true;
 }
 
-export function buildManifest() {
+export function buildManifest({
+  addonId = ADDON_ID,
+  catalogId = CATALOG_ID,
+  catalogName = CATALOG_NAME,
+  addonName = "Simkl Anime Up Next",
+  version = APP_VERSION,
+} = {}) {
   return {
-    id: ADDON_ID,
-    version: APP_VERSION,
-    name: "Simkl Anime Up Next",
+    id: addonId,
+    version,
+    name: addonName,
     description: "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
     resources: ["catalog", "meta"],
     types: ["series"],
@@ -386,8 +392,8 @@ export function buildManifest() {
     catalogs: [
       {
         type: "series",
-        id: CATALOG_ID,
-        name: CATALOG_NAME,
+        id: catalogId,
+        name: catalogName,
       },
     ],
     behaviorHints: {
