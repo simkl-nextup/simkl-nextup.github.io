@@ -268,20 +268,55 @@ function findDefaultVideoId(seriesMeta, info) {
   return canonicalEpisodeInfo(seriesMeta, info, { preferMatched: true })?._videoId ?? null;
 }
 
-function isUnstartedNewSeason(item, nextInfo, latestInfo) {
-  // This derived state is for normal multi-season TV. Anime sequel records
-  // keep the root addon's established status rules unchanged.
+function regularEpisodeKey(video) {
+  const season = finiteNumber(video?.season);
+  const episode = finiteNumber(video?.episode);
+  return season !== null && season > 0 && episode !== null
+    ? `${season}:${episode}`
+    : null;
+}
+
+function previousSeasonEpisodeCount(seriesMeta, nextSeason, now) {
+  const videos = Array.isArray(seriesMeta?.videos) ? seriesMeta.videos : [];
+  const unique = new Set();
+  for (const video of videos) {
+    const season = finiteNumber(video?.season);
+    if (season === null || season <= 0 || season >= nextSeason) continue;
+    const released = validDate(video?.released);
+    if (released && released > now) continue;
+    const key = regularEpisodeKey(video);
+    if (key) unique.add(key);
+  }
+  return unique.size;
+}
+
+export function isUnstartedNewSeason(item, nextInfo, latestInfo, seriesMeta, nowInput = new Date()) {
+  // Anime keeps the root addon's established Completed-title rule. Normal TV
+  // needs an extra derived state because Simkl can move a returning show back
+  // to Watching before the first episode of the new season has been played.
   if (item?.status !== "watching" || !item?.show) return false;
-  const watchedCount = finiteNumber(item?.watched_episodes_count) ?? 0;
+
   const nextSeason = finiteNumber(nextInfo?.season);
   const nextEpisode = finiteNumber(nextInfo?.episode);
   const latestSeason = finiteNumber(latestInfo?.season);
-  return watchedCount > 0
-    && nextSeason !== null
-    && nextSeason > 1
-    && nextEpisode === 1
-    && latestSeason !== null
-    && latestSeason >= nextSeason;
+  if (nextSeason === null || nextSeason <= 1 || nextEpisode !== 1) return false;
+  if (latestSeason === null || latestSeason < nextSeason) return false;
+
+  const watchedCount = finiteNumber(item?.watched_episodes_count) ?? 0;
+  if (watchedCount <= 0) return false;
+
+  const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
+  const previousEpisodeCount = previousSeasonEpisodeCount(seriesMeta, nextSeason, now);
+
+  // When canonical TVDB episodes are available, require the watched count to
+  // reach the exact season boundary. This avoids falsely calling S04E01 a new
+  // season for a user who still has unwatched episodes in older seasons.
+  if (previousEpisodeCount > 0) return watchedCount >= previousEpisodeCount;
+
+  // Conservative fallback for shows without a usable canonical episode list.
+  // Simkl's next-to-watch position is still authoritative: S02E01+ means the
+  // previous run was passed, and the badge switches to green once it advances.
+  return true;
 }
 
 function trackingEpisodeCount(seriesMeta) {
@@ -358,7 +393,7 @@ export function buildCatalog(items, options = {}) {
     const sortAt = latestAiredAt && latestAiredAt <= now && latestAiredAt > airedAt
       ? latestAiredAt
       : airedAt;
-    const visualStatus = isUnstartedNewSeason(item, info, latestAiredInfo)
+    const visualStatus = isUnstartedNewSeason(item, info, latestAiredInfo, seriesMeta, now)
       ? "completed"
       : item.status;
 

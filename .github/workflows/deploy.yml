@@ -22,6 +22,8 @@ jobs:
     name: Build and verify both addons
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      pages_artifact_id: ${{ steps.pages-artifact.outputs.artifact_id }}
 
     steps:
       - name: Checkout repository
@@ -212,23 +214,28 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Upload combined Pages artifact
+        id: pages-artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: public
 
   deploy:
-    name: Deploy verified site to GitHub Pages
+    name: Queue verified site for GitHub Pages
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 5
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Deploy both addons to GitHub Pages
+      - name: Checkout deployment helper
+        uses: actions/checkout@v6
+
+      - name: Queue both addons without polling
         id: deployment
-        uses: actions/deploy-pages@v4
-        with:
-          # GitHub's default is 10 minutes. Allow longer temporary Pages queues.
-          timeout: 1800000
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PAGES_ARTIFACT_ID: ${{ needs.build.outputs.pages_artifact_id }}
+          PAGES_BUILD_VERSION: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          PAGES_ENVIRONMENT: github-pages
+        run: node scripts/dispatch-pages.mjs

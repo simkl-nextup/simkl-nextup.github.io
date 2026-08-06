@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCatalog, buildManifest, chooseCatalogId, mergeCalendar } from "../src/catalog.mjs";
+import { buildCatalog, buildManifest, chooseCatalogId, isUnstartedNewSeason, mergeCalendar } from "../src/catalog.mjs";
 
 const watching = (overrides = {}) => ({
   status: "watching",
@@ -195,6 +195,33 @@ test("an unstarted season premiere stays purple until its first episode is watch
   assert.equal(after.posterBadges[0].status, "watching");
   assert.equal(after.posterBadges[0].nextEpisode, "S04E02");
   assert.equal(after.catalog.metas[0].behaviorHints.defaultVideoId, "tt10986410:4:2");
+});
+
+test("TV new-season detection requires the canonical previous-season boundary", () => {
+  const item = {
+    status: "watching",
+    watched_episodes_count: 2,
+    next_to_watch_info: { season: 2, episode: 1, date: "2026-08-01T00:00:00Z" },
+    show: { title: "Boundary Show", ids: { simkl: 550 } },
+  };
+  const latest = { season: 2, episode: 2, date: "2026-08-05T00:00:00Z" };
+  const seriesMeta = {
+    videos: [
+      { id: "tt550:1:1", season: 1, episode: 1, released: "2025-01-01T00:00:00Z" },
+      { id: "tt550:1:2", season: 1, episode: 2, released: "2025-01-08T00:00:00Z" },
+      { id: "tt550:1:3", season: 1, episode: 3, released: "2025-01-15T00:00:00Z" },
+      { id: "tt550:2:1", season: 2, episode: 1, released: "2026-08-01T00:00:00Z" },
+      { id: "tt550:2:2", season: 2, episode: 2, released: "2026-08-05T00:00:00Z" },
+    ],
+  };
+
+  assert.equal(isUnstartedNewSeason(item, item.next_to_watch_info, latest, seriesMeta, "2026-08-06T00:00:00Z"), false);
+
+  item.watched_episodes_count = 3;
+  assert.equal(isUnstartedNewSeason(item, item.next_to_watch_info, latest, seriesMeta, "2026-08-06T00:00:00Z"), true);
+
+  const anime = { ...item, show: undefined, anime: { title: "Anime Sequel" } };
+  assert.equal(isUnstartedNewSeason(anime, anime.next_to_watch_info, latest, seriesMeta, "2026-08-06T00:00:00Z"), false);
 });
 
 test("badge labels and default episode use canonical TVDB positions", () => {

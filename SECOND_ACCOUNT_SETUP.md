@@ -129,6 +129,8 @@ The existing installation continues using:
 - Account 2: `MEDIA_TYPE=tv`, addon ID `community.simkl.new-tv-episodes.account2`, catalog ID `simkl-new-tv-episodes-account2`.
 - The account-2 workflow deliberately uses a new cache prefix, so the empty anime-only account-2 state from v1.8.7 is not restored. No GitHub secret needs to be regenerated.
 
-## Version 1.9.0 progress behavior
+## Version 1.9.1 notes
 
-The TV account now refreshes current Simkl progress every workflow run. A season premiere such as `S04E01` receives the purple **NEW SEASON** badge until you watch that episode; the next run then changes the show back to green **NEW EPISODE** and advances Nuvio's default episode. The first 1.9.0 run uses a new account-2 cache prefix automatically. Keep the existing secrets unchanged.
+Account 2 remains normal TV. Returning shows use a TV-specific season-boundary rule: a canonical `S02E01` or later remains purple `NEW SEASON` until that premiere is watched, then advances to green `NEW EPISODE`. The root anime addon keeps its existing completed-title rule.
+
+The Pages workflow now queues the verified artifact once and exits after GitHub accepts it. A green workflow means the deployment was accepted; the live Pages files may take a few additional minutes to update.

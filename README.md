@@ -124,7 +124,7 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 
 ## Second Simkl account for normal TV shows
 
-Version 1.8.9 keeps the existing root anime addon unchanged and publishes account 2 as a fully isolated normal-TV addon:
+Version 1.9.1 keeps the existing root anime addon unchanged and publishes account 2 as a fully isolated normal-TV addon:
 
 ```text
 Primary:  https://simkl-nextup.github.io/manifest.json
@@ -199,19 +199,6 @@ Version 1.8.4 replaces the oversized stacked top ribbons with a television-first
 
 No new secret is required beyond the existing `TMDB_READ_ACCESS_TOKEN`. After replacing the files, run the refresh workflow and clear Nuvio's image cache or remove and re-add the addon if the previous posters remain.
 
-
-## Updating to 1.9.0
-
-Version 1.9.0 fixes normal-TV progress and season-state handling for account 2 without changing the root anime account:
-
-- A TV show whose next unwatched episode is `S02E01` or later is shown as purple **NEW SEASON** until that premiere is watched. After the premiere is watched and Simkl advances to `E02`, it returns to green **NEW EPISODE**.
-- Account 2 performs a lightweight full TV-library progress refresh on every run, so an unchanged or delayed Simkl activity timestamp cannot leave `NEXT` behind Nuvio/Simkl. Cached artwork and TVDB episode lists are preserved.
-- TVDB episode data remains cached, but `matchedVideoId` is recalculated on every refresh. Nuvio's `defaultVideoId`, the bottom episode labels, and Simkl's current next-unwatched position therefore use the same canonical episode.
-- Badge numbers are translated to the canonical TVDB season/episode position before rendering. If latest and next are genuinely the same episode, the duplicated two-cell display collapses into one clear `NEXT` cell.
-- The account-2 cache prefix changes once to discard the stale pre-fix TV progress state. No GitHub secret needs to be changed.
-
-After replacing the repository files, create a new commit and run **Refresh two Simkl catalogs and deploy Pages**. Remove and re-import the account-2 manifest in Nuvio after deployment so cached metadata is replaced.
-
 ## Local development
 
 ```bash
@@ -250,7 +237,28 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
+## Updating to 1.9.1 — season-boundary and fast Pages queueing
 
-## Updating to 1.8.9 — reliable two-account Pages deployment
+Version 1.9.1 keeps the root anime addon's established new-season rule unchanged and improves only account 2's normal-TV handling.
 
-Version 1.8.9 keeps account 1 as anime and account 2 as normal TV. It splits generation and deployment into separate jobs, cancels stale overlapping refreshes, extends the GitHub Pages deployment wait from 10 to 30 minutes, and explicitly asserts that account 2 generated `mediaType: tv` with the TV addon and catalog IDs before any deployment is attempted. Uploading this release creates a fresh commit/build version, which avoids re-running the already-canceled Pages deployment attached to the previous commit.
+### New-season logic
+
+The two Simkl media types do not expose returning seasons in exactly the same way:
+
+- **Anime:** the existing rule remains authoritative. A title saved as `completed` returns in purple when newly aired episodes exceed the saved watched count.
+- **Normal TV:** Simkl can move a returning completed show back to `watching` before its new-season premiere is played. Account 2 therefore derives a temporary purple state when the canonical next-unwatched episode is `S02E01` or later, the new season has aired, and the watched count has reached the prior canonical-season boundary.
+- Once the premiere is watched and the next-unwatched position advances to `E02`, the card changes to green `NEW EPISODE`.
+
+This hybrid is intentionally media-specific: applying the anime completed-only rule to normal TV caused returning shows such as Ted Lasso to appear green, while applying the TV rule globally could incorrectly join separate anime sequel records.
+
+### Deployment behavior
+
+The standard `actions/deploy-pages` step creates a deployment and then repeatedly polls GitHub Pages until the deployment succeeds, fails, or times out. Version 1.9.1 instead uses `scripts/dispatch-pages.mjs` to:
+
+1. request the GitHub Actions OIDC token;
+2. submit the already verified Pages artifact once;
+3. exit as soon as GitHub accepts the deployment.
+
+The workflow therefore stops printing hundreds of `deployment_queued` lines. GitHub Pages publishing continues asynchronously after the green workflow run, so the public URLs can still take a few minutes to reflect the new artifact.
+
+Upload this release as a new commit and start a new workflow run. Do not re-run a deployment attached to an older commit.
