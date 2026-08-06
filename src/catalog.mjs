@@ -44,26 +44,13 @@ export function simklUrl(item) {
   const id = simklIdFor(item);
   if (!id) return "https://simkl.com";
   const slug = media?.ids?.slug ? `/${media.ids.slug}` : "";
-  const section = item?.show ? "tv" : "anime";
-  return `https://simkl.com/${section}/${id}${slug}`;
-}
-
-function calendarEpisode(entry) {
-  if (entry?.episode && typeof entry.episode === "object") return entry.episode;
-  const episode = Number(entry?.episode ?? entry?.episode_number);
-  const season = Number(entry?.season ?? entry?.season_number);
-  return {
-    episode: Number.isFinite(episode) ? episode : undefined,
-    season: Number.isFinite(season) ? season : undefined,
-    title: entry?.episode_title || entry?.episode_name || undefined,
-  };
+  return `https://simkl.com/anime/${id}${slug}`;
 }
 
 function normalizeCalendarPayload(payload) {
   if (!Array.isArray(payload)) {
-    const rawCalendar = Array.isArray(payload?.calendar) ? payload.calendar : [];
     return {
-      calendar: rawCalendar.map((entry) => ({ ...entry, episode: calendarEpisode(entry) })),
+      calendar: Array.isArray(payload?.calendar) ? payload.calendar : [],
       metadata: payload?.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
     };
   }
@@ -77,7 +64,7 @@ function normalizeCalendarPayload(payload) {
     calendar.push({
       simkl_id: simklId,
       date: entry.date,
-      episode: calendarEpisode(entry),
+      episode: entry.episode,
     });
     const existing = metadata[key] ?? {};
     metadata[key] = {
@@ -107,14 +94,9 @@ export function mergeCalendar(items, calendarPayload, options = {}) {
 
     if (item.status === "watching") {
       const info = item.next_to_watch_info;
-      const sameEpisode = info && Number(info.episode) === Number(entry.episode?.episode);
-      const sameSeason = !Number.isFinite(Number(info?.season))
-        || !Number.isFinite(Number(entry.episode?.season))
-        || Number(info.season) === Number(entry.episode.season);
-      if (sameEpisode && sameSeason) {
+      if (info && Number(info.episode) === Number(entry.episode?.episode)) {
         info.date = entry.date || info.date;
         info.title = entry.episode?.title || info.title;
-        if (entry.episode?.season !== undefined) info.season ??= entry.episode.season;
       }
     }
 
@@ -123,7 +105,6 @@ export function mergeCalendar(items, calendarPayload, options = {}) {
     const episodeNumber = Number(entry.episode?.episode);
     if (candidateDate && candidateDate <= now && Number.isFinite(episodeNumber) && (!savedDate || candidateDate >= savedDate)) {
       item._addonLatestAiredInfo = {
-        ...(Number.isFinite(Number(entry.episode?.season)) ? { season: Number(entry.episode.season) } : {}),
         episode: episodeNumber,
         title: entry.episode?.title || undefined,
         date: candidateDate.toISOString(),
@@ -143,7 +124,7 @@ export function mergeCalendar(items, calendarPayload, options = {}) {
   return next;
 }
 
-export function mergeMediaDetails(item, details) {
+export function mergeAnimeDetails(item, details) {
   if (!details || Array.isArray(details)) return item;
   const next = structuredClone(item);
   const media = mediaFor(next);
@@ -154,10 +135,6 @@ export function mergeMediaDetails(item, details) {
   media.year ||= details.year;
   media.ids = { ...(details.ids ?? {}), ...(media.ids ?? {}) };
   return next;
-}
-
-export function mergeAnimeDetails(item, details) {
-  return mergeMediaDetails(item, details);
 }
 
 function episodeLabel(info) {
@@ -181,142 +158,29 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function normalizedEpisodeTitle(value) {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function dateOnly(value) {
-  const date = validDate(value);
-  return date ? date.toISOString().slice(0, 10) : null;
-}
-
-function dayDistance(left, right) {
-  if (!left || !right) return Number.POSITIVE_INFINITY;
-  const a = new Date(`${left}T00:00:00.000Z`).getTime();
-  const b = new Date(`${right}T00:00:00.000Z`).getTime();
-  return Math.abs(a - b) / 86_400_000;
-}
-
-function findCanonicalVideo(seriesMeta, info, { preferMatched = false } = {}) {
-  const videos = Array.isArray(seriesMeta?.videos) ? seriesMeta.videos : [];
-  const localEpisode = finiteNumber(info?.episode);
-  if (!videos.length || localEpisode === null) return null;
-
-  if (preferMatched && seriesMeta?.matchedVideoId) {
-    const matched = videos.find((video) => video.id === seriesMeta.matchedVideoId);
-    if (matched) return matched;
-  }
-
-  const localSeason = finiteNumber(info?.season);
-  if (localSeason !== null) {
-    const exact = videos.find((video) => video.season === localSeason && video.episode === localEpisode);
-    if (exact) return exact;
-  }
-
-  const mappedSeason = finiteNumber(seriesMeta?.matchedSeasonNumber);
-  const mappedEpisode = localEpisode + Number(seriesMeta?.matchedEpisodeOffset ?? 0);
-  if (mappedSeason !== null) {
-    const mapped = videos.find((video) => video.season === mappedSeason && video.episode === mappedEpisode);
-    if (mapped) return mapped;
-  }
-
-  const infoDate = dateOnly(info?.date);
-  if (infoDate) {
-    const dateMatches = videos
-      .map((video) => ({ video, distance: dayDistance(infoDate, dateOnly(video.released)) }))
-      .filter(({ distance }) => distance <= 2)
-      .sort((a, b) => a.distance - b.distance || Math.abs(a.video.episode - localEpisode) - Math.abs(b.video.episode - localEpisode));
-    if (dateMatches.length) {
-      return dateMatches.find(({ video }) => video.episode === localEpisode)?.video ?? dateMatches[0].video;
-    }
-  }
-
-  const infoTitle = normalizedEpisodeTitle(info?.title);
-  if (infoTitle) {
-    const titleMatches = videos.filter((video) => normalizedEpisodeTitle(video.title) === infoTitle);
-    if (titleMatches.length === 1) return titleMatches[0];
-  }
-
-  const regularSeasons = [...new Set(videos.filter((video) => video.season > 0).map((video) => video.season))];
-  if (regularSeasons.length === 1) {
-    const match = videos.find((video) => video.season === regularSeasons[0] && video.episode === mappedEpisode);
-    if (match) return match;
-  }
-
-  const numberMatches = videos.filter((video) => video.episode === mappedEpisode && video.season > 0);
-  return numberMatches.length === 1 ? numberMatches[0] : null;
-}
-
-function canonicalEpisodeInfo(seriesMeta, info, options = {}) {
-  if (!info) return null;
-  const video = findCanonicalVideo(seriesMeta, info, options);
-  if (!video) return info;
-  return {
-    ...info,
-    season: video.season,
-    episode: video.episode,
-    title: info.title || video.title,
-    date: info.date || video.released,
-    _videoId: video.id,
-  };
-}
-
 function findDefaultVideoId(seriesMeta, info) {
-  return canonicalEpisodeInfo(seriesMeta, info, { preferMatched: true })?._videoId ?? null;
-}
+  if (seriesMeta?.matchedVideoId) return seriesMeta.matchedVideoId;
+  if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
+  const localEpisode = Number(info.episode);
+  const episode = localEpisode + Number(seriesMeta.matchedEpisodeOffset ?? 0);
+  const preferredSeasons = [
+    finiteNumber(info?.season),
+    finiteNumber(seriesMeta.matchedSeasonNumber),
+  ].filter((value, index, values) => value !== null && values.indexOf(value) === index);
 
-function regularEpisodeKey(video) {
-  const season = finiteNumber(video?.season);
-  const episode = finiteNumber(video?.episode);
-  return season !== null && season > 0 && episode !== null
-    ? `${season}:${episode}`
-    : null;
-}
-
-function previousSeasonEpisodeCount(seriesMeta, nextSeason, now) {
-  const videos = Array.isArray(seriesMeta?.videos) ? seriesMeta.videos : [];
-  const unique = new Set();
-  for (const video of videos) {
-    const season = finiteNumber(video?.season);
-    if (season === null || season <= 0 || season >= nextSeason) continue;
-    const released = validDate(video?.released);
-    if (released && released > now) continue;
-    const key = regularEpisodeKey(video);
-    if (key) unique.add(key);
+  for (const season of preferredSeasons) {
+    const match = seriesMeta.videos.find((video) => video.season === season && video.episode === episode);
+    if (match) return match.id;
   }
-  return unique.size;
-}
 
-export function isUnstartedNewSeason(item, nextInfo, latestInfo, seriesMeta, nowInput = new Date()) {
-  // Anime keeps the root addon's established Completed-title rule. Normal TV
-  // needs an extra derived state because Simkl can move a returning show back
-  // to Watching before the first episode of the new season has been played.
-  if (item?.status !== "watching" || !item?.show) return false;
+  const regularSeasons = [...new Set(seriesMeta.videos.filter((video) => video.season > 0).map((video) => video.season))];
+  if (regularSeasons.length === 1) {
+    const match = seriesMeta.videos.find((video) => video.season === regularSeasons[0] && video.episode === episode);
+    if (match) return match.id;
+  }
 
-  const nextSeason = finiteNumber(nextInfo?.season);
-  const nextEpisode = finiteNumber(nextInfo?.episode);
-  const latestSeason = finiteNumber(latestInfo?.season);
-  if (nextSeason === null || nextSeason <= 1 || nextEpisode !== 1) return false;
-  if (latestSeason === null || latestSeason < nextSeason) return false;
-
-  const watchedCount = finiteNumber(item?.watched_episodes_count) ?? 0;
-  if (watchedCount <= 0) return false;
-
-  const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
-  const previousEpisodeCount = previousSeasonEpisodeCount(seriesMeta, nextSeason, now);
-
-  // When canonical TVDB episodes are available, require the watched count to
-  // reach the exact season boundary. This avoids falsely calling S04E01 a new
-  // season for a user who still has unwatched episodes in older seasons.
-  if (previousEpisodeCount > 0) return watchedCount >= previousEpisodeCount;
-
-  // Conservative fallback for shows without a usable canonical episode list.
-  // Simkl's next-to-watch position is still authoritative: S02E01+ means the
-  // previous run was passed, and the badge switches to green once it advances.
-  return true;
+  const matches = seriesMeta.videos.filter((video) => video.episode === episode && video.season > 0);
+  return matches.length === 1 ? matches[0].id : null;
 }
 
 function trackingEpisodeCount(seriesMeta) {
@@ -326,14 +190,11 @@ function trackingEpisodeCount(seriesMeta) {
   ).length;
 }
 
-function buildDescription({ item, visualStatus, info, episode, airedAt, sortAt, latestAiredInfo }) {
-  if (visualStatus === "plantowatch") {
+function buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo }) {
+  if (item.status === "plantowatch") {
     return `From your Plan to Watch list: latest release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
   }
-  if (visualStatus === "completed" && item.status === "watching") {
-    return `New season available: start with ${episode}${info.title ? ` — ${info.title}` : ""}. ${latestAiredInfo?.episode ? `Latest release: ${episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}The badge stays purple until the season premiere is watched. Data from Simkl.`;
-  }
-  if (visualStatus === "completed") {
+  if (item.status === "completed") {
     return `Previously completed: new release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
   }
   return `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. ${sortAt > airedAt && latestAiredInfo?.episode ? `Latest release: ${episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}Data from Simkl.`;
@@ -373,6 +234,15 @@ export function buildCatalog(items, options = {}) {
 
   for (const item of Object.values(items ?? {})) {
     if (!isCatalogCandidate(item, now)) continue;
+    const info = item.status === "watching" ? item.next_to_watch_info : item._addonLatestAiredInfo;
+    const airedAt = validDate(info?.date);
+    if (!info?.episode || !airedAt || airedAt > now) continue;
+
+    const latestAiredInfo = item._addonLatestAiredInfo;
+    const latestAiredAt = validDate(latestAiredInfo?.date);
+    const sortAt = latestAiredAt && latestAiredAt <= now && latestAiredAt > airedAt
+      ? latestAiredAt
+      : airedAt;
 
     const media = mediaFor(item);
     const id = publishedCatalogId(item, media);
@@ -382,37 +252,14 @@ export function buildCatalog(items, options = {}) {
     }
 
     const seriesMeta = item._addonTvdbMeta;
-    const rawInfo = item.status === "watching" ? item.next_to_watch_info : item._addonLatestAiredInfo;
-    const rawLatestAiredInfo = item._addonLatestAiredInfo;
-    const info = canonicalEpisodeInfo(seriesMeta, rawInfo, { preferMatched: item.status === "watching" });
-    const latestAiredInfo = canonicalEpisodeInfo(seriesMeta, rawLatestAiredInfo);
-    const airedAt = validDate(info?.date);
-    if (!info?.episode || !airedAt || airedAt > now) continue;
-
-    const latestAiredAt = validDate(latestAiredInfo?.date);
-    const sortAt = latestAiredAt && latestAiredAt <= now && latestAiredAt > airedAt
-      ? latestAiredAt
-      : airedAt;
-    const visualStatus = isUnstartedNewSeason(item, info, latestAiredInfo, seriesMeta, now)
-      ? "completed"
-      : item.status;
-
     const episode = episodeLabel(info);
     const visuals = item._addonVisuals ?? {};
     const links = buildLinks(item, visuals, seriesMeta);
-    const description = buildDescription({
-      item,
-      visualStatus,
-      info,
-      episode,
-      airedAt,
-      sortAt,
-      latestAiredInfo,
-    });
+    const description = buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo });
     const name = seriesMeta?.name || media.title;
     const poster = visuals.poster || seriesMeta?.poster || posterUrl(media.poster);
     const background = seriesMeta?.background || visuals.background || fanartUrl(media.fanart);
-    const defaultVideoId = info?._videoId || findDefaultVideoId(seriesMeta, rawInfo);
+    const defaultVideoId = findDefaultVideoId(seriesMeta, info);
 
     const basePreview = {
       id,
@@ -467,11 +314,10 @@ ${seriesMeta.description}` : description,
 
     const entry = {
       airedAt: sortAt,
-      status: visualStatus,
-      rawStatus: item.status,
+      status: item.status,
       posterBadge: {
         id,
-        status: visualStatus,
+        status: item.status,
         episode,
         latestEpisode,
         nextEpisode,
@@ -522,14 +368,6 @@ export function isCatalogCandidate(item, nowInput = new Date()) {
 
   if (item.status === "completed") {
     const watchedCount = Number(item.watched_episodes_count ?? 0);
-    const totalCount = Number(item.total_episodes_count);
-
-    // Anime records are often a single numbered run, so comparing the latest
-    // episode number to the watched count works. Normal TV resets its episode
-    // number every season (for example S06E01 after 50 watched episodes), so
-    // prefer Simkl's cumulative totals whenever they are available.
-    if (Number.isFinite(totalCount) && totalCount > watchedCount) return true;
-
     const releasedEpisode = Number(info.episode);
     if (!Number.isFinite(releasedEpisode) || releasedEpisode <= watchedCount) return false;
   }
@@ -538,19 +376,15 @@ export function isCatalogCandidate(item, nowInput = new Date()) {
 
 export function buildManifest({
   addonId = ADDON_ID,
+  addonName = "Simkl Anime Up Next",
   catalogId = CATALOG_ID,
   catalogName = CATALOG_NAME,
-  addonName = "Simkl Anime Up Next",
-  version = APP_VERSION,
-  mediaType = "anime",
 } = {}) {
   return {
     id: addonId,
-    version,
+    version: APP_VERSION,
     name: addonName,
-    description: mediaType === "tv"
-      ? "A personalized Simkl TV Up Next row with TheTVDB seasons, canonical episode IDs, and high-resolution episode artwork."
-      : "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
+    description: "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
     resources: ["catalog", "meta"],
     types: ["series"],
     idPrefixes: ["simkl-tvdb-unified:", "tt", "tvdb:", "tmdb:", "kitsu:", "mal:", "simkl:"],

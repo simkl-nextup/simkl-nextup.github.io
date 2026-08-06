@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
-const POSTER_BADGE_STYLE_VERSION = 11;
+const POSTER_BADGE_STYLE_VERSION = 10;
 const MAX_POSTER_BYTES = 12 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 const ALLOWED_POSTER_HOSTS = new Set([
@@ -96,17 +96,6 @@ function infoRows({ status, episode, latestEpisode, nextEpisode }) {
   const next = compactEpisodeLabel(nextEpisode || episode);
 
   if (status === "watching") {
-    // When the latest release is also the user's next unwatched episode, a
-    // duplicated NEW/NEXT number looks broken from TV distance. Use one clear
-    // NEXT cell; split the panel only when the user is genuinely behind.
-    if (latest && next && latest === next) {
-      return [{
-        cue: "NEXT",
-        episode: next,
-        gradient: "nextInfoGradient",
-        accent: "#63C7FF",
-      }];
-    }
     return [
       {
         cue: "NEW",
@@ -123,35 +112,10 @@ function infoRows({ status, episode, latestEpisode, nextEpisode }) {
     ];
   }
 
-  if (status === "completed" && nextEpisode) {
-    if (latest && next && latest === next) {
-      return [{
-        cue: "START",
-        episode: next,
-        gradient: "seasonInfoGradient",
-        accent: "#C8BEFF",
-      }];
-    }
-    return [
-      {
-        cue: "NEW",
-        episode: latest || fallback,
-        gradient: "seasonInfoGradient",
-        accent: "#C8BEFF",
-      },
-      {
-        cue: "START",
-        episode: next || fallback,
-        gradient: "startInfoGradient",
-        accent: "#8FCBFF",
-      },
-    ];
-  }
-
   return [{
     cue: status === "plantowatch" ? "LATEST" : "NEW",
     episode: latest || fallback,
-    gradient: status === "completed" ? "seasonInfoGradient" : "episodeGradient",
+    gradient: "episodeGradient",
     accent: status === "plantowatch" ? "#FFD66B" : "#B6A8FF",
   }];
 }
@@ -234,16 +198,6 @@ export function buildPosterBadgeSvg({ status, episode, latestEpisode, nextEpisod
       <stop offset="0%" stop-color="#303641"/>
       <stop offset="52%" stop-color="#151922"/>
       <stop offset="100%" stop-color="#030407"/>
-    </linearGradient>
-    <linearGradient id="seasonInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#44358B"/>
-      <stop offset="54%" stop-color="#251B55"/>
-      <stop offset="100%" stop-color="#090613"/>
-    </linearGradient>
-    <linearGradient id="startInfoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#254D78"/>
-      <stop offset="54%" stop-color="#162D4A"/>
-      <stop offset="100%" stop-color="#060A12"/>
     </linearGradient>
     <linearGradient id="glossGradient" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>

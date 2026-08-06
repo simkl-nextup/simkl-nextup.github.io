@@ -1,32 +1,31 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildCatalog, chooseCatalogId, isCatalogCandidate, mergeMediaDetails, mergeCalendar } from "../src/catalog.mjs";
+import { buildCatalog, chooseCatalogId, isCatalogCandidate, mergeAnimeDetails, mergeCalendar } from "../src/catalog.mjs";
 import { DEFAULT_MAX_ITEMS } from "../src/constants.mjs";
 import { enrichCatalogMetadata, MetadataApiError } from "../src/metadata.mjs";
-import { createSimklClient, normalizeMediaType, SimklApiError } from "../src/simkl.mjs";
+import { createSimklClient, SimklApiError } from "../src/simkl.mjs";
 import {
   createEmptyState,
   mediaFor,
-  mergeItemsDelta,
+  mergeAnimeDelta,
   normalizeState,
   pruneRemovedItems,
-  replaceWithCurrentEligibleItems,
-  replaceWithInitialEligibleItems,
+  replaceWithInitialEligibleAnime,
   simklIdFor,
 } from "../src/state.mjs";
-import { appendPublicPath, deriveBaseUrl, writeSite } from "../src/site.mjs";
+import { appendBasePath, deriveBaseUrl, writeSite } from "../src/site.mjs";
 import { enrichTvdbMetadata, TvdbApiError } from "../src/tvdb.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const statePath = path.join(root, "state", "simkl-state.json");
 const outputDir = path.join(root, "public");
 
-async function loadState(filePath, mediaType) {
+async function loadState(filePath) {
   try {
-    return normalizeState(JSON.parse(await readFile(filePath, "utf8")), mediaType);
+    return normalizeState(JSON.parse(await readFile(filePath, "utf8")));
   } catch (error) {
-    if (error.code === "ENOENT") return createEmptyState(mediaType);
+    if (error.code === "ENOENT") return createEmptyState();
     throw error;
   }
 }
@@ -98,8 +97,8 @@ async function enrichMissingMappings(client, state, now, { tvdbEnabled = false, 
     const simklId = simklIdFor(item);
     if (!simklId) continue;
     try {
-      const details = await client.getDetails(simklId);
-      next.items[key] = mergeMediaDetails(item, details);
+      const details = await client.getAnimeDetails(simklId);
+      next.items[key] = mergeAnimeDetails(item, details);
       next.items[key]._addonMetadataEnrichmentVersion = METADATA_ENRICHMENT_VERSION;
       next.items[key]._addonMetadataEnriched = true;
       await new Promise((resolve) => setTimeout(resolve, 125));
@@ -123,6 +122,7 @@ export async function refresh({
   fetchImpl = fetch,
   explicitBaseUrl = process.env.PUBLIC_BASE_URL,
   githubRepository = process.env.GITHUB_REPOSITORY,
+  publicBasePath = "",
   tmdbAccessToken = process.env.TMDB_READ_ACCESS_TOKEN,
   mdblistApiKey = process.env.MDBLIST_API_KEY,
   tvdbApiKey = process.env.TVDB_API_KEY,
@@ -132,65 +132,48 @@ export async function refresh({
   posterBadgesEnabled = process.env.POSTER_BADGES !== "false",
   stateFile = statePath,
   outputDirectory = outputDir,
-  publicPathPrefix = process.env.PUBLIC_PATH_PREFIX || "",
-  addonId = process.env.ADDON_ID,
-  catalogId = process.env.CATALOG_ID,
-  catalogName = process.env.CATALOG_NAME,
-  addonName = process.env.ADDON_NAME,
-  siteTitle = process.env.SITE_TITLE,
-  setupSecretName = process.env.SETUP_SECRET_NAME,
-  accountLabel = process.env.ACCOUNT_LABEL,
-  mediaType = process.env.MEDIA_TYPE || "anime",
-  forceLibraryRefresh = process.env.FORCE_LIBRARY_REFRESH === "true",
+  addonId,
+  addonName,
+  catalogId,
+  catalogName,
+  setupSecretName,
+  pageHeading,
+  setupDocumentTitle,
+  setupHeading,
 } = {}) {
-  const normalizedMediaType = normalizeMediaType(mediaType);
-  const client = createSimklClient({ clientId, accessToken, mediaType: normalizedMediaType, fetchImpl });
-  let state = await loadState(stateFile, normalizedMediaType);
+  const client = createSimklClient({ clientId, accessToken, fetchImpl });
+  let state = await loadState(stateFile);
 
-  const activityFor = (activities) => activities?.[client.activityKey] ?? null;
-  if (!state.lastActivity) {
-    const initial = await client.getInitialLibrary();
-    state = replaceWithInitialEligibleItems(state, initial, normalizedMediaType);
+  if (!state.lastAnimeActivity) {
+    const initial = await client.getInitialAnimeLibrary();
+    state = replaceWithInitialEligibleAnime(state, initial);
     const activities = await client.getActivities();
-    const mediaActivity = activityFor(activities);
-    state.lastActivity = mediaActivity?.all ?? activities?.all_items_at ?? new Date(now).toISOString();
-    state.lastAnimeActivity = normalizedMediaType === "anime" ? state.lastActivity : null;
-    state.lastRemovedFromList = mediaActivity?.removed_from_list ?? null;
+    state.lastAnimeActivity = activities?.anime?.all ?? activities?.all ?? new Date(now).toISOString();
+    state.lastRemovedFromList = activities?.anime?.removed_from_list ?? null;
   } else {
     const activities = await client.getActivities();
-    const mediaActivity = activityFor(activities);
-    const currentActivity = mediaActivity?.all ?? activities?.all_items_at ?? state.lastActivity;
-    const currentRemoved = mediaActivity?.removed_from_list ?? null;
+    const currentAnimeActivity = activities?.anime?.all ?? activities?.all ?? state.lastAnimeActivity;
+    const currentRemoved = activities?.anime?.removed_from_list ?? null;
 
-    if (forceLibraryRefresh) {
-      // Account 2 is small and Nuvio/Simkl progress correctness matters more
-      // than saving one lightweight sync request. A full refresh prevents a
-      // delayed activities timestamp from leaving NEXT/defaultVideoId stale.
-      const current = await client.getInitialLibrary();
-      state = replaceWithCurrentEligibleItems(state, current, normalizedMediaType);
-      state.lastActivity = currentActivity;
-      state.lastAnimeActivity = normalizedMediaType === "anime" ? currentActivity : null;
-      state.lastRemovedFromList = currentRemoved;
-    } else if (currentActivity !== state.lastActivity) {
-      const delta = await client.getDelta(state.lastActivity);
-      state = mergeItemsDelta(state, delta, normalizedMediaType);
+    if (currentAnimeActivity !== state.lastAnimeActivity) {
+      const delta = await client.getAnimeDelta(state.lastAnimeActivity);
+      state = mergeAnimeDelta(state, delta);
 
       if (currentRemoved && currentRemoved !== state.lastRemovedFromList) {
-        const snapshot = await client.getIdSnapshot();
-        state = pruneRemovedItems(state, snapshot, normalizedMediaType);
+        const snapshot = await client.getAnimeIdSnapshot();
+        state = pruneRemovedItems(state, snapshot);
       }
 
-      state.lastActivity = currentActivity;
-      state.lastAnimeActivity = normalizedMediaType === "anime" ? currentActivity : null;
+      state.lastAnimeActivity = currentAnimeActivity;
       state.lastRemovedFromList = currentRemoved;
     }
   }
 
   const previousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
   const calendarRequests = [
-    ["rolling", () => client.getCalendar()],
-    ["current month", () => client.getCalendarMonth(now.getUTCFullYear(), now.getUTCMonth() + 1)],
-    ["previous month", () => client.getCalendarMonth(previousMonth.getUTCFullYear(), previousMonth.getUTCMonth() + 1)],
+    ["rolling", () => client.getAnimeCalendar()],
+    ["current month", () => client.getAnimeCalendarMonth(now.getUTCFullYear(), now.getUTCMonth() + 1)],
+    ["previous month", () => client.getAnimeCalendarMonth(previousMonth.getUTCFullYear(), previousMonth.getUTCMonth() + 1)],
   ];
   for (const [label, request] of calendarRequests) {
     try {
@@ -235,7 +218,7 @@ export async function refresh({
 
   const { catalog, metadata: detailMetadata, posterBadges, skipped, sourceCounts, unifiedStats } = buildCatalog(state.items, { now, maxItems });
   const rootBaseUrl = deriveBaseUrl({ explicitBaseUrl, githubRepository });
-  const baseUrl = appendPublicPath(rootBaseUrl, publicPathPrefix);
+  const baseUrl = appendBasePath(rootBaseUrl, publicBasePath);
   const site = await writeSite({
     outputDir: outputDirectory,
     catalog,
@@ -251,14 +234,14 @@ export async function refresh({
     metadata: detailMetadata,
     unifiedStats,
     fetchImpl,
-    ...(addonId ? { addonId } : {}),
-    ...(catalogId ? { catalogId } : {}),
-    ...(catalogName ? { catalogName } : {}),
-    ...(addonName ? { addonName } : {}),
-    ...(siteTitle ? { siteTitle } : {}),
-    ...(setupSecretName ? { setupSecretName } : {}),
-    ...(accountLabel ? { accountLabel } : {}),
-    mediaType: normalizedMediaType,
+    addonId,
+    addonName,
+    catalogId,
+    catalogName,
+    setupSecretName,
+    pageHeading,
+    setupDocumentTitle,
+    setupHeading,
   });
   for (const warning of site.posterBadgeWarnings) {
     console.warn(`Poster badge skipped for ${warning.name ?? warning.id ?? "unknown"}: ${warning.message}`);
@@ -276,33 +259,35 @@ export async function refresh({
   };
 }
 
-function configuredProjectPath(value, fallback) {
+function resolveRepoPath(value, fallback) {
   if (!value) return fallback;
-  const resolved = path.resolve(root, value);
-  const relative = path.relative(root, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error(`Configured path must remain inside the repository: ${value}`);
-  }
-  return resolved;
+  return path.isAbsolute(value) ? value : path.join(root, value);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const accessTokenSecretName = process.env.SETUP_SECRET_NAME || "SIMKL_ACCESS_TOKEN";
+  const cliSecretName = process.env.SIMKL_PROFILE_SECRET_NAME || "SIMKL_ACCESS_TOKEN";
   try {
     const result = await refresh({
       clientId: process.env.SIMKL_CLIENT_ID,
       accessToken: process.env.SIMKL_ACCESS_TOKEN,
       maxItems: process.env.MAX_CATALOG_ITEMS || DEFAULT_MAX_ITEMS,
-      stateFile: configuredProjectPath(process.env.SIMKL_STATE_FILE, statePath),
-      outputDirectory: configuredProjectPath(process.env.OUTPUT_DIRECTORY, outputDir),
-      mediaType: process.env.MEDIA_TYPE || "anime",
+      publicBasePath: process.env.SIMKL_PROFILE_BASE_PATH || "",
+      stateFile: resolveRepoPath(process.env.SIMKL_PROFILE_STATE_FILE, statePath),
+      outputDirectory: resolveRepoPath(process.env.SIMKL_PROFILE_OUTPUT_DIR, outputDir),
+      addonId: process.env.SIMKL_PROFILE_ADDON_ID,
+      addonName: process.env.SIMKL_PROFILE_ADDON_NAME,
+      catalogId: process.env.SIMKL_PROFILE_CATALOG_ID,
+      catalogName: process.env.SIMKL_PROFILE_CATALOG_NAME,
+      setupSecretName: cliSecretName,
+      pageHeading: process.env.SIMKL_PROFILE_PAGE_HEADING,
+      setupDocumentTitle: process.env.SIMKL_PROFILE_SETUP_TITLE,
+      setupHeading: process.env.SIMKL_PROFILE_SETUP_HEADING,
     });
-    const label = normalizeMediaType(process.env.MEDIA_TYPE || "anime") === "tv" ? "TV show" : "anime title";
-    console.log(`Published ${result.catalog.metas.length} ${label}(s) ready to watch.`);
+    console.log(`Published ${result.catalog.metas.length} anime title(s) ready to watch.`);
     if (result.skipped.length) console.warn(`Skipped ${result.skipped.length} title(s) with unusable metadata.`);
   } catch (error) {
     if (error instanceof SimklApiError && error.status === 401) {
-      console.error(`Simkl authorization was revoked or expired. Run the authorization step again and replace ${accessTokenSecretName}.`);
+      console.error(`Simkl authorization was revoked or expired. Run the authorization step again and replace ${cliSecretName}.`);
     } else if ((error instanceof MetadataApiError || error instanceof TvdbApiError) && (error.status === 401 || error.status === 403)) {
       console.error(`${error.provider} rejected its configured API credential. Replace or rotate the corresponding GitHub secret.`);
     } else {

@@ -1,12 +1,13 @@
 {
   "name": "simkl-new-episodes-addon",
-  "version": "1.9.2",
+  "version": "1.8.7",
   "private": true,
   "type": "module",
-  "description": "Two isolated personal Stremio/Nuvio catalogs: anime at root and TV shows under account-2, with new-episode and revived Completed-title support.",
+  "description": "A personal Stremio/Nuvio catalog that bumps tracked anime on every new episode, including revived Completed titles.",
   "scripts": {
     "authorize": "node scripts/authorize.mjs",
     "build:placeholder": "node scripts/build-placeholder.mjs",
+    "build:placeholder:account-2": "node scripts/build-account-2-placeholder.mjs",
     "keepalive": "node scripts/update-keepalive.mjs",
     "refresh": "node scripts/update.mjs",
     "test": "node --test",

@@ -42,32 +42,3 @@ test("rolling anime calendar keeps using Simkl's v2 payload", async () => {
 
   assert.equal(requestedUrl.pathname, "/calendar/v2/anime.json");
 });
-
-test("TV client reads Simkl shows, show details, and the TV calendar", async () => {
-  const requested = [];
-  const client = createSimklClient({
-    clientId: "tv-client",
-    accessToken: "tv-token",
-    mediaType: "tv",
-    fetchImpl: async (input) => {
-      const url = new URL(input);
-      requested.push(url);
-      if (url.pathname === "/sync/all-items/shows") return jsonResponse({ shows: [] });
-      if (url.pathname === "/tv/123") return jsonResponse({ title: "Example Show", ids: { simkl: 123 } });
-      if (url.pathname === "/calendar/v2/tv-shows.json") return jsonResponse([]);
-      throw new Error(`Unexpected request: ${url}`);
-    },
-  });
-
-  await client.getInitialLibrary();
-  await client.getDetails(123);
-  await client.getCalendar();
-
-  assert.deepEqual(requested.map((url) => url.pathname), [
-    "/sync/all-items/shows",
-    "/tv/123",
-    "/calendar/v2/tv-shows.json",
-  ]);
-  assert.equal(client.activityKey, "tv_shows");
-  assert.equal(client.payloadKey, "shows");
-});
