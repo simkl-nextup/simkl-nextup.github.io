@@ -238,6 +238,15 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
 
+## Updating to 1.9.0 — revived-title badge fix and a reliable deploy queue
+
+Version 1.9.0 fixes two problems found in production on a two-account deployment:
+
+- **Wrong badge on a just-revived title.** Simkl moves a title from Completed back into Watching itself the moment a new season is confirmed on TVDB/AniDB — before any episode is watched. Previously the addon trusted Simkl's `status` field directly, so a title like this rendered the green "NEW EPISODE" badge instead of purple "NEW SEASON", and revived Completed titles essentially never published (0 of 91 tracked Completed anime were making it into one real deployment's catalog). The addon now remembers the watched-episode count from the last time a title was genuinely completed and compares against it, so the purple "NEW SEASON" badge stays in place until watched progress actually moves — regardless of which list Simkl has silently filed the title under.
+- **Deployment stuck looping on `deployment_queued`.** The 1.8.9 workflow cancelled in-progress runs (`cancel-in-progress: true`) across both the build *and* deploy jobs. Cancelling a job after it has already registered a deployment with GitHub Pages doesn't retract that deployment — it orphans it, and the next run's deploy step then polls a queue that never clears. Concurrency is now split per job: the build job can still cancel a stale run freely, but the deploy job uses a fixed `pages` group with `cancel-in-progress: false`, matching GitHub's own Pages deployment template, so deployments queue instead of colliding.
+
+No new secret is required. After replacing the repository files, run the refresh workflow; titles whose badge status changes will automatically get a fresh poster URL.
+
 ## Updating to 1.8.9 — reliable two-account Pages deployment
 
 Version 1.8.9 keeps account 1 as anime and account 2 as normal TV. It splits generation and deployment into separate jobs, cancels stale overlapping refreshes, extends the GitHub Pages deployment wait from 10 to 30 minutes, and explicitly asserts that account 2 generated `mediaType: tv` with the TV addon and catalog IDs before any deployment is attempted. Uploading this release creates a fresh commit/build version, which avoids re-running the already-canceled Pages deployment attached to the previous commit.

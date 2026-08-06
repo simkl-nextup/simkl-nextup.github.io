@@ -5,7 +5,7 @@ import {
   CATALOG_NAME,
   DEFAULT_MAX_ITEMS,
 } from "./constants.mjs";
-import { mediaFor, simklIdFor } from "./state.mjs";
+import { effectiveStatus, mediaFor, simklIdFor } from "./state.mjs";
 
 function validDate(value) {
   if (!value) return null;
@@ -213,11 +213,11 @@ function trackingEpisodeCount(seriesMeta) {
   ).length;
 }
 
-function buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo }) {
-  if (item.status === "plantowatch") {
+function buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo }) {
+  if (status === "plantowatch") {
     return `From your Plan to Watch list: latest release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
   }
-  if (item.status === "completed") {
+  if (status === "completed") {
     return `Previously completed: new release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
   }
   return `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. ${sortAt > airedAt && latestAiredInfo?.episode ? `Latest release: ${episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}Data from Simkl.`;
@@ -278,7 +278,12 @@ export function buildCatalog(items, options = {}) {
     const episode = episodeLabel(info);
     const visuals = item._addonVisuals ?? {};
     const links = buildLinks(item, visuals, seriesMeta);
-    const description = buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo });
+    // Simkl's own status can already say "watching" for a title the user
+    // has not actually started (see effectiveStatus in state.mjs), so the
+    // badge, description, and published counts all key off this instead of
+    // the raw item.status.
+    const status = effectiveStatus(item);
+    const description = buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo });
     const name = seriesMeta?.name || media.title;
     const poster = visuals.poster || seriesMeta?.poster || posterUrl(media.poster);
     const background = seriesMeta?.background || visuals.background || fanartUrl(media.fanart);
@@ -333,14 +338,14 @@ ${seriesMeta.description}` : description,
     const latestEpisode = latestAiredInfo?.episode
       ? episodeLabel(latestAiredInfo)
       : episode;
-    const nextEpisode = item.status === "watching" ? episode : null;
+    const nextEpisode = status === "watching" ? episode : null;
 
     const entry = {
       airedAt: sortAt,
-      status: item.status,
+      status,
       posterBadge: {
         id,
-        status: item.status,
+        status,
         episode,
         latestEpisode,
         nextEpisode,

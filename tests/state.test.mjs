@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createEmptyState,
+  effectiveStatus,
   mergeAnimeDelta,
   mergeItemsDelta,
   normalizeState,
@@ -73,4 +74,54 @@ test("switching an old anime-only account cache to TV forces a clean bootstrap",
   assert.equal(state.mediaType, "tv");
   assert.equal(state.lastActivity, null);
   assert.deepEqual(state.items, {});
+});
+
+// Simkl auto-promotes a title from Completed back to Watching the moment a
+// new season is confirmed on TVDB/AniDB, before any episode is watched.
+// effectiveStatus should keep reporting "completed" until watched progress
+// actually moves, so the poster badge stays purple ("NEW SEASON") instead of
+// flipping straight to green ("NEW EPISODE").
+const withProgress = (base, watched, total) => ({
+  ...base,
+  watched_episodes_count: watched,
+  total_episodes_count: total,
+});
+
+test("a title just revived by Simkl (not yet started) still reports completed", () => {
+  let state = replaceWithInitialEligibleAnime(createEmptyState(), {
+    anime: [withProgress(item(1, "completed"), 12, 12)],
+  });
+  // A new season lands: Simkl silently flips status to watching, but the
+  // user hasn't watched anything from it yet.
+  state = mergeAnimeDelta(state, {
+    anime: [withProgress(item(1, "watching"), 12, 24)],
+  });
+  assert.equal(state.items["1"].status, "watching");
+  assert.equal(effectiveStatus(state.items["1"]), "completed");
+});
+
+test("effectiveStatus reports watching once the user starts the revived season", () => {
+  let state = replaceWithInitialEligibleAnime(createEmptyState(), {
+    anime: [withProgress(item(1, "completed"), 12, 12)],
+  });
+  state = mergeAnimeDelta(state, {
+    anime: [withProgress(item(1, "watching"), 12, 24)],
+  });
+  assert.equal(effectiveStatus(state.items["1"]), "completed");
+
+  // They watch the season 4 premiere.
+  state = mergeAnimeDelta(state, {
+    anime: [withProgress(item(1, "watching"), 13, 24)],
+  });
+  assert.equal(effectiveStatus(state.items["1"]), "watching");
+});
+
+test("a title that was always watching is unaffected by revival tracking", () => {
+  let state = replaceWithInitialEligibleAnime(createEmptyState(), {
+    anime: [withProgress(item(1, "watching"), 3, 12)],
+  });
+  state = mergeAnimeDelta(state, {
+    anime: [withProgress(item(1, "watching"), 4, 12)],
+  });
+  assert.equal(effectiveStatus(state.items["1"]), "watching");
 });

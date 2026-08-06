@@ -36,6 +36,51 @@ export function simklIdFor(item) {
   return media?.ids?.simkl ?? media?.ids?.simkl_id ?? null;
 }
 
+function caughtUpSnapshot(item) {
+  const watchedCount = Number(item?.watched_episodes_count);
+  if (!Number.isFinite(watchedCount)) return null;
+  const totalCount = Number(item?.total_episodes_count);
+  return { watchedCount, totalCount: Number.isFinite(totalCount) ? totalCount : null };
+}
+
+// Simkl auto-moves a title out of Completed and back into Watching the
+// moment a new season is confirmed on TVDB/AniDB, before the user has
+// watched anything from it. That means `item.status` alone cannot tell a
+// just-revived title apart from one the user is genuinely partway through.
+// Carry forward the watched-episode count from the last time the item was
+// truly completed, so later syncs can compare against it.
+function withCaughtUpTracking(item, previousItem) {
+  const next = { ...item };
+  const carried = previousItem?._addonCaughtUpAt;
+  if (carried) next._addonCaughtUpAt = carried;
+  if (item.status === "completed") {
+    const snapshot = caughtUpSnapshot(item);
+    if (snapshot) next._addonCaughtUpAt = snapshot;
+  }
+  return next;
+}
+
+function isRevivedUnwatched(item) {
+  const snapshot = item?._addonCaughtUpAt;
+  if (!snapshot || item?.status !== "watching") return false;
+  const watched = Number(item.watched_episodes_count);
+  const total = Number(item.total_episodes_count);
+  if (!Number.isFinite(watched) || !Number.isFinite(snapshot.watchedCount)) return false;
+  // They've watched something beyond where they stood when last caught up:
+  // this is genuinely "watching", not a silent revival.
+  if (watched > snapshot.watchedCount) return false;
+  // Nothing new was actually added since they were last caught up.
+  if (Number.isFinite(total) && Number.isFinite(snapshot.totalCount) && total <= snapshot.totalCount) return false;
+  return true;
+}
+
+// The status the catalog/poster badge should treat this item as, which can
+// differ from Simkl's own `item.status` for a just-revived, not-yet-started
+// title (see isRevivedUnwatched above).
+export function effectiveStatus(item) {
+  return isRevivedUnwatched(item) ? "completed" : item?.status;
+}
+
 export function normalizeState(input, mediaType = "anime") {
   const targetType = normalizedMediaType(mediaType);
   const base = createEmptyState(targetType);
@@ -65,7 +110,9 @@ export function replaceWithInitialEligibleItems(state, payload, mediaType = "ani
   const next = { ...normalizeState(state, mediaType), items: {} };
   for (const item of payloadItems(payload, mediaType)) {
     const id = simklIdFor(item);
-    if (id !== null && INCLUDED_STATUSES.has(item.status)) next.items[String(id)] = item;
+    if (id !== null && INCLUDED_STATUSES.has(item.status)) {
+      next.items[String(id)] = withCaughtUpTracking(item, null);
+    }
   }
   return next;
 }
@@ -76,7 +123,7 @@ export function mergeItemsDelta(state, payload, mediaType = "anime") {
     const id = simklIdFor(item);
     if (id === null) continue;
     const key = String(id);
-    if (INCLUDED_STATUSES.has(item.status)) next.items[key] = item;
+    if (INCLUDED_STATUSES.has(item.status)) next.items[key] = withCaughtUpTracking(item, next.items[key]);
     else delete next.items[key];
   }
   return next;

@@ -1,6 +1,6 @@
 {
   "name": "simkl-new-episodes-addon",
-  "version": "1.8.9",
+  "version": "1.9.0",
   "private": true,
   "type": "module",
   "description": "Two isolated personal Stremio/Nuvio catalogs: anime at root and TV shows under account-2, with new-episode and revived Completed-title support.",

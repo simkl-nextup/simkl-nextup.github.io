@@ -167,6 +167,82 @@ test("end-to-end refresh publishes Watching, monthly Plan to Watch, and revived 
   assert.equal(status.trackedCompletedItems, 1);
 });
 
+test("a title Simkl silently auto-revives from Completed still publishes as Completed until actually watched", async () => {
+  // Reproduces the real production bug: Simkl moves a title from Completed
+  // back into Watching itself the moment a new season is confirmed on
+  // TVDB/AniDB, before the user has watched anything from it. The addon
+  // should still treat it as a revived Completed title (purple "NEW SEASON"
+  // badge) until watched progress actually advances.
+  const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-revival-"));
+  const stateFile = path.join(temp, "state.json");
+  const outputDirectory = path.join(temp, "public");
+  let phase = 1;
+
+  const finishedItem = {
+    status: "completed",
+    watched_episodes_count: 12,
+    total_episodes_count: 12,
+    anime: { title: "Revived Show", ids: { simkl: 501, imdb: "tt5010000" } },
+  };
+  // Same show, same watched count, but Simkl has already flipped status to
+  // "watching" and grown the total now that a new season is confirmed.
+  const silentlyRevivedItem = {
+    status: "watching",
+    watched_episodes_count: 12,
+    total_episodes_count: 24,
+    next_to_watch_info: { episode: 13, title: "Season 2, Episode 1", date: "2026-08-02T10:00:00Z" },
+    anime: { title: "Revived Show", ids: { simkl: 501, imdb: "tt5010000" } },
+  };
+
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    if (url.hostname === "data.simkl.in") return jsonResponse({ calendar: [], metadata: {} });
+    if (url.pathname === "/sync/all-items/anime" && !url.searchParams.has("date_from")) {
+      return jsonResponse({ anime: [finishedItem] });
+    }
+    if (url.pathname === "/sync/activities") {
+      return jsonResponse({
+        anime: {
+          all: phase === 1 ? "2026-08-01T11:00:00Z" : "2026-08-02T11:00:00Z",
+          removed_from_list: null,
+        },
+      });
+    }
+    if (url.pathname === "/sync/all-items/anime" && url.searchParams.has("date_from")) {
+      return jsonResponse({ anime: [silentlyRevivedItem] });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  await refresh({
+    clientId: "client",
+    accessToken: "token",
+    fetchImpl,
+    now: new Date("2026-08-01T12:00:00Z"),
+    stateFile,
+    outputDirectory,
+    posterBadgesEnabled: false,
+  });
+
+  phase = 2;
+  const result = await refresh({
+    clientId: "client",
+    accessToken: "token",
+    fetchImpl,
+    now: new Date("2026-08-02T12:00:00Z"),
+    stateFile,
+    outputDirectory,
+    posterBadgesEnabled: false,
+  });
+
+  assert.equal(result.catalog.metas.length, 1);
+  assert.match(result.catalog.metas[0].description, /Previously completed/);
+
+  const status = JSON.parse(await readFile(path.join(outputDirectory, "status.json"), "utf8"));
+  assert.equal(status.publishedCompletedItems, 1);
+  assert.equal(status.publishedWatchingItems, 0);
+});
+
 test("end-to-end TVDB refresh publishes all seasons with canonical episode IDs and the current default", async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "simkl-addon-tvdb-"));
   const stateFile = path.join(temp, "state.json");
