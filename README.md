@@ -1,6 +1,6 @@
 # My Anime Up Next · Simkl
 
-A personal, single-row Stremio/Nuvio addon. It combines anime from your Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** anime that receive an additional episode, and bumps a title to the top whenever a new episode airs.
+A personal Stremio/Nuvio addon that can publish one isolated row for each of two Simkl accounts from the same GitHub repository. It combines anime from your Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** anime that receive an additional episode, and bumps a title to the top whenever a new episode airs.
 
 Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
 
@@ -122,6 +122,17 @@ Recommended for Nuvio:
 
 Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TVDB and anime IDs. Direct manifest installation also works best for titles carrying IMDb IDs.
 
+## Optional second Simkl account in the same repository
+
+Version 1.8.7 can publish a second fully isolated addon without changing the existing root manifest:
+
+```text
+Primary:  https://simkl-nextup.github.io/manifest.json
+Account 2: https://simkl-nextup.github.io/account-2/manifest.json
+```
+
+The second account uses `SIMKL_ACCESS_TOKEN_2`, an optional `SIMKL_CLIENT_ID_2`, a unique addon/catalog identity, its own output folder, and its own private Actions cache. The existing root account retains its current URL, IDs, secret names, and cache path. When the second token is not configured, the workflow publishes only its setup placeholder. See [`SECOND_ACCOUNT_SETUP.md`](SECOND_ACCOUNT_SETUP.md) for the exact migration and authorization steps.
+
 ## Refresh behavior
 
 - The first run pulls your Anime library once and locally keeps Watching, Plan to Watch, and Completed so revived titles can be detected.
@@ -218,48 +229,6 @@ TOP Posters is intentionally not called directly because its API key would appea
 
 The TV-readable top/bottom composition now uses the exact v1.8.2 badge palette and treatment: green/gold/purple status gradients, green/blue/dark episode gradients, white highlights, dark lower edges, heavy Arial text, black text outlines, gloss, and the original shadow strength. The logo-safe lower composition remains unchanged.
 
-## Hosting a second Simkl account in the same repository
+## Updating to 1.8.7 — two isolated Simkl accounts
 
-Version 1.8.7 keeps the existing account at the repository root and publishes a fully isolated second account under `account-2/`.
-
-The two installs use different addon IDs, catalog IDs, state files, output directories, and poster folders. A missing, expired, or temporarily failing second-account token therefore cannot overwrite the first account. The workflow builds account 2 in a temporary folder, verifies it, and only then replaces the last known-good account-2 output. The primary account remains the only deployment-blocking profile.
-
-### URLs
-
-Primary account:
-
-```text
-https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/manifest.json
-```
-
-Second account:
-
-```text
-https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/account-2/manifest.json
-```
-
-Second-account authorization page:
-
-```text
-https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/account-2/setup.html
-```
-
-### Add the second account
-
-1. Replace the repository files with this version and run **Deploy setup page only** once.
-2. Open the second-account setup page in a private/incognito window, or sign out of the first Simkl account first.
-3. Enter the existing `SIMKL_CLIENT_ID`, approve the PIN while logged into the second Simkl account, and copy the returned token.
-4. Add that token as the repository secret `SIMKL_ACCESS_TOKEN_2`.
-5. Run **Refresh Simkl catalogs and deploy Pages**.
-6. Import the second manifest URL into the second Nuvio/Xperience profile.
-
-The same Simkl developer application and `SIMKL_CLIENT_ID` can be used for both authorizations. `SIMKL_CLIENT_ID_2` is optional and is only needed if the second account deliberately uses a different Simkl developer application.
-
-The artwork secrets and TVDB/TMDB repository variables are shared by both accounts. Account-specific private data is stored separately as:
-
-```text
-state/simkl-state.json
-state/simkl-state-account-2.json
-```
-
-Do not rename the second-account secret or the `account-2` path unless you also update the workflow profile settings.
+Version 1.8.7 adds an optional second generation pass under `public/account-2`. The root addon keeps its original manifest URL, addon ID, catalog ID, Simkl secrets, state path, and cache prefix. Account 2 is enabled only when `SIMKL_ACCESS_TOKEN_2` exists. Both outputs are verified before the combined GitHub Pages artifact is deployed.

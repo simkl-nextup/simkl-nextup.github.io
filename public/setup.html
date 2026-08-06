@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Authorize Simkl</title><style>
+<title>Authorize My Anime Up Next</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#0b0c0f;color:#fff}body{max-width:680px;margin:48px auto;padding:0 20px}input,button{font:inherit;padding:12px;border-radius:10px;border:1px solid #3b4150}input{width:100%;box-sizing:border-box;background:#151820;color:#fff}button{margin-top:12px;background:#fff;color:#08090b;font-weight:800;cursor:pointer}.box{margin-top:20px;padding:18px;background:#151820;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere}.warn{color:#ffcb6b}</style></head>
-<body><h1>Authorize this personal addon</h1><p>Enter the client ID from your Simkl developer app. Your browser will request a PIN directly from Simkl; nothing is sent to this GitHub Pages site.</p>
+<body><h1>Authorize My Anime Up Next</h1><p>Enter the client ID from your Simkl developer app. Your browser requests a PIN directly from Simkl; nothing is sent to this GitHub Pages site.</p>
 <label>Simkl client ID<input id="client" autocomplete="off"></label><button id="start">Request PIN</button><div id="out" class="box">Waiting.</div>
-<p class="warn">Treat the final access token like a password. Save it only as the GitHub repository secret <strong>SIMKL_ACCESS_TOKEN</strong>.</p>
+<p class="warn">Before approving the PIN, make sure the browser is signed into the correct Simkl account. Treat the final access token like a password. Save it only as the GitHub repository secret <strong>SIMKL_ACCESS_TOKEN</strong>.</p>
 <script type="module">
 const out=document.querySelector('#out');const button=document.querySelector('#start');
 const params=(id)=>new URLSearchParams({client_id:id,'app-name':'simkl-new-episodes-addon','app-version':'1.8.7'});

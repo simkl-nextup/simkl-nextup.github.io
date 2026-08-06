@@ -1,4 +1,4 @@
-name: Refresh Simkl catalogs and deploy Pages
+name: Refresh two Simkl catalogs and deploy Pages
 
 on:
   workflow_dispatch:
@@ -35,6 +35,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Detect second Simkl account
+        id: account2
+        env:
+          SECOND_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
+        run: |
+          if [ -n "$SECOND_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Second Simkl account is enabled."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SIMKL_ACCESS_TOKEN_2 is absent; deploying the existing root account only."
+          fi
+
       - name: Keep scheduled workflows active
         run: |
           node scripts/update-keepalive.mjs
@@ -49,7 +62,7 @@ jobs:
           git commit -m "chore: keep scheduled workflows active"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
-      - name: Restore primary account state
+      - name: Restore primary private sync state
         id: restore-primary-state
         uses: actions/cache/restore@v4
         with:
@@ -58,10 +71,20 @@ jobs:
           restore-keys: |
             simkl-state-
 
+      - name: Restore account 2 private sync state
+        if: steps.account2.outputs.enabled == 'true'
+        id: restore-account2-state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/account-2/simkl-state.json
+          key: simkl-account-2-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            simkl-account-2-state-
+
       - name: Run tests
         run: npm test
 
-      - name: Refresh primary account
+      - name: Refresh primary account at root
         env:
           SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
@@ -76,46 +99,42 @@ jobs:
           POSTER_BADGES: "true"
         run: npm run refresh
 
-      - name: Verify primary account
+      - name: Verify primary generated addon
         env:
           SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
-          SIMKL_ACCESS_TOKEN_2: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
           TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
           MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
           TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
           TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
         run: npm run verify
 
-      - name: Save primary account state
+      - name: Save primary private sync state
         uses: actions/cache/save@v4
         with:
           path: state/simkl-state.json
           key: simkl-state-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Restore account 2 state and last good output
-        id: restore_account_2
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            state/simkl-state-account-2.json
-            public/account-2
-          key: simkl-account-2-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            simkl-account-2-
-
-      - name: Ensure account 2 has a safe fallback
-        run: |
-          if [ ! -f public/account-2/manifest.json ]; then
-            npm run build:placeholder:account-2
-          fi
-
-      - name: Refresh account 2 in an isolated build folder
-        id: refresh_account_2
-        continue-on-error: true
+      - name: Publish account 2 authorization placeholder
+        if: steps.account2.outputs.enabled != 'true'
         env:
-          SIMKL_CLIENT_ID_PRIMARY: ${{ secrets.SIMKL_CLIENT_ID }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          PUBLIC_PATH_PREFIX: account-2
+          OUTPUT_DIRECTORY: public/account-2
+          ADDON_ID: community.simkl.new-anime-episodes.account2
+          CATALOG_ID: simkl-new-anime-episodes-account2
+          CATALOG_NAME: Account 2 · Anime Up Next · Simkl
+          ADDON_NAME: Simkl Anime Up Next · Account 2
+          SITE_TITLE: Account 2 Anime Up Next
+          ACCOUNT_LABEL: Simkl Account 2
+          SETUP_SECRET_NAME: SIMKL_ACCESS_TOKEN_2
+        run: npm run build:placeholder
+
+      - name: Refresh account 2 under /account-2
+        if: steps.account2.outputs.enabled == 'true'
+        env:
           SIMKL_CLIENT_ID_2: ${{ secrets.SIMKL_CLIENT_ID_2 }}
-          SIMKL_ACCESS_TOKEN_2: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
+          SIMKL_CLIENT_ID_PRIMARY: ${{ secrets.SIMKL_CLIENT_ID }}
+          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
           TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
           MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
           TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
@@ -123,80 +142,54 @@ jobs:
           TVDB_SEASON_TYPE: ${{ vars.TVDB_SEASON_TYPE }}
           TVDB_LANGUAGE: ${{ vars.TVDB_LANGUAGE }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          PUBLIC_PATH_PREFIX: account-2
+          OUTPUT_DIRECTORY: public/account-2
+          SIMKL_STATE_FILE: state/account-2/simkl-state.json
+          ADDON_ID: community.simkl.new-anime-episodes.account2
+          CATALOG_ID: simkl-new-anime-episodes-account2
+          CATALOG_NAME: Account 2 · Anime Up Next · Simkl
+          ADDON_NAME: Simkl Anime Up Next · Account 2
+          SITE_TITLE: Account 2 Anime Up Next
+          ACCOUNT_LABEL: Simkl Account 2
+          SETUP_SECRET_NAME: SIMKL_ACCESS_TOKEN_2
           MAX_CATALOG_ITEMS: 50
           POSTER_BADGES: "true"
-          SIMKL_PROFILE_BASE_PATH: account-2
-          SIMKL_PROFILE_STATE_FILE: state/simkl-state-account-2.json
-          SIMKL_PROFILE_OUTPUT_DIR: public/.account-2-build
-          SIMKL_PROFILE_ADDON_ID: community.simkl.new-anime-episodes.account-2
-          SIMKL_PROFILE_ADDON_NAME: Simkl Anime Up Next · Account 2
-          SIMKL_PROFILE_CATALOG_ID: simkl-new-anime-episodes-account-2
-          SIMKL_PROFILE_CATALOG_NAME: My Anime Up Next · Simkl 2
-          SIMKL_PROFILE_SECRET_NAME: SIMKL_ACCESS_TOKEN_2
-          SIMKL_PROFILE_PAGE_HEADING: My Anime Up Next · Simkl 2
-          SIMKL_PROFILE_SETUP_TITLE: Authorize Simkl account 2
-          SIMKL_PROFILE_SETUP_HEADING: Authorize the second personal addon
         run: |
-          if [ -z "$SIMKL_ACCESS_TOKEN_2" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "SIMKL_ACCESS_TOKEN_2 is not configured; publishing the included empty account-2 setup page."
-            npm run build:placeholder:account-2
-            exit 0
-          fi
-
-          echo "configured=true" >> "$GITHUB_OUTPUT"
           export SIMKL_CLIENT_ID="${SIMKL_CLIENT_ID_2:-$SIMKL_CLIENT_ID_PRIMARY}"
-          export SIMKL_ACCESS_TOKEN="$SIMKL_ACCESS_TOKEN_2"
+          if [ -z "$SIMKL_CLIENT_ID" ]; then
+            echo "Neither SIMKL_CLIENT_ID_2 nor SIMKL_CLIENT_ID is configured." >&2
+            exit 1
+          fi
           npm run refresh
 
-      - name: Verify isolated account 2 build
-        id: verify_account_2
-        if: steps.refresh_account_2.outputs.configured == 'true' && steps.refresh_account_2.outcome == 'success'
-        continue-on-error: true
+      - name: Verify account 2 generated addon
+        if: steps.account2.outputs.enabled == 'true'
         env:
-          VERIFY_OUTPUT_DIR: public/.account-2-build
-          VERIFY_CATALOG_ID: simkl-new-anime-episodes-account-2
-          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN }}
-          SIMKL_ACCESS_TOKEN_2: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
+          OUTPUT_DIRECTORY: public/account-2
+          ADDON_ID: community.simkl.new-anime-episodes.account2
+          CATALOG_ID: simkl-new-anime-episodes-account2
+          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
           TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
           MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
           TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
           TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
         run: npm run verify
 
-      - name: Promote verified account 2 build
-        id: promote_account_2
-        if: steps.refresh_account_2.outputs.configured == 'true' && steps.refresh_account_2.outcome == 'success' && steps.verify_account_2.outcome == 'success'
-        run: |
-          rm -rf public/account-2
-          mv public/.account-2-build public/account-2
-          echo "promoted=true" >> "$GITHUB_OUTPUT"
-
-      - name: Preserve account 2 state and last good output
-        if: steps.promote_account_2.outputs.promoted == 'true'
+      - name: Save account 2 private sync state
+        if: steps.account2.outputs.enabled == 'true'
         uses: actions/cache/save@v4
         with:
-          path: |
-            state/simkl-state-account-2.json
-            public/account-2
-          key: simkl-account-2-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Report account 2 failure without blocking primary
-        if: steps.refresh_account_2.outputs.configured == 'true' && (steps.refresh_account_2.outcome != 'success' || steps.verify_account_2.outcome != 'success')
-        run: echo "::warning::Account 2 failed, so the last verified account-2 output was kept. The primary account will still deploy."
-
-      - name: Remove temporary account 2 build
-        if: always()
-        run: rm -rf public/.account-2-build
+          path: state/account-2/simkl-state.json
+          key: simkl-account-2-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload combined Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: public
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy both addons to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

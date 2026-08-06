@@ -7,7 +7,6 @@
   "scripts": {
     "authorize": "node scripts/authorize.mjs",
     "build:placeholder": "node scripts/build-placeholder.mjs",
-    "build:placeholder:account-2": "node scripts/build-account-2-placeholder.mjs",
     "keepalive": "node scripts/update-keepalive.mjs",
     "refresh": "node scripts/update.mjs",
     "test": "node --test",

@@ -14,7 +14,7 @@ import {
   replaceWithInitialEligibleAnime,
   simklIdFor,
 } from "../src/state.mjs";
-import { appendBasePath, deriveBaseUrl, writeSite } from "../src/site.mjs";
+import { appendPublicPath, deriveBaseUrl, writeSite } from "../src/site.mjs";
 import { enrichTvdbMetadata, TvdbApiError } from "../src/tvdb.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -122,7 +122,6 @@ export async function refresh({
   fetchImpl = fetch,
   explicitBaseUrl = process.env.PUBLIC_BASE_URL,
   githubRepository = process.env.GITHUB_REPOSITORY,
-  publicBasePath = "",
   tmdbAccessToken = process.env.TMDB_READ_ACCESS_TOKEN,
   mdblistApiKey = process.env.MDBLIST_API_KEY,
   tvdbApiKey = process.env.TVDB_API_KEY,
@@ -132,14 +131,14 @@ export async function refresh({
   posterBadgesEnabled = process.env.POSTER_BADGES !== "false",
   stateFile = statePath,
   outputDirectory = outputDir,
-  addonId,
-  addonName,
-  catalogId,
-  catalogName,
-  setupSecretName,
-  pageHeading,
-  setupDocumentTitle,
-  setupHeading,
+  publicPathPrefix = process.env.PUBLIC_PATH_PREFIX || "",
+  addonId = process.env.ADDON_ID,
+  catalogId = process.env.CATALOG_ID,
+  catalogName = process.env.CATALOG_NAME,
+  addonName = process.env.ADDON_NAME,
+  siteTitle = process.env.SITE_TITLE,
+  setupSecretName = process.env.SETUP_SECRET_NAME,
+  accountLabel = process.env.ACCOUNT_LABEL,
 } = {}) {
   const client = createSimklClient({ clientId, accessToken, fetchImpl });
   let state = await loadState(stateFile);
@@ -218,7 +217,7 @@ export async function refresh({
 
   const { catalog, metadata: detailMetadata, posterBadges, skipped, sourceCounts, unifiedStats } = buildCatalog(state.items, { now, maxItems });
   const rootBaseUrl = deriveBaseUrl({ explicitBaseUrl, githubRepository });
-  const baseUrl = appendBasePath(rootBaseUrl, publicBasePath);
+  const baseUrl = appendPublicPath(rootBaseUrl, publicPathPrefix);
   const site = await writeSite({
     outputDir: outputDirectory,
     catalog,
@@ -234,14 +233,13 @@ export async function refresh({
     metadata: detailMetadata,
     unifiedStats,
     fetchImpl,
-    addonId,
-    addonName,
-    catalogId,
-    catalogName,
-    setupSecretName,
-    pageHeading,
-    setupDocumentTitle,
-    setupHeading,
+    ...(addonId ? { addonId } : {}),
+    ...(catalogId ? { catalogId } : {}),
+    ...(catalogName ? { catalogName } : {}),
+    ...(addonName ? { addonName } : {}),
+    ...(siteTitle ? { siteTitle } : {}),
+    ...(setupSecretName ? { setupSecretName } : {}),
+    ...(accountLabel ? { accountLabel } : {}),
   });
   for (const warning of site.posterBadgeWarnings) {
     console.warn(`Poster badge skipped for ${warning.name ?? warning.id ?? "unknown"}: ${warning.message}`);
@@ -259,35 +257,31 @@ export async function refresh({
   };
 }
 
-function resolveRepoPath(value, fallback) {
+function configuredProjectPath(value, fallback) {
   if (!value) return fallback;
-  return path.isAbsolute(value) ? value : path.join(root, value);
+  const resolved = path.resolve(root, value);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Configured path must remain inside the repository: ${value}`);
+  }
+  return resolved;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const cliSecretName = process.env.SIMKL_PROFILE_SECRET_NAME || "SIMKL_ACCESS_TOKEN";
+  const accessTokenSecretName = process.env.SETUP_SECRET_NAME || "SIMKL_ACCESS_TOKEN";
   try {
     const result = await refresh({
       clientId: process.env.SIMKL_CLIENT_ID,
       accessToken: process.env.SIMKL_ACCESS_TOKEN,
       maxItems: process.env.MAX_CATALOG_ITEMS || DEFAULT_MAX_ITEMS,
-      publicBasePath: process.env.SIMKL_PROFILE_BASE_PATH || "",
-      stateFile: resolveRepoPath(process.env.SIMKL_PROFILE_STATE_FILE, statePath),
-      outputDirectory: resolveRepoPath(process.env.SIMKL_PROFILE_OUTPUT_DIR, outputDir),
-      addonId: process.env.SIMKL_PROFILE_ADDON_ID,
-      addonName: process.env.SIMKL_PROFILE_ADDON_NAME,
-      catalogId: process.env.SIMKL_PROFILE_CATALOG_ID,
-      catalogName: process.env.SIMKL_PROFILE_CATALOG_NAME,
-      setupSecretName: cliSecretName,
-      pageHeading: process.env.SIMKL_PROFILE_PAGE_HEADING,
-      setupDocumentTitle: process.env.SIMKL_PROFILE_SETUP_TITLE,
-      setupHeading: process.env.SIMKL_PROFILE_SETUP_HEADING,
+      stateFile: configuredProjectPath(process.env.SIMKL_STATE_FILE, statePath),
+      outputDirectory: configuredProjectPath(process.env.OUTPUT_DIRECTORY, outputDir),
     });
     console.log(`Published ${result.catalog.metas.length} anime title(s) ready to watch.`);
     if (result.skipped.length) console.warn(`Skipped ${result.skipped.length} title(s) with unusable metadata.`);
   } catch (error) {
     if (error instanceof SimklApiError && error.status === 401) {
-      console.error(`Simkl authorization was revoked or expired. Run the authorization step again and replace ${cliSecretName}.`);
+      console.error(`Simkl authorization was revoked or expired. Run the authorization step again and replace ${accessTokenSecretName}.`);
     } else if ((error instanceof MetadataApiError || error instanceof TvdbApiError) && (error.status === 401 || error.status === 403)) {
       console.error(`${error.provider} rejected its configured API credential. Replace or rotate the corresponding GitHub secret.`);
     } else {

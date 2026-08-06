@@ -1,6 +1,6 @@
-# Set up account 2 for normal TV shows
+# Set up the second Simkl account
 
-This repository keeps the existing anime addon at the root and publishes the second account's normal TV shows in an isolated subfolder.
+This repository keeps the existing addon at the root and publishes the second account in an isolated subfolder.
 
 ## Final URLs
 
@@ -20,7 +20,7 @@ The current root addon keeps all of these unchanged:
 - Manifest path: `/manifest.json`
 - Addon ID: `community.simkl.new-anime-episodes`
 - Catalog ID: `simkl-new-anime-episodes`
-- Anime state cache path and cache prefix
+- State cache path and cache prefix
 
 ## 2. Run the workflow once before adding account 2
 
@@ -85,7 +85,7 @@ Run **Refresh two Simkl catalogs and deploy Pages** again.
 The workflow now performs this sequence:
 
 1. Restore the primary state from `state/simkl-state.json`.
-2. Restore account 2 from `state/account-2/simkl-state.json` using the TV-specific cache prefix `simkl-account-2-tv-state-`.
+2. Restore account 2 from `state/account-2/simkl-state.json`.
 3. Run all tests.
 4. Generate and verify the root addon.
 5. Generate and verify account 2 under `public/account-2`.
@@ -103,10 +103,9 @@ Open these addresses:
 The second report should show:
 
 - `"account": "Simkl Account 2"`
-- `"addonId": "community.simkl.new-tv-episodes.account2"`
-- `"catalogId": "simkl-new-tv-episodes-account2"`
-- `"mediaType": "tv"`
-- A non-zero tracked or catalog count when that Simkl account has eligible TV shows
+- `"addonId": "community.simkl.new-anime-episodes.account2"`
+- `"catalogId": "simkl-new-anime-episodes-account2"`
+- A non-zero tracked or catalog count when that Simkl account has eligible anime
 
 Then install or import:
 
@@ -120,17 +119,5 @@ The existing installation continues using:
 
 - With no `SIMKL_ACCESS_TOKEN_2`, account 2 remains an empty setup placeholder and the root addon continues normally.
 - If account 2 is enabled but its token or generation fails, the workflow stops before the Pages deployment step. The already-live Pages deployment remains online.
-- Account 2 cannot overwrite the root catalog because it has a separate output directory, TV catalog filename, addon ID, poster directory, state file, and TV-specific cache prefix.
+- Account 2 cannot overwrite the root catalog because it has a separate output directory, catalog filename, addon ID, poster directory, state file, and cache prefix.
 - The root addon's URL and identity remain unchanged.
-
-## Media split in this version
-
-- Root: `MEDIA_TYPE=anime`, addon ID `community.simkl.new-anime-episodes`, catalog ID `simkl-new-anime-episodes`.
-- Account 2: `MEDIA_TYPE=tv`, addon ID `community.simkl.new-tv-episodes.account2`, catalog ID `simkl-new-tv-episodes-account2`.
-- The account-2 workflow deliberately uses a new cache prefix, so the empty anime-only account-2 state from v1.8.7 is not restored. No GitHub secret needs to be regenerated.
-
-## Version 1.9.2 notes
-
-Account 2 remains normal TV. Returning shows use a TV-specific season-boundary rule: a canonical `S02E01` or later remains purple `NEW SEASON` until that premiere is watched, then advances to green `NEW EPISODE`. The root anime addon keeps its existing completed-title rule.
-
-The Pages workflow now queues the verified artifact once and exits after GitHub accepts it. A green workflow means the deployment was accepted; the live Pages files may take a few additional minutes to update.
