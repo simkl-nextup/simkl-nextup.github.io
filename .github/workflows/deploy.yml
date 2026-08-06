@@ -11,19 +11,18 @@ permissions:
   pages: write
   id-token: write
 
-# Only the newest refresh matters. Cancel an older queued/running refresh instead
-# of allowing multiple Pages deployments to block one another.
+# Match the original repository's proven Pages deployment behavior exactly:
+# one workflow job, one Pages environment, and no custom REST dispatcher.
 concurrency:
-  group: simkl-nextup-pages-${{ github.ref }}
-  cancel-in-progress: true
+  group: simkl-new-episodes-pages
+  cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build and verify both addons
+  refresh-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    outputs:
-      pages_artifact_id: ${{ steps.pages-artifact.outputs.artifact_id }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout repository
@@ -210,32 +209,15 @@ jobs:
           path: state/account-2/simkl-state.json
           key: simkl-account-2-tv-progress-v2-state-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # These are the exact three deployment actions used by the original ZIP.
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: Upload combined Pages artifact
-        id: pages-artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: public
 
-  deploy:
-    name: Queue verified site for GitHub Pages
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment:
-      name: github-pages
-
-    steps:
-      - name: Checkout deployment helper
-        uses: actions/checkout@v6
-
-      - name: Queue both addons without polling
+      - name: Deploy both addons to GitHub Pages
         id: deployment
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PAGES_ARTIFACT_ID: ${{ needs.build.outputs.pages_artifact_id }}
-          PAGES_BUILD_VERSION: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          PAGES_ENVIRONMENT: github-pages
-        run: node scripts/dispatch-pages.mjs
+        uses: actions/deploy-pages@v4

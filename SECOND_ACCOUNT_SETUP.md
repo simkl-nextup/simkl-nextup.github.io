@@ -129,7 +129,7 @@ The existing installation continues using:
 - Account 2: `MEDIA_TYPE=tv`, addon ID `community.simkl.new-tv-episodes.account2`, catalog ID `simkl-new-tv-episodes-account2`.
 - The account-2 workflow deliberately uses a new cache prefix, so the empty anime-only account-2 state from v1.8.7 is not restored. No GitHub secret needs to be regenerated.
 
-## Version 1.9.1 notes
+## Version 1.9.2 notes
 
 Account 2 remains normal TV. Returning shows use a TV-specific season-boundary rule: a canonical `S02E01` or later remains purple `NEW SEASON` until that premiere is watched, then advances to green `NEW EPISODE`. The root anime addon keeps its existing completed-title rule.
 

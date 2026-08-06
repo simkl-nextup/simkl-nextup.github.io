@@ -124,7 +124,7 @@ Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TV
 
 ## Second Simkl account for normal TV shows
 
-Version 1.9.1 keeps the existing root anime addon unchanged and publishes account 2 as a fully isolated normal-TV addon:
+Version 1.9.2 keeps the existing root anime addon unchanged and publishes account 2 as a fully isolated normal-TV addon:
 
 ```text
 Primary:  https://simkl-nextup.github.io/manifest.json
@@ -237,9 +237,9 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
-## Updating to 1.9.1 — season-boundary and fast Pages queueing
+## Updating to 1.9.2 — season-boundary fix with original Pages deployment
 
-Version 1.9.1 keeps the root anime addon's established new-season rule unchanged and improves only account 2's normal-TV handling.
+Version 1.9.2 keeps the root anime addon's established new-season rule unchanged and improves only account 2's normal-TV handling.
 
 ### New-season logic
 
@@ -251,14 +251,12 @@ The two Simkl media types do not expose returning seasons in exactly the same wa
 
 This hybrid is intentionally media-specific: applying the anime completed-only rule to normal TV caused returning shows such as Ted Lasso to appear green, while applying the TV rule globally could incorrectly join separate anime sequel records.
 
-### Deployment behavior
+### Original GitHub Pages workflow restored
 
-The standard `actions/deploy-pages` step creates a deployment and then repeatedly polls GitHub Pages until the deployment succeeds, fails, or times out. Version 1.9.1 instead uses `scripts/dispatch-pages.mjs` to:
+The failed experimental REST dispatcher has been removed. Deployment again uses the exact mechanism from the original repository ZIP, in the same job and `github-pages` environment:
 
-1. request the GitHub Actions OIDC token;
-2. submit the already verified Pages artifact once;
-3. exit as soon as GitHub accepts the deployment.
+1. `actions/configure-pages@v5`
+2. `actions/upload-pages-artifact@v4`
+3. `actions/deploy-pages@v4`
 
-The workflow therefore stops printing hundreds of `deployment_queued` lines. GitHub Pages publishing continues asynchronously after the green workflow run, so the public URLs can still take a few minutes to reflect the new artifact.
-
-Upload this release as a new commit and start a new workflow run. Do not re-run a deployment attached to an older commit.
+The two-account generation, verification, private caches, and TV assertions run before those original deployment steps.

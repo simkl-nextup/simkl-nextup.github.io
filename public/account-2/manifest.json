@@ -1,6 +1,6 @@
 {
   "id": "community.simkl.new-tv-episodes.account2",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "name": "Simkl TV Up Next · Account 2",
   "description": "A personalized Simkl TV Up Next row with TheTVDB seasons, canonical episode IDs, and high-resolution episode artwork.",
   "resources": [
