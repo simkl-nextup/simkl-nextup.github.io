@@ -35,6 +35,18 @@ test("poster badge SVG keeps the TV layout with the exact v1.8.2 palette", () =>
   }).toString();
   const planned = buildPosterBadgeSvg({ status: "plantowatch", episode: "S3E6" }).toString();
   const revived = buildPosterBadgeSvg({ status: "completed", episode: "Ep. 13" }).toString();
+  const caughtUp = buildPosterBadgeSvg({
+    status: "watching",
+    episode: "S4E2",
+    latestEpisode: "S4E2",
+    nextEpisode: "S4E2",
+  }).toString();
+  const newSeason = buildPosterBadgeSvg({
+    status: "completed",
+    episode: "S4E1",
+    latestEpisode: "S4E2",
+    nextEpisode: "S4E1",
+  }).toString();
 
   assert.match(watching, /NEW EPISODE/);
   assert.match(watching, />NEW</);
@@ -58,6 +70,18 @@ test("poster badge SVG keeps the TV layout with the exact v1.8.2 palette", () =>
 
   assert.match(revived, /NEW SEASON/);
   assert.match(revived, /#9B8CFF/);
+
+  assert.match(caughtUp, /NEW EPISODE/);
+  assert.match(caughtUp, />NEXT</);
+  assert.doesNotMatch(caughtUp, />NEW</);
+  assert.equal((caughtUp.match(/>S4 E2</g) ?? []).length, 1);
+
+  assert.match(newSeason, /NEW SEASON/);
+  assert.match(newSeason, />NEW</);
+  assert.match(newSeason, />START</);
+  assert.match(newSeason, />S4 E2</);
+  assert.match(newSeason, />S4 E1</);
+  assert.match(newSeason, /seasonInfoGradient/);
 });
 
 test("poster decoration creates a deterministic 500x750 WebP and publishes its URL", async () => {

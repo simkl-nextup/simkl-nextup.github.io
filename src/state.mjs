@@ -7,6 +7,30 @@ function normalizedMediaType(value = "anime") {
   return "anime";
 }
 
+
+function preservedAddonFields(item) {
+  if (!item || typeof item !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(item).filter(([key]) => key.startsWith("_addon")),
+  );
+}
+
+function mergeFreshTrackedItem(existing, fresh) {
+  if (!existing) return fresh;
+  const next = { ...fresh, ...preservedAddonFields(existing) };
+  const mediaKey = fresh?.show ? "show" : fresh?.anime ? "anime" : null;
+  if (mediaKey) {
+    const oldMedia = existing?.[mediaKey] ?? {};
+    const newMedia = fresh?.[mediaKey] ?? {};
+    next[mediaKey] = {
+      ...oldMedia,
+      ...newMedia,
+      ids: { ...(oldMedia.ids ?? {}), ...(newMedia.ids ?? {}) },
+    };
+  }
+  return next;
+}
+
 function payloadItems(payload, mediaType = "anime") {
   const type = normalizedMediaType(mediaType);
   if (type === "tv") return payload?.shows ?? payload?.tv ?? [];
@@ -66,6 +90,18 @@ export function replaceWithInitialEligibleItems(state, payload, mediaType = "ani
   for (const item of payloadItems(payload, mediaType)) {
     const id = simklIdFor(item);
     if (id !== null && INCLUDED_STATUSES.has(item.status)) next.items[String(id)] = item;
+  }
+  return next;
+}
+
+export function replaceWithCurrentEligibleItems(state, payload, mediaType = "anime") {
+  const previous = normalizeState(structuredClone(state), mediaType);
+  const next = { ...previous, items: {} };
+  for (const item of payloadItems(payload, mediaType)) {
+    const id = simklIdFor(item);
+    if (id === null || !INCLUDED_STATUSES.has(item.status)) continue;
+    const key = String(id);
+    next.items[key] = mergeFreshTrackedItem(previous.items[key], item);
   }
   return next;
 }

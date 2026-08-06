@@ -798,7 +798,16 @@ export async function enrichTvdbMetadata(items, {
     const media = mediaFor(item);
     if (!media) continue;
     const initialSignature = sourceSignature(media.ids, seasonType, language);
-    if (stillFresh(item._addonTvdbMeta, initialSignature, new Date(now))) continue;
+    if (stillFresh(item._addonTvdbMeta, initialSignature, new Date(now))) {
+      // The episode list is cacheable, but the user's current NEXT position is
+      // not. Recompute it every refresh so Nuvio's default episode follows the
+      // latest Simkl watch progress instead of a month-old matchedVideoId.
+      item._addonTvdbMeta = {
+        ...item._addonTvdbMeta,
+        ...inferTvdbPosition(item, item._addonTvdbMeta),
+      };
+      continue;
+    }
 
     try {
       const seriesId = await client.resolveSeriesId(media.ids ?? {});

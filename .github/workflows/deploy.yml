@@ -78,9 +78,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: state/account-2/simkl-state.json
-          key: simkl-account-2-tv-state-${{ github.run_id }}-${{ github.run_attempt }}
+          key: simkl-account-2-tv-progress-v2-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            simkl-account-2-tv-state-
+            simkl-account-2-tv-progress-v2-state-
 
       - name: Run tests
         run: npm test
@@ -159,6 +159,7 @@ jobs:
           MAX_CATALOG_ITEMS: 50
           POSTER_BADGES: "true"
           MEDIA_TYPE: tv
+          FORCE_LIBRARY_REFRESH: "true"
         run: |
           export SIMKL_CLIENT_ID="${SIMKL_CLIENT_ID_2:-$SIMKL_CLIENT_ID_PRIMARY}"
           if [ -z "$SIMKL_CLIENT_ID" ]; then
@@ -205,7 +206,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: state/account-2/simkl-state.json
-          key: simkl-account-2-tv-state-${{ github.run_id }}-${{ github.run_attempt }}
+          key: simkl-account-2-tv-progress-v2-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

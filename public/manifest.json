@@ -1,6 +1,6 @@
 {
   "id": "community.simkl.new-anime-episodes",
-  "version": "1.8.9",
+  "version": "1.9.0",
   "name": "Simkl Anime Up Next",
   "description": "A personalized Simkl anime row with optional TheTVDB unified seasons, canonical episode IDs, and high-resolution episode artwork.",
   "resources": [
@@ -23,7 +23,7 @@
     {
       "type": "series",
       "id": "simkl-new-anime-episodes",
-      "name": "My Anime Up Next \u00b7 Simkl"
+      "name": "My Anime Up Next · Simkl"
     }
   ],
   "behaviorHints": {

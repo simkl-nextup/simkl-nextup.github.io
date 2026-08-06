@@ -199,6 +199,19 @@ Version 1.8.4 replaces the oversized stacked top ribbons with a television-first
 
 No new secret is required beyond the existing `TMDB_READ_ACCESS_TOKEN`. After replacing the files, run the refresh workflow and clear Nuvio's image cache or remove and re-add the addon if the previous posters remain.
 
+
+## Updating to 1.9.0
+
+Version 1.9.0 fixes normal-TV progress and season-state handling for account 2 without changing the root anime account:
+
+- A TV show whose next unwatched episode is `S02E01` or later is shown as purple **NEW SEASON** until that premiere is watched. After the premiere is watched and Simkl advances to `E02`, it returns to green **NEW EPISODE**.
+- Account 2 performs a lightweight full TV-library progress refresh on every run, so an unchanged or delayed Simkl activity timestamp cannot leave `NEXT` behind Nuvio/Simkl. Cached artwork and TVDB episode lists are preserved.
+- TVDB episode data remains cached, but `matchedVideoId` is recalculated on every refresh. Nuvio's `defaultVideoId`, the bottom episode labels, and Simkl's current next-unwatched position therefore use the same canonical episode.
+- Badge numbers are translated to the canonical TVDB season/episode position before rendering. If latest and next are genuinely the same episode, the duplicated two-cell display collapses into one clear `NEXT` cell.
+- The account-2 cache prefix changes once to discard the stale pre-fix TV progress state. No GitHub secret needs to be changed.
+
+After replacing the repository files, create a new commit and run **Refresh two Simkl catalogs and deploy Pages**. Remove and re-import the account-2 manifest in Nuvio after deployment so cached metadata is replaced.
+
 ## Local development
 
 ```bash

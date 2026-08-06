@@ -11,6 +11,7 @@ import {
   mergeItemsDelta,
   normalizeState,
   pruneRemovedItems,
+  replaceWithCurrentEligibleItems,
   replaceWithInitialEligibleItems,
   simklIdFor,
 } from "../src/state.mjs";
@@ -140,6 +141,7 @@ export async function refresh({
   setupSecretName = process.env.SETUP_SECRET_NAME,
   accountLabel = process.env.ACCOUNT_LABEL,
   mediaType = process.env.MEDIA_TYPE || "anime",
+  forceLibraryRefresh = process.env.FORCE_LIBRARY_REFRESH === "true",
 } = {}) {
   const normalizedMediaType = normalizeMediaType(mediaType);
   const client = createSimklClient({ clientId, accessToken, mediaType: normalizedMediaType, fetchImpl });
@@ -160,7 +162,16 @@ export async function refresh({
     const currentActivity = mediaActivity?.all ?? activities?.all_items_at ?? state.lastActivity;
     const currentRemoved = mediaActivity?.removed_from_list ?? null;
 
-    if (currentActivity !== state.lastActivity) {
+    if (forceLibraryRefresh) {
+      // Account 2 is small and Nuvio/Simkl progress correctness matters more
+      // than saving one lightweight sync request. A full refresh prevents a
+      // delayed activities timestamp from leaving NEXT/defaultVideoId stale.
+      const current = await client.getInitialLibrary();
+      state = replaceWithCurrentEligibleItems(state, current, normalizedMediaType);
+      state.lastActivity = currentActivity;
+      state.lastAnimeActivity = normalizedMediaType === "anime" ? currentActivity : null;
+      state.lastRemovedFromList = currentRemoved;
+    } else if (currentActivity !== state.lastActivity) {
       const delta = await client.getDelta(state.lastActivity);
       state = mergeItemsDelta(state, delta, normalizedMediaType);
 

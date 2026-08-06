@@ -181,29 +181,107 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function findDefaultVideoId(seriesMeta, info) {
-  if (seriesMeta?.matchedVideoId) return seriesMeta.matchedVideoId;
-  if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
-  const localEpisode = Number(info.episode);
-  const episode = localEpisode + Number(seriesMeta.matchedEpisodeOffset ?? 0);
-  const preferredSeasons = [
-    finiteNumber(info?.season),
-    finiteNumber(seriesMeta.matchedSeasonNumber),
-  ].filter((value, index, values) => value !== null && values.indexOf(value) === index);
+function normalizedEpisodeTitle(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
 
-  for (const season of preferredSeasons) {
-    const match = seriesMeta.videos.find((video) => video.season === season && video.episode === episode);
-    if (match) return match.id;
+function dateOnly(value) {
+  const date = validDate(value);
+  return date ? date.toISOString().slice(0, 10) : null;
+}
+
+function dayDistance(left, right) {
+  if (!left || !right) return Number.POSITIVE_INFINITY;
+  const a = new Date(`${left}T00:00:00.000Z`).getTime();
+  const b = new Date(`${right}T00:00:00.000Z`).getTime();
+  return Math.abs(a - b) / 86_400_000;
+}
+
+function findCanonicalVideo(seriesMeta, info, { preferMatched = false } = {}) {
+  const videos = Array.isArray(seriesMeta?.videos) ? seriesMeta.videos : [];
+  const localEpisode = finiteNumber(info?.episode);
+  if (!videos.length || localEpisode === null) return null;
+
+  if (preferMatched && seriesMeta?.matchedVideoId) {
+    const matched = videos.find((video) => video.id === seriesMeta.matchedVideoId);
+    if (matched) return matched;
   }
 
-  const regularSeasons = [...new Set(seriesMeta.videos.filter((video) => video.season > 0).map((video) => video.season))];
+  const localSeason = finiteNumber(info?.season);
+  if (localSeason !== null) {
+    const exact = videos.find((video) => video.season === localSeason && video.episode === localEpisode);
+    if (exact) return exact;
+  }
+
+  const mappedSeason = finiteNumber(seriesMeta?.matchedSeasonNumber);
+  const mappedEpisode = localEpisode + Number(seriesMeta?.matchedEpisodeOffset ?? 0);
+  if (mappedSeason !== null) {
+    const mapped = videos.find((video) => video.season === mappedSeason && video.episode === mappedEpisode);
+    if (mapped) return mapped;
+  }
+
+  const infoDate = dateOnly(info?.date);
+  if (infoDate) {
+    const dateMatches = videos
+      .map((video) => ({ video, distance: dayDistance(infoDate, dateOnly(video.released)) }))
+      .filter(({ distance }) => distance <= 2)
+      .sort((a, b) => a.distance - b.distance || Math.abs(a.video.episode - localEpisode) - Math.abs(b.video.episode - localEpisode));
+    if (dateMatches.length) {
+      return dateMatches.find(({ video }) => video.episode === localEpisode)?.video ?? dateMatches[0].video;
+    }
+  }
+
+  const infoTitle = normalizedEpisodeTitle(info?.title);
+  if (infoTitle) {
+    const titleMatches = videos.filter((video) => normalizedEpisodeTitle(video.title) === infoTitle);
+    if (titleMatches.length === 1) return titleMatches[0];
+  }
+
+  const regularSeasons = [...new Set(videos.filter((video) => video.season > 0).map((video) => video.season))];
   if (regularSeasons.length === 1) {
-    const match = seriesMeta.videos.find((video) => video.season === regularSeasons[0] && video.episode === episode);
-    if (match) return match.id;
+    const match = videos.find((video) => video.season === regularSeasons[0] && video.episode === mappedEpisode);
+    if (match) return match;
   }
 
-  const matches = seriesMeta.videos.filter((video) => video.episode === episode && video.season > 0);
-  return matches.length === 1 ? matches[0].id : null;
+  const numberMatches = videos.filter((video) => video.episode === mappedEpisode && video.season > 0);
+  return numberMatches.length === 1 ? numberMatches[0] : null;
+}
+
+function canonicalEpisodeInfo(seriesMeta, info, options = {}) {
+  if (!info) return null;
+  const video = findCanonicalVideo(seriesMeta, info, options);
+  if (!video) return info;
+  return {
+    ...info,
+    season: video.season,
+    episode: video.episode,
+    title: info.title || video.title,
+    date: info.date || video.released,
+    _videoId: video.id,
+  };
+}
+
+function findDefaultVideoId(seriesMeta, info) {
+  return canonicalEpisodeInfo(seriesMeta, info, { preferMatched: true })?._videoId ?? null;
+}
+
+function isUnstartedNewSeason(item, nextInfo, latestInfo) {
+  // This derived state is for normal multi-season TV. Anime sequel records
+  // keep the root addon's established status rules unchanged.
+  if (item?.status !== "watching" || !item?.show) return false;
+  const watchedCount = finiteNumber(item?.watched_episodes_count) ?? 0;
+  const nextSeason = finiteNumber(nextInfo?.season);
+  const nextEpisode = finiteNumber(nextInfo?.episode);
+  const latestSeason = finiteNumber(latestInfo?.season);
+  return watchedCount > 0
+    && nextSeason !== null
+    && nextSeason > 1
+    && nextEpisode === 1
+    && latestSeason !== null
+    && latestSeason >= nextSeason;
 }
 
 function trackingEpisodeCount(seriesMeta) {
@@ -213,11 +291,14 @@ function trackingEpisodeCount(seriesMeta) {
   ).length;
 }
 
-function buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo }) {
-  if (item.status === "plantowatch") {
+function buildDescription({ item, visualStatus, info, episode, airedAt, sortAt, latestAiredInfo }) {
+  if (visualStatus === "plantowatch") {
     return `From your Plan to Watch list: latest release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
   }
-  if (item.status === "completed") {
+  if (visualStatus === "completed" && item.status === "watching") {
+    return `New season available: start with ${episode}${info.title ? ` — ${info.title}` : ""}. ${latestAiredInfo?.episode ? `Latest release: ${episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}The badge stays purple until the season premiere is watched. Data from Simkl.`;
+  }
+  if (visualStatus === "completed") {
     return `Previously completed: new release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
   }
   return `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. ${sortAt > airedAt && latestAiredInfo?.episode ? `Latest release: ${episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}Data from Simkl.`;
@@ -257,15 +338,6 @@ export function buildCatalog(items, options = {}) {
 
   for (const item of Object.values(items ?? {})) {
     if (!isCatalogCandidate(item, now)) continue;
-    const info = item.status === "watching" ? item.next_to_watch_info : item._addonLatestAiredInfo;
-    const airedAt = validDate(info?.date);
-    if (!info?.episode || !airedAt || airedAt > now) continue;
-
-    const latestAiredInfo = item._addonLatestAiredInfo;
-    const latestAiredAt = validDate(latestAiredInfo?.date);
-    const sortAt = latestAiredAt && latestAiredAt <= now && latestAiredAt > airedAt
-      ? latestAiredAt
-      : airedAt;
 
     const media = mediaFor(item);
     const id = publishedCatalogId(item, media);
@@ -275,14 +347,37 @@ export function buildCatalog(items, options = {}) {
     }
 
     const seriesMeta = item._addonTvdbMeta;
+    const rawInfo = item.status === "watching" ? item.next_to_watch_info : item._addonLatestAiredInfo;
+    const rawLatestAiredInfo = item._addonLatestAiredInfo;
+    const info = canonicalEpisodeInfo(seriesMeta, rawInfo, { preferMatched: item.status === "watching" });
+    const latestAiredInfo = canonicalEpisodeInfo(seriesMeta, rawLatestAiredInfo);
+    const airedAt = validDate(info?.date);
+    if (!info?.episode || !airedAt || airedAt > now) continue;
+
+    const latestAiredAt = validDate(latestAiredInfo?.date);
+    const sortAt = latestAiredAt && latestAiredAt <= now && latestAiredAt > airedAt
+      ? latestAiredAt
+      : airedAt;
+    const visualStatus = isUnstartedNewSeason(item, info, latestAiredInfo)
+      ? "completed"
+      : item.status;
+
     const episode = episodeLabel(info);
     const visuals = item._addonVisuals ?? {};
     const links = buildLinks(item, visuals, seriesMeta);
-    const description = buildDescription({ item, info, episode, airedAt, sortAt, latestAiredInfo });
+    const description = buildDescription({
+      item,
+      visualStatus,
+      info,
+      episode,
+      airedAt,
+      sortAt,
+      latestAiredInfo,
+    });
     const name = seriesMeta?.name || media.title;
     const poster = visuals.poster || seriesMeta?.poster || posterUrl(media.poster);
     const background = seriesMeta?.background || visuals.background || fanartUrl(media.fanart);
-    const defaultVideoId = findDefaultVideoId(seriesMeta, info);
+    const defaultVideoId = info?._videoId || findDefaultVideoId(seriesMeta, rawInfo);
 
     const basePreview = {
       id,
@@ -337,10 +432,11 @@ ${seriesMeta.description}` : description,
 
     const entry = {
       airedAt: sortAt,
-      status: item.status,
+      status: visualStatus,
+      rawStatus: item.status,
       posterBadge: {
         id,
-        status: item.status,
+        status: visualStatus,
         episode,
         latestEpisode,
         nextEpisode,
