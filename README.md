@@ -238,6 +238,14 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
 
+## Updating to 1.9.1 — direct season-premiere detection, no history required
+
+1.9.0's revival fix relied on having seen a title while it was still genuinely Completed, so it could remember a watched-count snapshot to compare against later. That means any title Simkl had *already* silently auto-promoted to Watching before 1.9.0 was deployed never got a snapshot, and stayed on the green badge.
+
+1.9.1 adds a second, primary check that needs no history at all: if the very next unwatched episode is literally episode 1 of a season after the first, and it aired less than 365 days ago, the title is treated as a revived Completed title — purple badge — regardless of what Simkl's own status field says or whether the addon ever saw it as Completed. The moment that episode is watched, the badge reverts to normal Watching behavior. The 365-day rolling window (measured from the episode's actual air date, not the calendar year) means a revival that airs in November doesn't silently flip to green on January 1st just because the year changed.
+
+The 1.9.0 watched-count snapshot method is kept as a fallback for the rare title Simkl hasn't matched to TVDB and that also has no season number on its next-to-watch info.
+
 ## Updating to 1.9.0 — revived-title badge fix and a reliable deploy queue
 
 Version 1.9.0 fixes two problems found in production on a two-account deployment:

@@ -213,6 +213,46 @@ function trackingEpisodeCount(seriesMeta) {
   ).length;
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+// How long a freshly-revived season premiere still counts as "just revived"
+// if you haven't watched it yet. A rolling window from the actual air date
+// (rather than a calendar-year cutoff) avoids a title silently flipping from
+// purple to green on January 1st just because the year rolled over.
+const REVIVAL_FRESHNESS_DAYS = 365;
+
+// Simkl's own next_to_watch_info is already "the next episode you haven't
+// watched, in show order" — so if it points at episode 1 of a season past
+// the first, every earlier season was necessarily watched already. That's
+// what makes checking "season > 1, episode === 1" a reliable stand-in for
+// "the previous season was completed", without needing separate watched-
+// count bookkeeping.
+function resolveSeasonPosition(seriesMeta, info) {
+  if (Number.isFinite(Number(info?.season)) && Number.isFinite(Number(info?.episode))) {
+    return { season: Number(info.season), episode: Number(info.episode) };
+  }
+  if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
+  const localEpisode = Number(info.episode);
+  const episode = localEpisode + Number(seriesMeta.matchedEpisodeOffset ?? 0);
+  const season = finiteNumber(seriesMeta.matchedSeasonNumber);
+  if (season !== null) {
+    const match = seriesMeta.videos.find((video) => video.season === season && video.episode === episode);
+    if (match) return { season: match.season, episode: match.episode };
+  }
+  const matches = seriesMeta.videos.filter((video) => video.episode === episode && video.season > 0);
+  return matches.length === 1 ? { season: matches[0].season, episode: matches[0].episode } : null;
+}
+
+// A title Simkl has already auto-promoted to "watching" whose very next
+// unwatched episode is a fresh season premiere. Treated as a revived
+// Completed title (purple badge) until that one episode is watched.
+function isFreshSeasonPremiere(seriesMeta, info, airedAt, now) {
+  if (!airedAt) return false;
+  const ageDays = (now.getTime() - airedAt.getTime()) / MS_PER_DAY;
+  if (ageDays < 0 || ageDays >= REVIVAL_FRESHNESS_DAYS) return false;
+  const position = resolveSeasonPosition(seriesMeta, info);
+  return Boolean(position && position.episode === 1 && position.season > 1);
+}
+
 function buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo }) {
   if (status === "plantowatch") {
     return `From your Plan to Watch list: latest release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
@@ -279,10 +319,13 @@ export function buildCatalog(items, options = {}) {
     const visuals = item._addonVisuals ?? {};
     const links = buildLinks(item, visuals, seriesMeta);
     // Simkl's own status can already say "watching" for a title the user
-    // has not actually started (see effectiveStatus in state.mjs), so the
-    // badge, description, and published counts all key off this instead of
-    // the raw item.status.
-    const status = effectiveStatus(item);
+    // has not actually started. Prefer the precise TVDB season-boundary
+    // check (isFreshSeasonPremiere) when season data is available; fall
+    // back to the watched-count snapshot (effectiveStatus, in state.mjs)
+    // for titles Simkl hasn't matched to TVDB.
+    const status = item.status === "watching" && isFreshSeasonPremiere(seriesMeta, info, airedAt, now)
+      ? "completed"
+      : effectiveStatus(item);
     const description = buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo });
     const name = seriesMeta?.name || media.title;
     const poster = visuals.poster || seriesMeta?.poster || posterUrl(media.poster);

@@ -348,6 +348,71 @@ test("TVDB metadata collapses separate Simkl seasons into one canonical show wit
 });
 
 
+test("a fresh season premiere Simkl already auto-promoted to watching still gets the purple revival badge", () => {
+  const revived = watching({
+    watched_episodes_count: 34,
+    total_episodes_count: 44,
+    next_to_watch_info: { season: 4, episode: 1, title: "Season 4 Premiere", date: "2026-08-01T10:00:00Z" },
+    anime: { title: "Revived Show", ids: { simkl: 601, imdb: "tt6010000" } },
+  });
+  const result = buildCatalog({ "601": revived }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(result.posterBadges[0].status, "completed");
+  assert.match(result.catalog.metas[0].description, /Previously completed/);
+});
+
+test("watching that revived premiere flips the badge back to watching, same as any other episode", () => {
+  const revivedStarted = watching({
+    watched_episodes_count: 35,
+    total_episodes_count: 44,
+    next_to_watch_info: { season: 4, episode: 2, title: "Season 4, Episode 2", date: "2026-08-08T10:00:00Z" },
+    anime: { title: "Revived Show", ids: { simkl: 601, imdb: "tt6010000" } },
+  });
+  const result = buildCatalog({ "601": revivedStarted }, { now: "2026-08-09T00:00:00Z" });
+  assert.equal(result.posterBadges[0].status, "watching");
+});
+
+test("a brand new show's season 1 episode 1 is never mistaken for a revival", () => {
+  const brandNew = watching({
+    watched_episodes_count: 0,
+    total_episodes_count: 12,
+    next_to_watch_info: { season: 1, episode: 1, title: "Pilot", date: "2026-08-01T10:00:00Z" },
+    anime: { title: "Brand New Show", ids: { simkl: 602, imdb: "tt6020000" } },
+  });
+  const result = buildCatalog({ "602": brandNew }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(result.posterBadges[0].status, "watching");
+});
+
+test("a season premiere older than the 365-day freshness window no longer counts as a revival", () => {
+  const staleRevival = watching({
+    watched_episodes_count: 34,
+    total_episodes_count: 44,
+    next_to_watch_info: { season: 4, episode: 1, title: "Season 4 Premiere", date: "2025-01-01T00:00:00Z" },
+    anime: { title: "Long Ignored Revival", ids: { simkl: 603, imdb: "tt6030000" } },
+  });
+  const result = buildCatalog({ "603": staleRevival }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(result.posterBadges[0].status, "watching");
+});
+
+test("a season premiere without an explicit season field still resolves via TVDB season data", () => {
+  const revivedViaTvdb = watching({
+    watched_episodes_count: 12,
+    total_episodes_count: 24,
+    next_to_watch_info: { episode: 1, title: "Season 2 Premiere", date: "2026-08-01T10:00:00Z" },
+    anime: { title: "TVDB Revived Show", ids: { simkl: 604, tvdb: 950 } },
+    _addonTvdbMeta: {
+      parentId: "tvdb:950",
+      matchedSeasonNumber: 2,
+      matchedEpisodeOffset: 0,
+      videos: [
+        { id: "tvdb:950:1:1", season: 1, episode: 1 },
+        { id: "tvdb:950:2:1", season: 2, episode: 1 },
+      ],
+    },
+  });
+  const result = buildCatalog({ "604": revivedViaTvdb }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(result.posterBadges[0].status, "completed");
+});
+
 test("manifest uses the broadly supported top-level meta declaration for desktop clients", () => {
   const manifest = buildManifest();
   assert.deepEqual(manifest.resources, ["catalog", "meta"]);
