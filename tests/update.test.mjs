@@ -190,7 +190,7 @@ test("a title Simkl silently auto-revives from Completed still publishes as Comp
     status: "watching",
     watched_episodes_count: 12,
     total_episodes_count: 24,
-    next_to_watch_info: { episode: 13, title: "Season 2, Episode 1", date: "2026-08-02T10:00:00Z" },
+    next_to_watch_info: { season: 2, episode: 1, title: "Season 2, Episode 1", date: "2026-08-02T10:00:00Z" },
     anime: { title: "Revived Show", ids: { simkl: 501, imdb: "tt5010000" } },
   };
 

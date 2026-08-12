@@ -66,6 +66,11 @@ function isRevivedUnwatched(item) {
   const watched = Number(item.watched_episodes_count);
   const total = Number(item.total_episodes_count);
   if (!Number.isFinite(watched) || !Number.isFinite(snapshot.watchedCount)) return false;
+  // Only the literal next-to-watch episode being #1 counts as a revival.
+  // Without this, a title several episodes into a new season (Simkl's
+  // next_to_watch_info pointing at, say, episode 8) would still get the
+  // purple treatment just because the watched count hadn't moved yet.
+  if (Number(item.next_to_watch_info?.episode) !== 1) return false;
   // They've watched something beyond where they stood when last caught up:
   // this is genuinely "watching", not a silent revival.
   if (watched > snapshot.watchedCount) return false;

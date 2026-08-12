@@ -238,6 +238,18 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
 
+## Updating to 1.9.3 — Completed titles no longer climb to "latest aired"
+
+Everything in 1.9.0–1.9.2 targeted the case where Simkl had already auto-promoted a title from Completed to Watching. X-Men '97 turned out to be a different bug entirely: it was still genuinely sitting as `"completed"` in Simkl. Simkl only computes `next_to_watch_info` for Watching/Plan to Watch titles, so for a Completed title the addon fell back to "whichever episode most recently aired" via the calendar. For a show airing weekly, that number climbs every week (E1, E2, ... E8) even if nothing has actually been watched — it was never pinned to the real next episode.
+
+1.9.3 fixes this using data the addon already fetches: when TVDB episode data is available, the true next-unwatched episode is found by matching `watched_episodes_count + 1` against TVDB's absolute episode numbering, and that stays fixed until watched progress actually changes — instead of drifting forward with every new release.
+
+## Updating to 1.9.2 — the watched-count fallback now requires episode 1 too
+
+1.9.1's primary season-premiere check already required the next episode to be literally #1 — that part was working (Ted Lasso showed S4E1 correctly). But the older 1.9.0 watched-count snapshot, kept as a fallback for titles without season data, never checked the episode number at all. It only compared watched-count totals, so a title several episodes into a revived season (Simkl's next-to-watch already at, say, episode 8) still got the purple badge with the wrong episode number, because the watched count alone hadn't moved yet.
+
+1.9.2 closes that gap: the fallback now also requires the next-to-watch episode to be exactly 1 before it'll override to Completed. One honest limitation this surfaces: for a title with no season field from Simkl and no TVDB match at all, there's no way to tell "episode 1" from "episode 1 of a new season" versus "the show just started" — in that specific no-data case, the addon conservatively shows the normal green badge rather than risk a wrong purple one.
+
 ## Updating to 1.9.1 — direct season-premiere detection, no history required
 
 1.9.0's revival fix relied on having seen a title while it was still genuinely Completed, so it could remember a watched-count snapshot to compare against later. That means any title Simkl had *already* silently auto-promoted to Watching before 1.9.0 was deployed never got a snapshot, and stayed on the green badge.

@@ -81,10 +81,11 @@ test("switching an old anime-only account cache to TV forces a clean bootstrap",
 // effectiveStatus should keep reporting "completed" until watched progress
 // actually moves, so the poster badge stays purple ("NEW SEASON") instead of
 // flipping straight to green ("NEW EPISODE").
-const withProgress = (base, watched, total) => ({
+const withProgress = (base, watched, total, nextEpisode) => ({
   ...base,
   watched_episodes_count: watched,
   total_episodes_count: total,
+  ...(nextEpisode !== undefined ? { next_to_watch_info: { episode: nextEpisode, date: "2026-08-01T10:00:00Z" } } : {}),
 });
 
 test("a title just revived by Simkl (not yet started) still reports completed", () => {
@@ -94,7 +95,7 @@ test("a title just revived by Simkl (not yet started) still reports completed", 
   // A new season lands: Simkl silently flips status to watching, but the
   // user hasn't watched anything from it yet.
   state = mergeAnimeDelta(state, {
-    anime: [withProgress(item(1, "watching"), 12, 24)],
+    anime: [withProgress(item(1, "watching"), 12, 24, 1)],
   });
   assert.equal(state.items["1"].status, "watching");
   assert.equal(effectiveStatus(state.items["1"]), "completed");
@@ -105,23 +106,36 @@ test("effectiveStatus reports watching once the user starts the revived season",
     anime: [withProgress(item(1, "completed"), 12, 12)],
   });
   state = mergeAnimeDelta(state, {
-    anime: [withProgress(item(1, "watching"), 12, 24)],
+    anime: [withProgress(item(1, "watching"), 12, 24, 1)],
   });
   assert.equal(effectiveStatus(state.items["1"]), "completed");
 
   // They watch the season 4 premiere.
   state = mergeAnimeDelta(state, {
-    anime: [withProgress(item(1, "watching"), 13, 24)],
+    anime: [withProgress(item(1, "watching"), 13, 24, 2)],
   });
   assert.equal(effectiveStatus(state.items["1"]), "watching");
 });
 
 test("a title that was always watching is unaffected by revival tracking", () => {
   let state = replaceWithInitialEligibleAnime(createEmptyState(), {
-    anime: [withProgress(item(1, "watching"), 3, 12)],
+    anime: [withProgress(item(1, "watching"), 3, 12, 4)],
   });
   state = mergeAnimeDelta(state, {
-    anime: [withProgress(item(1, "watching"), 4, 12)],
+    anime: [withProgress(item(1, "watching"), 4, 12, 5)],
+  });
+  assert.equal(effectiveStatus(state.items["1"]), "watching");
+});
+
+test("a title several episodes into a revived season (not literally episode 1) does not get the completed override", () => {
+  // Mirrors the real bug: watched count hasn't moved since the old season
+  // finished, but next_to_watch_info already points at episode 8 (several
+  // episodes of the new season have aired), not episode 1.
+  let state = replaceWithInitialEligibleAnime(createEmptyState(), {
+    anime: [withProgress(item(1, "completed"), 10, 10)],
+  });
+  state = mergeAnimeDelta(state, {
+    anime: [withProgress(item(1, "watching"), 10, 20, 8)],
   });
   assert.equal(effectiveStatus(state.items["1"]), "watching");
 });

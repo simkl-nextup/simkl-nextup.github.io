@@ -413,6 +413,45 @@ test("a season premiere without an explicit season field still resolves via TVDB
   assert.equal(result.posterBadges[0].status, "completed");
 });
 
+test("a title several episodes into a revived season stays green, not purple, matching real Simkl next_to_watch data", () => {
+  const partwayIntoRevival = watching({
+    watched_episodes_count: 10,
+    total_episodes_count: 20,
+    next_to_watch_info: { season: 2, episode: 8, title: "Season 2, Episode 8", date: "2026-08-01T10:00:00Z" },
+    anime: { title: "Partway Revived Show", ids: { simkl: 605, imdb: "tt6050000" } },
+    _addonCaughtUpAt: { watchedCount: 10, totalCount: 10 },
+  });
+  const result = buildCatalog({ "605": partwayIntoRevival }, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(result.posterBadges[0].status, "watching");
+});
+
+test("a Completed show still airing weekly stays pinned to the real next-unwatched episode, not the latest aired", () => {
+  // Mirrors X-Men '97 exactly: season 1 (10 episodes) fully watched, season 2
+  // airing weekly since episode 1. The stale _addonLatestAiredInfo simulates
+  // what the old calendar-climbing logic would have left behind (episode 8,
+  // the most recently aired at the time) — TVDB's absolute numbering should
+  // override it and correctly pin the badge to the real next episode, S2E1.
+  const completedButAiring = {
+    status: "completed",
+    watched_episodes_count: 10,
+    total_episodes_count: 19,
+    _addonLatestAiredInfo: { season: 2, episode: 8, title: "The Dead Man's Hand", date: "2026-08-05T00:00:00Z" },
+    show: { title: "X-Men '97", ids: { simkl: 700, imdb: "tt7000000" } },
+    _addonTvdbMeta: {
+      parentId: "tvdb:412432",
+      videos: [
+        { id: "tvdb:412432:1:1", season: 1, episode: 1, absoluteNumber: 1, released: "2024-03-20T00:00:00Z" },
+        { id: "tvdb:412432:1:10", season: 1, episode: 10, absoluteNumber: 10, released: "2024-05-15T00:00:00Z" },
+        { id: "tvdb:412432:2:1", season: 2, episode: 1, absoluteNumber: 11, title: "Days of Past Future", released: "2026-07-01T00:00:00Z" },
+        { id: "tvdb:412432:2:8", season: 2, episode: 8, absoluteNumber: 18, title: "The Dead Man's Hand", released: "2026-08-05T00:00:00Z" },
+      ],
+    },
+  };
+  const result = buildCatalog({ "700": completedButAiring }, { now: "2026-08-08T00:00:00Z" });
+  assert.equal(result.posterBadges[0].episode, "S02E01");
+  assert.equal(result.posterBadges[0].status, "completed");
+});
+
 test("manifest uses the broadly supported top-level meta declaration for desktop clients", () => {
   const manifest = buildManifest();
   assert.deepEqual(manifest.resources, ["catalog", "meta"]);

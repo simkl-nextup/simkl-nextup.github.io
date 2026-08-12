@@ -297,7 +297,7 @@ export function buildCatalog(items, options = {}) {
 
   for (const item of Object.values(items ?? {})) {
     if (!isCatalogCandidate(item, now)) continue;
-    const info = item.status === "watching" ? item.next_to_watch_info : item._addonLatestAiredInfo;
+    const info = resolveInfo(item);
     const airedAt = validDate(info?.date);
     if (!info?.episode || !airedAt || airedAt > now) continue;
 
@@ -429,11 +429,37 @@ ${seriesMeta.description}` : description,
   };
 }
 
+// Simkl doesn't populate next_to_watch_info for Completed titles at all
+// (that's only computed for Watching/Plan to Watch) — so for a Completed
+// show with unwatched new episodes, the addon previously fell back to
+// "whichever episode most recently aired" via the calendar. That's wrong
+// for a weekly-airing revival: it climbs forward every week (E1, E2, ... E8)
+// even though nothing has actually been watched. Pin it instead to the real
+// next episode in absolute order using TVDB's per-episode absolute
+// numbering, which stays fixed until watched_episodes_count itself moves.
+function resolveNextUnwatchedFromTvdb(item) {
+  const watched = Number(item?.watched_episodes_count);
+  const videos = item?._addonTvdbMeta?.videos;
+  if (!Number.isFinite(watched) || !Array.isArray(videos) || !videos.length) return null;
+  const target = watched + 1;
+  const matches = videos.filter((video) => video.season > 0 && Number(video.absoluteNumber) === target);
+  if (matches.length !== 1) return null;
+  const video = matches[0];
+  if (!validDate(video.released)) return null;
+  return { season: video.season, episode: video.episode, title: video.title, date: video.released };
+}
+
+function resolveInfo(item) {
+  if (item.status === "watching") return item.next_to_watch_info;
+  if (item.status === "completed") return resolveNextUnwatchedFromTvdb(item) ?? item._addonLatestAiredInfo;
+  return item._addonLatestAiredInfo;
+}
+
 export function isCatalogCandidate(item, nowInput = new Date()) {
   const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
   if (!["watching", "plantowatch", "completed"].includes(item?.status)) return false;
 
-  const info = item.status === "watching" ? item.next_to_watch_info : item._addonLatestAiredInfo;
+  const info = resolveInfo(item);
   const airedAt = validDate(info?.date);
   if (!info?.episode || !airedAt || airedAt > now) return false;
 
