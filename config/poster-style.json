@@ -1,6 +1,6 @@
 {
-  "topTab": "chip",
-  "size": "compact",
+  "topTab": "single",
+  "size": "large",
   "outlineOnWhiteText": true,
   "outlineOnDarkText": false,
   "outlineWeight": "thin",
