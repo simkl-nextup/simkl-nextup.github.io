@@ -149,3 +149,7 @@ test("dub episode uses the same TheTVDB season as the top tab (Mushoku S3)", () 
   const ready = buildCatalog({ 1: { ...base, _addonDub: { episode: 15 } } }, { now: "2026-10-10T00:00:00Z" }).posterBadges[0];
   assert.deepEqual(dubTag(ready), { text: "DUB ✓ S3 E15", state: "ready" });
 });
+
+test("dub with unknown progress shows a plain grey 'DUB S1'", () => {
+  assert.deepEqual(dubTag({ status: "watching", tags: { next: 2, nextSeason: 1 }, dub: { episode: null, unknown: true } }), { text: "DUB S1", state: "behind" });
+});

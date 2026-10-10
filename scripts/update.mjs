@@ -325,6 +325,7 @@ export async function refresh({
         singleLookups: dub.stats.singleLookups,
         animeResponseFields: dub.stats.responseShape,
         sampleAnime: dub.stats.sampleAnime,
+        perTitle: dub.stats.perTitle,
         warnings: dub.stats.warnings,
       } : "ANIMESCHEDULE_TOKEN not set",
       malScores: {

@@ -14,19 +14,21 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-export const TAG_STYLE_VERSION = 7;
+export const TAG_STYLE_VERSION = 9;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
 const FONT = "Inter ExtraBold";
 
 const LAYOUT = {
-  tabH: 64, tabPad: 30, tabRadius: 10, tabFont: 34, tabMinFont: 24,
-  sideGap: 18, sideH: 54, sidePad: 16, sideRadius: 10, sideFont: 28,
-  // Measured from BetterPosters: logo ends ~82% down and can be large; the
-  // status/score line is centred ~90% down.
-  bandTop: 540, rowY: 652, pillH: 52, pillPad: 16, pillRadius: 10, pillFont: 26, ratingFont: 32, rowGap: 14,
-  logoMaxW: 420, logoMaxH: 190, logoBottom: 626, logoMinTop: 400,
+  // Sized for reading from a sofa: posters show ~230px wide on a TV, so text
+  // here is roughly halved on screen.
+  tabMainFont: 48, tabSubFont: 31, tabMinFont: 36, tabPad: 26, tabRadius: 12,
+  tabSingleH: 82, tabDoubleH: 124, tabMaxW: 0.96,
+  sideGap: 14, sideH: 68, sidePad: 18, sideRadius: 12, sideFont: 38,
+  // Measured from BetterPosters: logo ends ~82% down; status/score line ~90%.
+  bandTop: 520, rowY: 640, pillH: 62, pillPad: 18, pillRadius: 12, pillFont: 31, ratingFont: 38, rowGap: 14,
+  logoMaxW: 420, logoMaxH: 180, logoBottom: 616, logoMinTop: 400,
 };
 
 // Status colours keep their meaning; flat BetterPosters finish.
@@ -49,6 +51,23 @@ function finite(value) {
 //   "S2E1 Aired · Next S1E10"     different seasons
 //   "S3 · Next E15"               caught up to the latest release
 //   "S1 · E12 Aired"              Plan to Watch
+// Two lines for distance viewing: the big line is what you act on, the small
+// line is context.  { main: "Next S1 E2", sub: "E13 aired" }
+export function topTabLines(badge) {
+  const tags = badge?.tags ?? {};
+  const aired = finite(tags.aired);
+  const next = finite(tags.next);
+  const airedSeason = finite(tags.airedSeason) ?? finite(tags.season) ?? 1;
+  const nextSeason = finite(tags.nextSeason) ?? finite(tags.season) ?? 1;
+  if (badge?.status === "plantowatch" || !next) return aired ? { main: `S${airedSeason} E${aired}`, sub: "latest aired" } : null;
+  const ahead = aired && (airedSeason > nextSeason || (airedSeason === nextSeason && aired > next));
+  const main = `Next S${nextSeason} E${next}`;
+  if (badge?.status !== "completed" && ahead) {
+    return { main, sub: airedSeason === nextSeason ? `E${aired} aired` : `S${airedSeason} E${aired} aired` };
+  }
+  return { main, sub: null };
+}
+
 export function topTabText(badge) {
   const tags = badge?.tags ?? {};
   const aired = finite(tags.aired);
@@ -72,11 +91,12 @@ export function topTabText(badge) {
 export function dubTag(badge) {
   const dub = badge?.dub;
   const episode = finite(dub?.episode);
-  if (!dub || (!episode && !dub.full && !dub.airing)) return null;
+  if (!dub || (!episode && !dub.full && !dub.airing && !dub.unknown)) return null;
   const tags = badge?.tags ?? {};
   const season = finite(dub.season) ?? finite(tags.nextSeason) ?? finite(tags.airedSeason) ?? finite(tags.season) ?? 1;
   if (dub.full) return { text: `DUB ✓ S${season} ALL`, state: "ready" };
   if (!episode && dub.airing) return { text: `DUB S${season} AIRING`, state: "behind" };
+  if (!episode) return { text: `DUB S${season}`, state: "behind" };          // dub exists, progress unknown
   const label = `S${season} E${episode}`;
   if (dub.numberingMismatch) return { text: `DUB ${label}`, state: "behind" };
   if (badge.status === "plantowatch") return { text: `DUB ✓ ${label}`, state: "ready" };
@@ -285,21 +305,33 @@ export async function composeTaggedPoster({ poster, logo, name, badge }) {
   layers.push(place(statusText, rowX + LAYOUT.pillPad, rowY + (pillH - statusText.h) / 2));
   if (rating) layers.push(place(rating, rowX + pillW + LAYOUT.rowGap, rowY + (pillH - rating.h) / 2));
 
-  // Top tab: episode info, tinted from the poster.
-  const tabText = topTabText(badge);
-  if (tabText) {
+  // Top tab: big "Next S1 E2" line + small context line, tinted from the poster.
+  const lines = topTabLines(badge);
+  let tabH = 0;
+  if (lines) {
     const fill = adaptiveTabFill(await analyzePoster(base));
     const ink = inkFor(fill);
-    let px = LAYOUT.tabFont, text;
+    const maxW = W * LAYOUT.tabMaxW - LAYOUT.tabPad * 2;
+    let px = LAYOUT.tabMainFont, main;
     for (;;) {
-      text = await label(tabText, ink, px);
-      if (text.w + LAYOUT.tabPad * 2 <= W * 0.88 || px <= LAYOUT.tabMinFont) break;
+      main = await label(lines.main, ink, px);
+      if (main.w <= maxW || px <= LAYOUT.tabMinFont) break;
       px -= 2;
     }
-    const tabW = text.w + LAYOUT.tabPad * 2;
+    const sub = lines.sub ? await label(lines.sub, ink, LAYOUT.tabSubFont, { alpha: "82%" }) : null;
+    tabH = sub ? LAYOUT.tabDoubleH : LAYOUT.tabSingleH;
+    const tabW = Math.round(Math.min(W * LAYOUT.tabMaxW, Math.max(main.w, sub?.w ?? 0) + LAYOUT.tabPad * 2));
     const tabX = Math.round((W - tabW) / 2);
-    layers.push({ input: await frosted(base, tabX, 0, tabW, LAYOUT.tabH, topTabShape(tabW, LAYOUT.tabH, LAYOUT.tabRadius), fill), left: tabX, top: 0 });
-    layers.push(place(text, (W - text.w) / 2, (LAYOUT.tabH - text.h) / 2));
+    layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, LAYOUT.tabRadius), fill), left: tabX, top: 0 });
+    if (sub) {
+      const gap = 6;
+      const blockH = main.h + gap + sub.h;
+      const y0 = (tabH - blockH) / 2;
+      layers.push(place(main, (W - main.w) / 2, y0));
+      layers.push(place(sub, (W - sub.w) / 2, y0 + main.h + gap));
+    } else {
+      layers.push(place(main, (W - main.w) / 2, (tabH - main.h) / 2));
+    }
   }
 
   // Left dub tag, just under the top tab. Omitted when there is no dub.
@@ -308,7 +340,7 @@ export async function composeTaggedPoster({ poster, logo, name, badge }) {
     const ready = dub.state === "ready";
     const text = await label(dub.text, ready ? "#FFFFFF" : "#E4E8EE", LAYOUT.sideFont);
     const w = text.w + LAYOUT.sidePad * 2;
-    const y = LAYOUT.tabH + LAYOUT.sideGap;
+    const y = (tabH || LAYOUT.tabSingleH) + LAYOUT.sideGap;
     layers.push({ input: await frosted(base, 0, y, w, LAYOUT.sideH, leftTagShape(w, LAYOUT.sideH, LAYOUT.sideRadius), DUB_FILLS[dub.state], ready ? 0.92 : 0.86), left: 0, top: y });
     layers.push(place(text, LAYOUT.sidePad, y + (LAYOUT.sideH - text.h) / 2));
   }

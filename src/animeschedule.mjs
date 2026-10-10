@@ -30,7 +30,8 @@ export const MAL_DUBS_URL = "https://raw.githubusercontent.com/MAL-Dubs/MAL-Dubs
 const MAL_DUBS_TTL_MS = 24 * 60 * 60 * 1000;
 // MAL-Dubs lists simuldubs as soon as they start, so "dubbed" only means
 // "fully dubbed" once the show has stopped airing.
-const STILL_AIRING_MS = 60 * 24 * 60 * 60 * 1000;
+const FINISHED_LONG_AGO_MS = 60 * 24 * 60 * 60 * 1000;   // Japanese run ended 60+ days ago
+const STILL_AIRING_MS = 14 * 24 * 60 * 60 * 1000;        // an episode aired in the last 2 weeks
 
 // Newest episode air date we know for this title (Simkl calendar, next-to-watch, TVDB).
 export function lastAiredAt(item, now = new Date()) {
@@ -390,6 +391,7 @@ export async function enrichDubInfo(items, dubState, {
   // 3) Attach dub info to each item.
   let dubbed = 0;
   let matched = 0;
+  const perTitle = [];
   for (const [, item] of targets) {
     const ids = externalIdsFor(item);
     const match = ["mal", "anilist", "anidb"]
@@ -400,12 +402,15 @@ export async function enrichDubInfo(items, dubState, {
     // are fully dubbed but outside AnimeSchedule's timetable window.
     let dub = match ? resolveDub(match, state.ledger[match.route], now) : null;
     if (!dub && ids.mal && malDubbed.has(ids.mal) && !malIncomplete.has(ids.mal)) {
-      const finishedOnSchedule = String(match?.status ?? "").toLowerCase() === "finished";
+      // AnimeSchedule's "Finished" is the JAPANESE run, not the dub, so it is
+      // never used here. Only a Japanese run that ended 60+ days ago makes
+      // "fully dubbed" a safe claim; otherwise say what is actually known.
       const last = lastAiredAt(item, now);
-      const stillAiring = !finishedOnSchedule && (!last || now - last < STILL_AIRING_MS);
-      dub = stillAiring
-        ? { route: match?.route ?? null, episode: null, full: false, airing: true, estimated: true, source: "mal-dubs" }
-        : { route: match?.route ?? null, episode: null, full: true, estimated: true, source: "mal-dubs" };
+      const age = last ? now - last : null;
+      const base = { route: match?.route ?? null, episode: null, estimated: true, source: "mal-dubs" };
+      if (age !== null && age >= FINISHED_LONG_AGO_MS) dub = { ...base, full: true };
+      else if (age === null || age < STILL_AIRING_MS) dub = { ...base, full: false, airing: true };
+      else dub = { ...base, full: false, unknown: true };
     }
     if (dub) {
       // Simkl and AnimeSchedule may number split cours differently. If the dub
@@ -418,6 +423,17 @@ export async function enrichDubInfo(items, dubState, {
       delete item._addonDub;
     }
     if (match?.route) item._addonAnimeScheduleRoute = match.route;
+    perTitle.push({
+      title: mediaFor(item)?.title ?? null,
+      mal: ids.mal ?? null,
+      route: match?.route ?? null,
+      japaneseStatus: match?.status ?? null,
+      episodes: match?.episodes ?? null,
+      dubPremier: match?.dubPremier ?? null,
+      dubTimetableEpisode: match?.route ? state.ledger[match.route]?.episode ?? null : null,
+      onMalDubs: ids.mal ? malDubbed.has(ids.mal) : null,
+      result: dub ? (dub.full ? "ALL" : dub.episode ? `E${dub.episode}` : dub.airing ? "AIRING" : "DUB (progress unknown)") : "no dub",
+    });
   }
 
   return {
@@ -429,6 +445,7 @@ export async function enrichDubInfo(items, dubState, {
       weeksRead, ledgerShows: Object.keys(state.ledger).length, matched, dubbed, titles: targets.length, withIds, responseShape,
       fromSchedule: targets.filter(([, item]) => item._addonDub && !item._addonDub.source).length,
       singleLookups,
+      perTitle: perTitle.slice(0, 60),
       sampleAnime,
       warnings: warnings.slice(0, 5).map((warning) => warning.message),
       malDubsShows: malDubbed.size,

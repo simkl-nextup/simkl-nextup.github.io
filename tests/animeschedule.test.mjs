@@ -224,3 +224,18 @@ test("multi-ID lookups use mt=any (the API default 'all' returns nothing), and '
   assert.equal(result.items[2]._addonAnimeScheduleRoute, undefined);
   assert.deepEqual(result.warnings, []);
 });
+
+test("Japanese 'Finished' alone never makes a recent show 'fully dubbed'", async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes("MAL-Dubs")) return jsonResponse({ dubbed: [42], incomplete: [] });
+    if (url.includes("/timetables/dub")) return jsonResponse([]);
+    if (url.includes("/anime?")) return jsonResponse({ anime: [{ route: "sparks", title: "Sparks of Tomorrow", status: "Finished", episodes: 13, dubPremier: "2026-07-10T00:00:00Z", websites: { mal: "myanimelist.net/anime/42" } }] });
+    throw new Error(`unexpected ${url}`);
+  };
+  // Final Japanese episode aired 3 weeks ago; dub not on the timetable window.
+  const items = { 1: { status: "watching", _addonLatestAiredInfo: { episode: 13, date: "2026-09-19T00:00:00Z" }, anime: { title: "Sparks of Tomorrow", ids: { simkl: 1, mal: 42 } } } };
+  const result = await enrichDubInfo(items, null, { token: "x", fetchImpl, now: NOW, gapMs: 0 });
+  assert.equal(result.items[1]._addonDub.full, false);
+  assert.equal(result.items[1]._addonDub.unknown, true);
+  assert.equal(result.stats.perTitle[0].result, "DUB (progress unknown)");
+});

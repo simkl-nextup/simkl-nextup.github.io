@@ -257,6 +257,7 @@ function dubSentence(dub) {
   if (!dub) return "";
   if (dub.full) return " English dub: fully dubbed.";
   if (dub.airing && !dub.episode) return " English dub: airing.";
+  if (dub.unknown && !dub.episode) return " English dub: available (progress unknown).";
   return dub.episode ? ` English dub: up to episode ${dub.episode}.` : "";
 }
 
@@ -554,6 +555,10 @@ export function isCatalogCandidate(item, nowInput = new Date()) {
   if (!info?.episode || !airedAt || airedAt > now) return false;
 
   if (item.status === "completed") {
+    // A Completed title only comes back for a genuinely NEW release. Without
+    // this, a gap in old watch history (e.g. S1E15 from 2021 left unticked on
+    // Simkl) resurfaced the title as "NEW SEASON".
+    if ((now.getTime() - airedAt.getTime()) / MS_PER_DAY > REVIVAL_FRESHNESS_DAYS) return false;
     const watchedCount = Number(item.watched_episodes_count ?? 0);
     const totalCount = Number(item.total_episodes_count);
 

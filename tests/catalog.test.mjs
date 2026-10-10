@@ -462,3 +462,16 @@ test("manifest uses the broadly supported top-level meta declaration for desktop
   assert.ok(manifest.idPrefixes.includes("tt"));
   assert.equal(manifest.behaviorHints.newEpisodeNotifications, true);
 });
+
+test("a Completed title is not revived by an old unwatched episode (gap in watch history)", () => {
+  const old = {
+    status: "completed",
+    watched_episodes_count: 14,
+    total_episodes_count: 23,
+    _addonLatestAiredInfo: { episode: 15, season: 1, date: "2021-10-25T00:00:00Z", title: "Slow Life in the Doldia Village" },
+    anime: { title: "Mushoku Tensei", ids: { simkl: 1, imdb: "tt13293588" } },
+  };
+  const fresh = { ...old, _addonLatestAiredInfo: { episode: 15, season: 1, date: "2026-10-04T00:00:00Z" } };
+  assert.equal(buildCatalog({ 1: old }, { now: "2026-10-10T00:00:00Z" }).catalog.metas.length, 0);
+  assert.equal(buildCatalog({ 1: fresh }, { now: "2026-10-10T00:00:00Z" }).catalog.metas.length, 1);
+});
