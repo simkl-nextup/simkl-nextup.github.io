@@ -150,9 +150,9 @@ export function createSimklClient({ clientId, accessToken, mediaType = "anime", 
     accessToken,
   );
 
-  const getDetails = (simklId) => getJson(
+  const getDetails = (simklId, extended) => getJson(
     fetchImpl,
-    apiUrl(`/${config.detailPath}/${simklId}`, clientId),
+    apiUrl(`/${config.detailPath}/${simklId}`, clientId, extended ? { extended } : {}),
     null,
   );
 

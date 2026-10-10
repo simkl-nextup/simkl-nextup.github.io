@@ -116,6 +116,39 @@ async function enrichMissingMappings(client, state, now, { tvdbEnabled = false, 
   return next;
 }
 
+// Simkl's library sync usually carries IMDb/TMDB/TVDB IDs but not the anime
+// list IDs (MAL, AniList, AniDB) that dub matching and MAL scores need. Ask
+// Simkl's full title record once per week for titles missing all three.
+const ANIME_ID_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function hasAnimeListId(item) {
+  const ids = mediaFor(item)?.ids ?? {};
+  return Boolean(ids.mal || ids.anilist || ids.anidb);
+}
+
+export async function enrichAnimeListIds(client, items, now, itemFilter) {
+  const next = structuredClone(items ?? {});
+  let looked = 0;
+  for (const [key, item] of Object.entries(next)) {
+    if (!itemFilter(item) || hasAnimeListId(item)) continue;
+    const checkedAt = new Date(item._addonAnimeIdsCheckedAt ?? 0).getTime();
+    if (Number.isFinite(checkedAt) && now.getTime() - checkedAt < ANIME_ID_RECHECK_MS) continue;
+    const simklId = simklIdFor(item);
+    if (!simklId) continue;
+    try {
+      const details = await client.getDetails(simklId, "full");
+      next[key] = mergeMediaDetails(item, details);
+      looked += 1;
+      await new Promise((resolve) => setTimeout(resolve, 125));
+    } catch (error) {
+      if (error instanceof SimklApiError && (error.status === 401 || error.status === 403)) throw error;
+      console.warn(`Anime list ID lookup skipped for ${simklId}: ${error.message}`);
+    }
+    next[key]._addonAnimeIdsCheckedAt = now.toISOString();
+  }
+  return { items: next, looked };
+}
+
 export async function refresh({
   clientId,
   accessToken,
@@ -232,6 +265,12 @@ export async function refresh({
   // English dub info + MAL scores (anime only, titles shown in the row only).
   const shownInRow = (item) => isCatalogCandidate(item, now);
   if (normalizedMediaType === "anime") {
+    const ids = await enrichAnimeListIds(client, state.items, new Date(now), shownInRow);
+    state.items = ids.items;
+    const shown = Object.values(state.items).filter(shownInRow);
+    console.log(`Anime list IDs: ${shown.filter((item) => mediaFor(item)?.ids?.mal).length}/${shown.length} title(s) have a MAL ID `
+      + `(${ids.looked} looked up on Simkl this run).`);
+
     const dub = await enrichDubInfo(state.items, state.dub, {
       token: animeScheduleToken,
       fetchImpl,
@@ -243,7 +282,9 @@ export async function refresh({
     for (const warning of dub.warnings) console.warn(`Dub info: ${warning.message}`);
     if (dub.stats) {
       console.log(`Dub info: ${dub.stats.weeksRead} timetable week(s) read, ${dub.stats.ledgerShows} dubbed show(s) known, `
-        + `${dub.stats.matched}/${dub.stats.titles} title(s) matched on AnimeSchedule, ${dub.stats.dubbed} with an English dub.`);
+        + `${dub.stats.matched}/${dub.stats.titles} title(s) matched on AnimeSchedule (${dub.stats.withIds} had an anime list ID), `
+        + `${dub.stats.dubbed} with an English dub.`
+        + (dub.stats.responseShape ? ` AnimeSchedule /anime response fields: ${dub.stats.responseShape}.` : ""));
     } else {
       console.log("ANIMESCHEDULE_TOKEN not set — dub tags are skipped.");
     }
@@ -256,7 +297,8 @@ export async function refresh({
     });
     state.items = mal.items;
     state.malScores = mal.cache;
-    if (mal.warnings.length) console.warn(`MAL score skipped for ${mal.warnings.length} title(s).`);
+    if (mal.warnings.length) console.warn(`MAL score skipped for ${mal.warnings.length} title(s): ${mal.warnings[0].message}`);
+    console.log(`MAL scores: ${Object.values(state.items).filter((item) => shownInRow(item) && item._addonMalScore).length} title(s) scored (${mal.looked} fetched this run).`);
   }
 
   state.lastSuccessfulRefresh = new Date(now).toISOString();

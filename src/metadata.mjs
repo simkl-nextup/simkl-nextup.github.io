@@ -168,7 +168,7 @@ function chooseTitleLogo(images, originalLanguage) {
 
 function sourceSignature(ids, sources) {
   return JSON.stringify({
-    version: 3,
+    version: 4,
     sources,
     imdb: ids?.imdb ?? null,
     tmdb: ids?.tmdb ?? null,
@@ -240,6 +240,9 @@ export async function enrichCatalogMetadata(items, {
           // poster and a separate title logo. Fall back to TMDB's default
           // poster whenever no textless artwork is available.
           poster: tmdbImage(chooseTextlessPoster(tmdbResult.images) || tmdbResult.poster_path, "w500"),
+          // True only when the artwork has no title text of its own, so the
+          // poster generator knows whether drawing the show name is safe.
+          posterTextless: Boolean(chooseTextlessPoster(tmdbResult.images)),
           background: tmdbImage(tmdbResult.backdrop_path, "w1280"),
           logo: tmdbImage(chooseTitleLogo(tmdbResult.images, tmdbResult.original_language), "w500"),
           tmdbId: tmdbResult.id,

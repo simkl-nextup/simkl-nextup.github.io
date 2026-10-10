@@ -86,12 +86,13 @@ export function createAnimeScheduleClient({ token, fetchImpl = fetch, gapMs = RE
       return Array.isArray(body) ? body : [];
     },
     // Looks up anime by external IDs. kind is mal | anilist | anidb.
-    async animeByIds(kind, ids) {
+    async animeByIds(kind, ids, onBody) {
       const results = [];
       for (let i = 0; i < ids.length; i += IDS_PER_PAGE) {
         const chunk = ids.slice(i, i + IDS_PER_PAGE);
         const query = chunk.map((id) => `${kind}-ids=${encodeURIComponent(id)}`).join("&");
         const body = await get(`/anime?${query}`);
+        onBody?.(body);
         const list = Array.isArray(body) ? body
           : Array.isArray(body?.anime) ? body.anime
           : Array.isArray(body?.data) ? body.data
@@ -242,6 +243,8 @@ export async function enrichDubInfo(items, dubState, {
 
   // 2) Matches for the titles that matter, by MAL → AniList → AniDB.
   const targets = Object.entries(nextItems).filter(([, item]) => itemFilter(item));
+  const withIds = targets.filter(([, item]) => Object.values(externalIdsFor(item)).some(Boolean)).length;
+  let responseShape = null;
   const stale = (key) => {
     const cached = state.matches[key];
     return !cached || now - new Date(cached.checkedAt) > MATCH_TTL_MS;
@@ -259,7 +262,9 @@ export async function enrichDubInfo(items, dubState, {
     }
     if (!wanted.size) continue;
     try {
-      const found = await client.animeByIds(kind, [...wanted.keys()]);
+      const found = await client.animeByIds(kind, [...wanted.keys()], (body) => {
+        responseShape ??= Array.isArray(body) ? "array" : Object.keys(body ?? {}).join(",");
+      });
       const siteKey = kind === "mal" ? "mal" : kind === "anilist" ? "aniList" : "anidb";
       const byId = new Map();
       for (const anime of found) {
@@ -306,7 +311,7 @@ export async function enrichDubInfo(items, dubState, {
     dubState: state,
     warnings,
     enabled: true,
-    stats: { weeksRead, ledgerShows: Object.keys(state.ledger).length, matched, dubbed, titles: targets.length },
+    stats: { weeksRead, ledgerShows: Object.keys(state.ledger).length, matched, dubbed, titles: targets.length, withIds, responseShape },
   };
 }
 

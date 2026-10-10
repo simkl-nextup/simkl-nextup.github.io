@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-export const TAG_STYLE_VERSION = 1;
+export const TAG_STYLE_VERSION = 2;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
@@ -23,8 +23,10 @@ const FONT = "Inter ExtraBold";
 const LAYOUT = {
   tabH: 64, tabPad: 30, tabRadius: 10, tabFont: 34, tabMinFont: 24,
   sideGap: 18, sideH: 54, sidePad: 16, sideRadius: 10, sideFont: 28,
-  bandTop: 600, rowY: 680, pillH: 52, pillPad: 16, pillRadius: 10, pillFont: 26, ratingFont: 32, rowGap: 14,
-  logoMaxW: 410, logoMaxH: 120, logoBottom: 664, logoMinTop: 470,
+  // Measured from BetterPosters: logo ends ~82% down and can be large; the
+  // status/score line is centred ~90% down.
+  bandTop: 540, rowY: 652, pillH: 52, pillPad: 16, pillRadius: 10, pillFont: 26, ratingFont: 32, rowGap: 14,
+  logoMaxW: 420, logoMaxH: 190, logoBottom: 626, logoMinTop: 400,
 };
 
 // Status colours keep their meaning; flat BetterPosters finish.
@@ -245,11 +247,14 @@ export async function composeTaggedPoster({ poster, logo, name, badge }) {
   const layers = [await bottomBand(base)];
 
   // Title logo (above the band row) or the show name as text.
+  // Draw the name as text only on artwork without its own title text;
+  // otherwise it would be printed twice.
   let title = null;
   if (logo) {
     try { title = await prepareTaggedLogo(logo); } catch { title = null; }
   }
-  layers.push(title ?? await fallbackTitle(name));
+  if (!title && badge.textless) title = await fallbackTitle(name);
+  if (title) layers.push(title);
 
   // Bottom row: [STATUS] ★ score.
   const status = STATUS_TAGS[badge.status];
@@ -302,5 +307,6 @@ export function taggedSignatureParts(badge) {
     top: topTabText(badge),
     dub: dubTag(badge)?.text ?? null,
     mal: badge?.malScore ?? null,
+    textless: Boolean(badge?.textless),
   };
 }

@@ -106,3 +106,22 @@ test("enrichMalScores caches Jikan scores", async () => {
   assert.equal(second.items[1]._addonMalScore, "8.4");
   assert.equal(calls, 1);
 });
+
+test("titles without anime list IDs get MAL/AniList/AniDB from Simkl's full record, once a week", async () => {
+  const { enrichAnimeListIds } = await import("../scripts/update.mjs");
+  let calls = 0;
+  const client = { getDetails: async (id, extended) => { calls += 1; assert.equal(extended, "full"); return { ids: { simkl: id, mal: 5114, anidb: 6107 } }; } };
+  const items = {
+    1: { status: "watching", anime: { title: "A", ids: { simkl: 1, imdb: "tt1" } } },
+    2: { status: "watching", anime: { title: "B", ids: { simkl: 2, mal: 99 } } },
+  };
+  const first = await enrichAnimeListIds(client, items, NOW, () => true);
+  assert.equal(first.items[1].anime.ids.mal, 5114);
+  assert.equal(first.items[1].anime.ids.imdb, "tt1");
+  assert.equal(calls, 1, "titles that already have a MAL ID are skipped");
+  const noIds = { 3: { status: "watching", anime: { title: "C", ids: { simkl: 3 } } } };
+  const emptyClient = { getDetails: async () => { calls += 1; return { ids: { simkl: 3 } }; } };
+  const once = await enrichAnimeListIds(emptyClient, noIds, NOW, () => true);
+  await enrichAnimeListIds(emptyClient, once.items, NOW, () => true);
+  assert.equal(calls, 2, "a title with no anime IDs on Simkl is not re-checked within a week");
+});
