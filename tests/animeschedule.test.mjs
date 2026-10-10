@@ -33,7 +33,7 @@ test("recordTimetable keeps the highest aired dub episode per show and skips una
 
 test("resolveDub: no dubPremier means no dub; ledger gives exact episode; old finished dubs are 'full'", () => {
   const base = { route: "show", status: "Finished", episodes: 12 };
-  assert.equal(resolveDub({ ...base, dubPremier: null }, null, NOW), null);
+  assert.equal(resolveDub({ ...base, dubPremier: null }, null, NOW), null, "no premier and nothing on the dub timetable → no tag");
   assert.equal(resolveDub({ ...base, dubPremier: "2027-01-01T00:00:00Z" }, null, NOW), null);
   assert.deepEqual(resolveDub({ ...base, status: "Ongoing", episodes: 24, dubPremier: "2026-08-01T00:00:00Z" }, { episode: 9 }, NOW),
     { route: "show", episode: 9, full: false, estimated: false });
@@ -42,6 +42,9 @@ test("resolveDub: no dubPremier means no dub; ledger gives exact episode; old fi
   assert.equal(resolveDub({ ...base, dubPremier: "2024-01-01T00:00:00Z" }, null, NOW).full, true);
   // Finished recently but not in the ledger → no guess.
   assert.equal(resolveDub({ ...base, dubPremier: "2026-09-20T00:00:00Z" }, null, NOW), null);
+  // Same-day simuldub: no dubPremier, but the dub timetable lists the episode.
+  assert.deepEqual(resolveDub({ route: "mushoku-3", status: "Ongoing", episodes: 27, dubPremier: null }, { episode: 15 }, NOW),
+    { route: "mushoku-3", episode: 15, full: false, estimated: false });
   // Batch release covering the whole season.
   assert.equal(resolveDub({ ...base, dubPremier: "2026-09-20T00:00:00Z", dubOverride: { date: "2026-09-27T00:00:00Z", episode: 7, extra: 5 } }, null, NOW).full, true);
 });
@@ -124,4 +127,36 @@ test("titles without anime list IDs get MAL/AniList/AniDB from Simkl's full reco
   const once = await enrichAnimeListIds(emptyClient, noIds, NOW, () => true);
   await enrichAnimeListIds(emptyClient, once.items, NOW, () => true);
   assert.equal(calls, 2, "a title with no anime IDs on Simkl is not re-checked within a week");
+});
+
+test("Fribb anime-lists fill MAL IDs by Simkl ID", async () => {
+  const { indexFribb, applyFribbIds } = await import("../src/anime-ids.mjs");
+  const index = indexFribb([
+    { simkl_id: 36462, mal_id: 30, anidb_id: 22, anilist_id: 30, kitsu_id: 21, imdb_id: ["tt0112159"] },
+  ]);
+  const items = {
+    1: { status: "watching", anime: { title: "Evangelion", ids: { simkl: 36462, imdb: "tt0112159" } } },
+    2: { status: "watching", anime: { title: "Other", ids: { simkl: 999 } } },
+  };
+  assert.equal(applyFribbIds(items, index), 1);
+  assert.deepEqual(items[1].anime.ids, { simkl: 36462, imdb: "tt0112159", mal: 30, anilist: 30, anidb: 22, kitsu: 21 });
+  assert.deepEqual(items[2].anime.ids, { simkl: 999 });
+});
+
+test("MAL-Dubs marks older fully dubbed shows as DUB ALL, but not partial dubs", async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes("MAL-Dubs")) return jsonResponse({ dubbed: [30, 790, 500], incomplete: [500] });
+    if (url.includes("/timetables/dub")) return jsonResponse([]);
+    if (url.includes("/anime?")) return jsonResponse({ anime: [] });
+    throw new Error(`unexpected ${url}`);
+  };
+  const items = {
+    1: { status: "watching", anime: { title: "Evangelion", ids: { simkl: 1, mal: 30 } } },
+    2: { status: "watching", anime: { title: "Partial", ids: { simkl: 2, mal: 500 } } },
+    3: { status: "watching", anime: { title: "Undubbed", ids: { simkl: 3, mal: 777 } } },
+  };
+  const result = await enrichDubInfo(items, null, { token: "x", fetchImpl, now: NOW, gapMs: 0 });
+  assert.equal(result.items[1]._addonDub.full, true);
+  assert.equal(result.items[2]._addonDub, undefined);
+  assert.equal(result.items[3]._addonDub, undefined);
 });

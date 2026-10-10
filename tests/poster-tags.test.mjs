@@ -6,8 +6,10 @@ import { buildCatalog } from "../src/catalog.mjs";
 
 test("top tab wording per status", () => {
   assert.equal(topTabText({ status: "watching", tags: { aired: 13, next: 2 } }), "E13 Aired · Next E2");
+  assert.equal(topTabText({ status: "watching", tags: { aired: 9, next: 9 } }), "Next E9");
   assert.equal(topTabText({ status: "completed", tags: { season: 3, aired: 1, next: 1 } }), "S3 · Next E1");
   assert.equal(topTabText({ status: "completed", tags: { aired: 1, next: 1 } }), "Next E1");
+  assert.equal(topTabText({ status: "completed", tags: { season: 1, aired: 15, next: 15 } }), "Next E15");
   assert.equal(topTabText({ status: "plantowatch", tags: { aired: 12, next: null } }), "E12 Aired");
 });
 
@@ -93,4 +95,24 @@ test("anime site uses the tags style; filenames differ from the classic TV style
   const meta = await sharp(path.join(tagsDir, "posters", file)).metadata();
   assert.equal(meta.width, 500);
   assert.equal(meta.height, 750);
+});
+
+test("TheTVDB ClearLogo is picked (English first) and used when TMDB has no logo", async () => {
+  const { pickLogo } = await import("../src/tvdb.mjs");
+  const series = { artworks: [
+    { type: 2, typeName: "Poster", image: "/p.jpg" },
+    { typeName: "ClearLogo", language: "jpn", image: "/logo-jp.png", score: 900 },
+    { typeName: "ClearLogo", language: "eng", image: "/logo-en.png", score: 10 },
+  ] };
+  assert.equal(pickLogo(series), "https://artworks.thetvdb.com/banners/logo-en.png");
+  assert.equal(pickLogo({ artworks: [{ typeName: "Poster", image: "/p.jpg" }] }), null);
+
+  const items = { 1: {
+    status: "watching",
+    next_to_watch_info: { episode: 2, date: "2026-08-01T10:00:00Z" },
+    _addonTvdbMeta: { logo: "https://artworks.thetvdb.com/banners/logo-en.png" },
+    anime: { title: "Sparks", ids: { simkl: 1, imdb: "tt1000001" } },
+  } };
+  const { posterBadges } = buildCatalog(items, { now: "2026-08-02T00:00:00Z" });
+  assert.equal(posterBadges[0].logo, "https://artworks.thetvdb.com/banners/logo-en.png");
 });

@@ -18,6 +18,7 @@ import { appendPublicPath, deriveBaseUrl, writeSite } from "../src/site.mjs";
 import { enrichTvdbMetadata, TvdbApiError } from "../src/tvdb.mjs";
 import { AnimeScheduleApiError, enrichDubInfo } from "../src/animeschedule.mjs";
 import { enrichMalScores } from "../src/mal-score.mjs";
+import { applyFribbIds, loadFribbIndex } from "../src/anime-ids.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const statePath = path.join(root, "state", "simkl-state.json");
@@ -265,11 +266,17 @@ export async function refresh({
   // English dub info + MAL scores (anime only, titles shown in the row only).
   const shownInRow = (item) => isCatalogCandidate(item, now);
   if (normalizedMediaType === "anime") {
+    let fribbFilled = 0;
+    try {
+      fribbFilled = applyFribbIds(state.items, await loadFribbIndex(fetchImpl), shownInRow);
+    } catch (error) {
+      console.warn(`Fribb anime-lists unavailable: ${error.message}`);
+    }
     const ids = await enrichAnimeListIds(client, state.items, new Date(now), shownInRow);
     state.items = ids.items;
     const shown = Object.values(state.items).filter(shownInRow);
     console.log(`Anime list IDs: ${shown.filter((item) => mediaFor(item)?.ids?.mal).length}/${shown.length} title(s) have a MAL ID `
-      + `(${ids.looked} looked up on Simkl this run).`);
+      + `(${fribbFilled} from Fribb anime-lists, ${ids.looked} looked up on Simkl this run).`);
 
     const dub = await enrichDubInfo(state.items, state.dub, {
       token: animeScheduleToken,

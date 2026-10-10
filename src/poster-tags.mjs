@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-export const TAG_STYLE_VERSION = 2;
+export const TAG_STYLE_VERSION = 4;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
@@ -51,10 +51,12 @@ export function topTabText(badge) {
   const season = finite(tags.season);
   if (badge?.status === "completed") {
     if (!next) return aired ? `E${aired} Aired` : null;
-    return season ? `S${season} · Next E${next}` : `Next E${next}`;
+    // Simkl splits anime into one entry per season, so "S1" carries no
+    // information; only show a season number when it is 2 or higher.
+    return season && season > 1 ? `S${season} · Next E${next}` : `Next E${next}`;
   }
   if (badge?.status === "plantowatch") return aired ? `E${aired} Aired` : null;
-  if (aired && next) return `E${aired} Aired · Next E${next}`;
+  if (aired && next && aired > next) return `E${aired} Aired · Next E${next}`;
   if (next) return `Next E${next}`;
   return aired ? `E${aired} Aired` : null;
 }

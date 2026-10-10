@@ -23,6 +23,10 @@ const BACKFILL_WEEKS = 26;
 const REQUEST_GAP_MS = 600;                    // global limit is 120/min; stay well under
 const NULL_DATE_YEAR = 1;                      // API uses 0001-01-01T00:00:00Z for "null"
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+// Community list of anime with English dubs, keyed by MAL ID (fetched at run
+// time, not redistributed). "incomplete" = only partly dubbed.
+export const MAL_DUBS_URL = "https://raw.githubusercontent.com/MAL-Dubs/MAL-Dubs/main/data/dubInfo.json";
+const MAL_DUBS_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class AnimeScheduleApiError extends Error {
   constructor(message, status) {
@@ -153,6 +157,12 @@ export function websiteId(anime, key) {
   return match ? Number(match[1]) : null;
 }
 
+function hasDubTime(value) {
+  const date = validDate(value);
+  if (!date) return false;
+  return date.getUTCHours() !== 0 || date.getUTCMinutes() !== 0;
+}
+
 function summarizeAnime(anime) {
   const override = anime?.dubEpisodeOverride ?? null;
   return {
@@ -161,6 +171,9 @@ function summarizeAnime(anime) {
     episodes: positiveInt(anime.episodes),
     status: anime.status || null,
     dubPremier: validDate(anime.dubPremier)?.toISOString() ?? null,
+    // AnimeSchedule: a show is dubbed when dubPremier is set OR it has a dub
+    // air time (not 00:00) — same-day simuldubs often only have the latter.
+    hasDubTime: hasDubTime(anime.dubTime),
     dubDelayedUntil: validDate(anime.dubDelayedUntil)?.toISOString() ?? null,
     dubOverride: override && validDate(override.overrideDate)
       ? {
@@ -177,18 +190,20 @@ function summarizeAnime(anime) {
 // ---------------------------------------------------------------------------
 // Returns { route, episode, full, estimated } or null when no dub is known.
 export function resolveDub(match, ledgerEntry, now = new Date()) {
-  if (!match?.route || !match.dubPremier) return null;           // no English dub
-  const premier = validDate(match.dubPremier);
-  if (!premier || premier > now) return null;                     // dub not out yet
+  if (!match?.route) return null;
   const total = match.episodes;
   const finished = String(match.status ?? "").toLowerCase() === "finished";
 
+  // A dubbed episode on the dub timetable is proof on its own, even when
+  // AnimeSchedule has no separate dubPremier (common for same-day simuldubs).
   if (ledgerEntry?.episode) {
     const full = Boolean(finished && total && ledgerEntry.episode >= total);
     return { route: match.route, episode: ledgerEntry.episode, full, estimated: false };
   }
 
   // Not in the ledger window: only claim "fully dubbed" when it is clear-cut.
+  const premier = validDate(match.dubPremier);
+  if (!premier || premier > now) return null;                     // no dub, or not out yet
   if (!finished || !total) return null;
   const delayedUntil = validDate(match.dubDelayedUntil);
   if (delayedUntil && delayedUntil > now) return null;
@@ -223,6 +238,25 @@ export async function enrichDubInfo(items, dubState, {
   };
   const warnings = [];
   if (!client) return { items: nextItems, dubState: state, warnings, enabled: false, stats: null };
+
+  // 0) MAL-Dubs list, refreshed daily.
+  state.malDubs = dubState?.malDubs ?? null;
+  if (!state.malDubs || now - new Date(state.malDubs.checkedAt) > MAL_DUBS_TTL_MS) {
+    try {
+      const response = await fetchImpl(MAL_DUBS_URL, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error(`MAL-Dubs responded ${response.status}`);
+      const body = await response.json();
+      state.malDubs = {
+        checkedAt: now.toISOString(),
+        dubbed: Array.isArray(body?.dubbed) ? body.dubbed.map(Number).filter(Number.isFinite) : [],
+        incomplete: Array.isArray(body?.incomplete) ? body.incomplete.map(Number).filter(Number.isFinite) : [],
+      };
+    } catch (error) {
+      warnings.push({ message: `MAL-Dubs list: ${error.message}` });
+    }
+  }
+  const malDubbed = new Set(state.malDubs?.dubbed ?? []);
+  const malIncomplete = new Set(state.malDubs?.incomplete ?? []);
 
   // 1) Timetables: backfill once, then this week and last week every run.
   const weeks = [];
@@ -292,7 +326,12 @@ export async function enrichDubInfo(items, dubState, {
       .map((kind) => ids[kind] && state.matches[`${kind}:${ids[kind]}`])
       .find((value) => value?.route);
     if (match) matched += 1;
-    const dub = match ? resolveDub(match, state.ledger[match.route], now) : null;
+    // AnimeSchedule (exact episode) first; MAL-Dubs fills in older shows that
+    // are fully dubbed but outside AnimeSchedule's timetable window.
+    let dub = match ? resolveDub(match, state.ledger[match.route], now) : null;
+    if (!dub && ids.mal && malDubbed.has(ids.mal) && !malIncomplete.has(ids.mal)) {
+      dub = { route: match?.route ?? null, episode: null, full: true, estimated: true, source: "mal-dubs" };
+    }
     if (dub) {
       // Simkl and AnimeSchedule may number split cours differently. If the dub
       // episode is beyond Simkl's own episode count, never claim "ready".

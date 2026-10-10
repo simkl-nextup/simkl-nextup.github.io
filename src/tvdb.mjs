@@ -4,7 +4,7 @@ const TVDB_API_BASE = "https://api4.thetvdb.com/v4/";
 const TVDB_ARTWORK_BASE = "https://artworks.thetvdb.com/banners/";
 const SUCCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 6 * 60 * 60 * 1000;
-const TVDB_METADATA_VERSION = 2;
+const TVDB_METADATA_VERSION = 3;
 const MAX_EPISODE_PAGES = 100;
 
 export class TvdbApiError extends Error {
@@ -230,6 +230,23 @@ function pickArtwork(series, purpose) {
   return scored[0]?.url ?? null;
 }
 
+// Official title logo ("ClearLogo") from the series artwork, English first.
+export function pickLogo(series) {
+  const artworks = Array.isArray(series?.artworks) ? series.artworks : [];
+  const scored = artworks
+    .filter((artwork) => artworkKind(artwork).includes("logo"))
+    .map((artwork) => {
+      const language = String(artwork?.language ?? "").toLowerCase();
+      let score = Number(artwork?.score ?? 0);
+      if (language === "eng" || language === "en") score += 100000;
+      else if (!language || language === "null") score += 50000;
+      return { url: tvdbImage(artwork), score };
+    })
+    .filter((entry) => entry.url)
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.url ?? null;
+}
+
 function remoteIdFor(series, pattern) {
   const remoteIds = Array.isArray(series?.remoteIds)
     ? series.remoteIds
@@ -395,6 +412,7 @@ export function buildTvdbSeriesMetadata(series, episodes, {
     runtime: runtimeFor(series, {}),
     poster,
     background,
+    logo: pickLogo(series),
     seasonCount: seasonNumbers.filter((season) => season > 0).length,
     specialSeasonIncluded: seasonNumbers.includes(0),
     episodeCount: videos.length,
