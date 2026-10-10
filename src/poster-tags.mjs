@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-export const TAG_STYLE_VERSION = 6;
+export const TAG_STYLE_VERSION = 7;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
@@ -65,18 +65,26 @@ export function topTabText(badge) {
   return `S${nextSeason} · Next E${next}`;
 }
 
+// Dub tag, with the season (same TheTVDB numbering as the top tab):
+//   "DUB ✓ S3 E11" dub has reached your next episode
+//   "DUB S3 E13"   dub is behind
+//   "DUB ✓ S1 ALL" fully dubbed      "DUB S2 AIRING" dub airing, episode unknown
 export function dubTag(badge) {
   const dub = badge?.dub;
   const episode = finite(dub?.episode);
   if (!dub || (!episode && !dub.full && !dub.airing)) return null;
-  if (dub.full) return { text: "DUB ✓ ALL", state: "ready" };
-  if (!episode && dub.airing) return { text: "DUB AIRING", state: "behind" };
-  if (dub.numberingMismatch) return { text: `DUB E${episode}`, state: "behind" };
-  const next = badge.status === "plantowatch" ? 1 : finite(badge?.tags?.next);
-  if (!next) return { text: `DUB E${episode}`, state: "behind" };
-  return episode >= next
-    ? { text: `DUB ✓ E${episode}`, state: "ready" }
-    : { text: `DUB E${episode}`, state: "behind" };
+  const tags = badge?.tags ?? {};
+  const season = finite(dub.season) ?? finite(tags.nextSeason) ?? finite(tags.airedSeason) ?? finite(tags.season) ?? 1;
+  if (dub.full) return { text: `DUB ✓ S${season} ALL`, state: "ready" };
+  if (!episode && dub.airing) return { text: `DUB S${season} AIRING`, state: "behind" };
+  const label = `S${season} E${episode}`;
+  if (dub.numberingMismatch) return { text: `DUB ${label}`, state: "behind" };
+  if (badge.status === "plantowatch") return { text: `DUB ✓ ${label}`, state: "ready" };
+  const next = finite(tags.next);
+  const nextSeason = finite(tags.nextSeason) ?? finite(tags.season) ?? season;
+  if (!next) return { text: `DUB ${label}`, state: "behind" };
+  const reached = season > nextSeason || (season === nextSeason && episode >= next);
+  return reached ? { text: `DUB ✓ ${label}`, state: "ready" } : { text: `DUB ${label}`, state: "behind" };
 }
 
 // ------------------------------------------------------------- colour ----

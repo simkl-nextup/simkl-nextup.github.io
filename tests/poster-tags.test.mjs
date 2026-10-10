@@ -13,16 +13,17 @@ test("top tab always shows the season", () => {
   assert.equal(topTabText({ status: "plantowatch", tags: { aired: 12 } }), "S1 · E12 Aired");
 });
 
-test("dub tag compares the dub with the next episode", () => {
-  const watching = (dub, next = 5) => ({ status: "watching", tags: { aired: 12, next }, dub });
+test("dub tag shows the season and compares with the next episode", () => {
+  const watching = (dub, next = 5) => ({ status: "watching", tags: { aired: 12, airedSeason: 3, next, nextSeason: 3 }, dub });
   assert.equal(dubTag(watching(undefined)), null);
-  assert.deepEqual(dubTag(watching({ episode: 7 })), { text: "DUB ✓ E7", state: "ready" });
-  assert.deepEqual(dubTag(watching({ episode: 5 })), { text: "DUB ✓ E5", state: "ready" });
-  assert.deepEqual(dubTag(watching({ episode: 4 })), { text: "DUB E4", state: "behind" });
-  assert.deepEqual(dubTag(watching({ episode: 12, full: true })), { text: "DUB ✓ ALL", state: "ready" });
-  assert.deepEqual(dubTag(watching({ episode: null, airing: true })), { text: "DUB AIRING", state: "behind" });
-  assert.deepEqual(dubTag(watching({ episode: 20, numberingMismatch: true })), { text: "DUB E20", state: "behind" });
-  assert.deepEqual(dubTag({ status: "plantowatch", tags: { aired: 12 }, dub: { episode: 1 } }), { text: "DUB ✓ E1", state: "ready" });
+  assert.deepEqual(dubTag(watching({ episode: 7, season: 3 })), { text: "DUB ✓ S3 E7", state: "ready" });
+  assert.deepEqual(dubTag(watching({ episode: 5, season: 3 })), { text: "DUB ✓ S3 E5", state: "ready" });
+  assert.deepEqual(dubTag(watching({ episode: 4, season: 3 })), { text: "DUB S3 E4", state: "behind" });
+  assert.deepEqual(dubTag(watching({ episode: 12, season: 2 })), { text: "DUB S2 E12", state: "behind" }, "earlier season is behind");
+  assert.deepEqual(dubTag(watching({ episode: 12, full: true, season: 3 })), { text: "DUB ✓ S3 ALL", state: "ready" });
+  assert.deepEqual(dubTag(watching({ episode: null, airing: true })), { text: "DUB S3 AIRING", state: "behind" });
+  assert.deepEqual(dubTag(watching({ episode: 20, numberingMismatch: true, season: 3 })), { text: "DUB S3 E20", state: "behind" });
+  assert.deepEqual(dubTag({ status: "plantowatch", tags: { aired: 12, airedSeason: 1 }, dub: { episode: 1 } }), { text: "DUB ✓ S1 E1", state: "ready" });
 });
 
 test("status tag colours keep readable text", () => {
@@ -130,4 +131,21 @@ test("season numbers follow TheTVDB's unified seasons (as in Nuvio's episode lis
   } };
   const { posterBadges } = buildCatalog(items, { now: "2026-10-10T00:00:00Z" });
   assert.equal(topTabText(posterBadges[0]), "S3 · E16 Aired · Next E15");
+});
+
+test("dub episode uses the same TheTVDB season as the top tab (Mushoku S3)", () => {
+  const videos = [];
+  for (let s = 1; s <= 3; s += 1) for (let e = 1; e <= 16; e += 1) videos.push({ id: `tt1:${s}:${e}`, season: s, episode: e, absoluteNumber: (s - 1) * 16 + e, released: "2026-01-01T00:00:00Z" });
+  const base = {
+    status: "watching",
+    next_to_watch_info: { episode: 14, season: 1, date: "2026-09-27T00:00:00Z" },
+    _addonLatestAiredInfo: { episode: 15, season: 1, date: "2026-10-04T00:00:00Z" },
+    _addonTvdbMeta: { parentId: "simkl-tvdb-unified:1", videos, matchedSeasonNumber: 3, matchedEpisodeOffset: 0 },
+    anime: { title: "Mushoku Tensei III", ids: { simkl: 1, imdb: "tt1" } },
+  };
+  const behind = buildCatalog({ 1: { ...base, _addonDub: { episode: 13 } } }, { now: "2026-10-10T00:00:00Z" }).posterBadges[0];
+  assert.equal(topTabText(behind), "S3 · E15 Aired · Next E14");
+  assert.deepEqual(dubTag(behind), { text: "DUB S3 E13", state: "behind" });
+  const ready = buildCatalog({ 1: { ...base, _addonDub: { episode: 15 } } }, { now: "2026-10-10T00:00:00Z" }).posterBadges[0];
+  assert.deepEqual(dubTag(ready), { text: "DUB ✓ S3 E15", state: "ready" });
 });

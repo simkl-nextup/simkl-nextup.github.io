@@ -102,6 +102,18 @@ test("enrichDubInfo is a no-op without a token", async () => {
   assert.equal(result.enabled, false);
 });
 
+test("MAL score comes from Simkl's record first, without touching Jikan", async () => {
+  let jikan = 0;
+  const fetchImpl = async () => { jikan += 1; throw new Error("fetch failed"); };
+  const items = { 1: { status: "watching", anime: { ids: { simkl: 1, mal: 100 } } }, 2: { status: "watching", anime: { ids: { simkl: 2, mal: 200 } } } };
+  const simklDetails = async (id) => (id === 1 ? { ratings: { simkl: { rating: 8 }, mal: { rating: 8.71, votes: 5 } } } : { ratings: { simkl: { rating: 7 } } });
+  const result = await enrichMalScores(items, {}, { fetchImpl, now: NOW, gapMs: 0, simklDetails });
+  assert.equal(result.items[1]._addonMalScore, "8.7");
+  assert.equal(result.items[2]._addonMalScore, undefined);
+  assert.equal(jikan, 1, "Jikan is tried once for the title Simkl lacks, then skipped after a network failure");
+  assert.equal(result.sources.simkl, 1);
+});
+
 test("enrichMalScores caches Jikan scores", async () => {
   let calls = 0;
   const fetchImpl = async () => { calls += 1; return jsonResponse({ data: { score: 8.37 } }); };

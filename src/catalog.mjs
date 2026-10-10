@@ -285,6 +285,21 @@ function tvdbPosition(seriesMeta, info, { allowMatchedVideo = false } = {}) {
   return video && video.season > 0 ? { season: video.season, episode: video.episode } : null;
 }
 
+// Dub episode → the same TheTVDB season/episode numbering as the top tab.
+// Tries the season-local match first, then TheTVDB's absolute numbering
+// (long runners such as One Piece), else keeps the number in the row's season.
+function dubDisplay(dub, { seriesMeta, info, tags }) {
+  if (!dub) return null;
+  const fallbackSeason = tags?.nextSeason ?? tags?.airedSeason ?? tags?.season ?? 1;
+  const episode = finiteNumber(dub.episode);
+  if (!episode) return { ...dub, season: fallbackSeason };
+  const local = tvdbPosition(seriesMeta, { episode, season: info?.season });
+  if (local) return { ...dub, season: local.season, episode: local.episode };
+  const absolute = (seriesMeta?.videos ?? []).filter((video) => video.season > 0 && Number(video.absoluteNumber) === episode);
+  if (absolute.length === 1) return { ...dub, season: absolute[0].season, episode: absolute[0].episode };
+  return { ...dub, season: fallbackSeason };
+}
+
 // Season/episode numbers for the "tags" poster: latest aired and next to watch.
 function posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title }) {
   const fallbackSeason = (value) => {
@@ -451,6 +466,7 @@ ${seriesMeta.description}` : description,
       ? episodeLabel(latestAiredInfo)
       : episode;
     const nextEpisode = status === "watching" ? episode : null;
+    const tags = posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title: media.title });
 
     const entry = {
       airedAt: sortAt,
@@ -461,8 +477,8 @@ ${seriesMeta.description}` : description,
         episode,
         latestEpisode,
         nextEpisode,
-        tags: posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title: media.title }),
-        ...(item._addonDub ? { dub: item._addonDub } : {}),
+        tags,
+        ...(item._addonDub ? { dub: dubDisplay(item._addonDub, { seriesMeta, info, tags }) } : {}),
         ...(item._addonMalScore ? { malScore: item._addonMalScore } : {}),
         // Official title logo: TMDB first, then TheTVDB's ClearLogo.
         ...((visuals.logo || seriesMeta?.logo) ? { logo: visuals.logo || seriesMeta.logo } : {}),

@@ -304,6 +304,7 @@ export async function refresh({
       fetchImpl,
       now: new Date(now),
       itemFilter: shownInRow,
+      simklDetails: (simklId) => client.getDetails(simklId, "full"),
     });
     state.items = mal.items;
     state.malScores = mal.cache;
@@ -326,7 +327,14 @@ export async function refresh({
         sampleAnime: dub.stats.sampleAnime,
         warnings: dub.stats.warnings,
       } : "ANIMESCHEDULE_TOKEN not set",
-      malScores: { scored, fetchedThisRun: mal.looked, errors: mal.warnings.slice(0, 3).map((warning) => warning.message) },
+      malScores: {
+        scored,
+        fetchedThisRun: mal.looked,
+        fromSimkl: mal.sources.simkl,
+        fromJikan: mal.sources.jikan,
+        simklRatingFields: mal.sampleRatingKeys,
+        errors: mal.warnings.slice(0, 3).map((warning) => warning.message),
+      },
     };
   }
 
