@@ -14,25 +14,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-export const TAG_STYLE_VERSION = 10;
+export const TAG_STYLE_VERSION = 12;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
 const FONT = "Inter ExtraBold";
 
 const LAYOUT = {
-  // Sized for reading from a sofa: posters show ~230px wide on a TV, so text
-  // here is roughly halved on screen.
-  tabMainFont: 44, tabSubFont: 31, tabMinMain: 34, tabMinSub: 26, tabPad: 14, tabGap: 12,
-  tabH: 80, tabRadius: 12, tabMaxW: 0.98, tabOpacity: 0.94,
-  // "band": full-width strip, big line + context line underneath (both large).
-  // "inline": one line, big + small side by side (small text must shrink).
-  tabMode: process.env.POSTER_TOP_TAB || "band",
-  bandMainFont: 48, bandSubFont: 34, bandH: 112, bandGap: 4,
-  sideGap: 12, sideH: 68, sidePad: 18, sideRadius: 12, sideFont: 38,
+  // Clean BetterPosters look, sized for reading from a sofa (posters show
+  // ~230px wide on a TV, so everything here is roughly halved on screen).
+  tabFont: 46, tabMinFont: 34, tabPad: 30, tabH: 78, tabRadius: 12, tabOpacity: 0.95,
+  chipFont: 30, chipH: 56, chipPad: 16, chipRadius: 12, chipGap: 12, chipOpacity: 0.95,
   // Measured from BetterPosters: logo ends ~82% down; status/score line ~90%.
-  bandTop: 510, rowY: 632, pillH: 70, pillPad: 18, pillRadius: 12, pillFont: 34, ratingFont: 50, rowGap: 16,
-  logoMaxW: 420, logoMaxH: 170, logoBottom: 606, logoMinTop: 400,
+  bandTop: 520, rowY: 640, pillH: 62, pillPad: 18, pillRadius: 12, pillFont: 31, ratingFont: 44, rowGap: 14,
+  logoMaxW: 420, logoMaxH: 170, logoBottom: 616, logoMinTop: 400,
 };
 
 // Status colours keep their meaning; flat BetterPosters finish.
@@ -176,12 +171,13 @@ export function adaptiveTabFill({ hue: h, sat: s, meanL, vividShare }) {
   else if (meanL >= 0.42) fill = hslToHex(h, Math.min(0.4, Math.max(0.1, s * 0.6)), 0.86);   // pale
   else if (s > 0.3) fill = hslToHex(h, Math.min(0.45, s * 0.8), 0.31);                        // mid-tone
   else fill = hslToHex(h, Math.min(0.25, s), 0.19);                                           // deep
-  if (inkFor(fill) === "#FFFFFF" && contrast(fill, "#FFFFFF") < 4.5) {
-    const [fh, fs] = rgbToHsl(...[1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16)));
-    for (let l = 0.48; l >= 0.25; l -= 0.02) {
-      fill = hslToHex(fh, fs, l);
-      if (contrast(fill, "#FFFFFF") >= 4.5) break;
-    }
+  // Push the fill until its text reaches 7:1 (WCAG AAA): darker for white
+  // text, lighter for dark text.
+  const [fh, fs, fl] = rgbToHsl(...[1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16)));
+  const whiteText = inkFor(fill) === "#FFFFFF";
+  for (let l = fl, i = 0; contrast(fill, inkFor(fill)) < 7 && i < 40; i += 1) {
+    l = whiteText ? Math.max(0.08, l - 0.02) : Math.min(0.95, l + 0.02);
+    fill = hslToHex(fh, fs, l);
   }
   return fill;
 }
@@ -208,26 +204,27 @@ async function rawText(text, color, px, { alpha = "100%", width, align } = {}) {
 // Heavy type with a soft dark outline + drop shadow on light text (the
 // legibility trick from the original badges, toned down for flat tags).
 // Returns an image padded by `pad` on every side.
-// Heavy type with a crisp dark outline and a drop shadow on light text, so
-// it stays readable on any artwork from across a room.
+// Text with a thin contrasting outline: dark text gets a white outline,
+// light text a black one. Text sitting straight on artwork (the score) also
+// gets a soft shadow.
 async function label(text, color, px, options = {}) {
   const main = await rawText(text, color, px, options);
-  const light = color.toUpperCase() !== "#161616";
-  const r = light ? Math.max(2, Math.round(px * 0.075)) : 0;    // outline thickness
-  const pad = r + 6;
-  const canvas = { width: main.w + pad * 2, height: main.h + pad * 2 + 4, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } };
+  const darkText = color.toUpperCase() === "#161616";
+  const outlineColor = darkText ? "#FFFFFF" : "#000000";
+  const r = options.outline === false ? 0 : Math.max(2, Math.round(px * 0.055));
+  const pad = r + 8;
   const none = { r: 0, g: 0, b: 0, alpha: 0 };
+  const canvas = { width: main.w + pad * 2, height: main.h + pad * 2 + 3, channels: 4, background: none };
   const layers = [];
-  if (light) {
-    // Drop shadow, aligned with the text at (pad, pad + 3).
-    const shadowSrc = await rawText(text, "#000000", px, { ...options, alpha: options.haloAlpha ?? "75%" });
-    const shadow = await sharp(shadowSrc.img).extend({ top: pad, bottom: pad, left: pad, right: pad, background: none }).blur(2.6).png().toBuffer();
+  if (options.shadow) {
+    const src = await rawText(text, "#000000", px, { ...options, alpha: options.shadowAlpha ?? "70%" });
+    const shadow = await sharp(src.img).extend({ top: pad, bottom: pad, left: pad, right: pad, background: none }).blur(3).png().toBuffer();
     layers.push({ input: shadow, top: 3, left: 0 });
-    // Outline: the dark glyphs stamped around the text in 8 directions. The
-    // stamp is padded by (pad - r), so offsets 0..2r centre it on the text.
-    const dark = await rawText(text, "#000000", px, { ...options, alpha: "100%" });
+  }
+  if (r) {
+    const stampSrc = await rawText(text, outlineColor, px, { ...options, alpha: darkText ? "85%" : "90%" });
     const inset = pad - r;
-    const stamp = await sharp(dark.img).extend({ top: inset, bottom: inset, left: inset, right: inset, background: none }).blur(0.5).png().toBuffer();
+    const stamp = await sharp(stampSrc.img).extend({ top: inset, bottom: inset, left: inset, right: inset, background: none }).blur(0.4).png().toBuffer();
     for (const dx of [-r, 0, r]) for (const dy of [-r, 0, r]) {
       if (dx || dy) layers.push({ input: stamp, top: r + dy, left: r + dx });
     }
@@ -235,6 +232,21 @@ async function label(text, color, px, options = {}) {
   layers.push({ input: main.img, top: pad, left: pad });
   const img = await sharp({ create: canvas }).composite(layers).png().toBuffer();
   return { img, w: main.w, h: main.h, pad };
+}
+
+// Coloured drop shadows: every tag casts a soft shadow in a deeper shade of
+// its own colour, drawn as one layer underneath all the tags.
+function shadowShade(fill) {
+  const [h, s, l] = rgbToHsl(...[1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16)));
+  return hslToHex(h, Math.min(1, s * 1.15 + 0.05), Math.max(0.07, l * 0.5));
+}
+function tagShadowLayer(shadows) {
+  if (!shadows.length) return null;
+  const shapes = shadows.map(({ x, y, shape, fill }) =>
+    `<g transform="translate(${x} ${y + 9})"><path d="${shape}" fill="${shadowShade(fill)}" fill-opacity="1"/></g>`).join("");
+  return Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs><filter id="s" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur stdDeviation="9"/></filter></defs>
+    <g filter="url(#s)">${shapes}</g></svg>`);
 }
 
 const roundRect = (w, h, r) => `M${r} 0 H${w - r} Q${w} 0 ${w} ${r} V${h - r} Q${w} ${h} ${w - r} ${h} H${r} Q0 ${h} 0 ${h - r} V${r} Q0 0 ${r} 0 Z`;
@@ -295,6 +307,7 @@ async function fallbackTitle(name) {
 export async function composeTaggedPoster({ poster, logo, name, badge }) {
   const base = await sharp(poster, { failOn: "error" }).resize(W, H, { fit: "cover", position: "centre" }).png().toBuffer();
   const layers = [await bottomBand(base)];
+  const shadows = [];
 
   // Title logo (above the band row) or the show name as text.
   // Draw the name as text only on artwork without its own title text;
@@ -312,74 +325,63 @@ export async function composeTaggedPoster({ poster, logo, name, badge }) {
   const statusInk = inkFor(status.fill);
   const statusText = await label(status.label, statusInk, LAYOUT.pillFont);
   const pillW = statusText.w + LAYOUT.pillPad * 2;
-  const rating = badge.malScore ? await label(`★ ${badge.malScore}`, "#FFFFFF", LAYOUT.ratingFont, { haloAlpha: "90%" }) : null;
+  const rating = badge.malScore ? await label(`★ ${badge.malScore}`, "#FFFFFF", LAYOUT.ratingFont, { shadow: true, shadowAlpha: "85%" }) : null;
   const rowW = pillW + (rating ? LAYOUT.rowGap + rating.w : 0);
   const rowX = Math.round((W - rowW) / 2);
   const { rowY, pillH } = LAYOUT;
+  const tagsStart = layers.length;
+  shadows.push({ x: rowX, y: rowY, shape: roundRect(pillW, pillH, LAYOUT.pillRadius), fill: status.fill });
   layers.push({ input: await frosted(base, rowX, rowY, pillW, pillH, roundRect(pillW, pillH, LAYOUT.pillRadius), status.fill, 0.92), left: rowX, top: rowY });
   layers.push(place(statusText, rowX + LAYOUT.pillPad, rowY + (pillH - statusText.h) / 2));
   if (rating) layers.push(place(rating, rowX + pillW + LAYOUT.rowGap, rowY + (pillH - rating.h) / 2));
 
-  // Top tab: one wide, low strip — big "Next S1 E2" with the smaller
-  // "S1 E13 aired" beside it — tinted from the poster.
+  // Top tab: just the action — "Next S1 E2" — big and clean, tinted from the poster.
   const lines = topTabLines(badge);
-  const stacked = LAYOUT.tabMode === "band" && Boolean(lines?.sub);
-  const tabH = lines ? (stacked ? LAYOUT.bandH : LAYOUT.tabH) : 0;
-  if (lines && stacked) {
-    const fill = adaptiveTabFill(await analyzePoster(base));
-    const ink = inkFor(fill);
-    const maxText = W * LAYOUT.tabMaxW - LAYOUT.tabPad * 2;
-    let mainPx = LAYOUT.bandMainFont, main;
+  const tint = lines ? adaptiveTabFill(await analyzePoster(base)) : null;
+  const tabH = lines ? LAYOUT.tabH : 0;
+  if (lines) {
+    const ink = inkFor(tint);
+    let px = LAYOUT.tabFont, main;
     for (;;) {
-      main = await label(lines.main, ink, mainPx);
-      if (main.w <= maxText || mainPx <= LAYOUT.tabMinMain) break;
-      mainPx -= 2;
+      main = await label(lines.main, ink, px);
+      if (main.w + LAYOUT.tabPad * 2 <= W * 0.9 || px <= LAYOUT.tabMinFont) break;
+      px -= 2;
     }
-    const sub = await label(lines.sub, ink, LAYOUT.bandSubFont, { alpha: "90%" });
-    const tabW = Math.round(W * LAYOUT.tabMaxW);
+    const tabW = main.w + LAYOUT.tabPad * 2;
     const tabX = Math.round((W - tabW) / 2);
-    layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, LAYOUT.tabRadius), fill, LAYOUT.tabOpacity), left: tabX, top: 0 });
-    const blockH = main.h + LAYOUT.bandGap + sub.h;
-    const y0 = (tabH - blockH) / 2;
-    layers.push(place(main, (W - main.w) / 2, y0));
-    layers.push(place(sub, (W - sub.w) / 2, y0 + main.h + LAYOUT.bandGap));
-  } else if (lines) {
-    const fill = adaptiveTabFill(await analyzePoster(base));
-    const ink = inkFor(fill);
-    const maxText = W * LAYOUT.tabMaxW - LAYOUT.tabPad * 2;
-    let mainPx = LAYOUT.tabMainFont, subPx = LAYOUT.tabSubFont, main, sub;
-    for (;;) {
-      main = await label(lines.main, ink, mainPx);
-      sub = lines.sub ? await label(lines.sub, ink, subPx, { alpha: "88%" }) : null;
-      const total = main.w + (sub ? LAYOUT.tabGap + sub.w : 0);
-      if (total <= maxText || (mainPx <= LAYOUT.tabMinMain && subPx <= LAYOUT.tabMinSub)) break;
-      // Shrink the big text first; the small text only once the big one is at its floor.
-      if (mainPx > LAYOUT.tabMinMain) mainPx -= 2;
-      else subPx = Math.max(LAYOUT.tabMinSub, subPx - 1);
-    }
-    const contentW = main.w + (sub ? LAYOUT.tabGap + sub.w : 0);
-    const tabW = Math.round(Math.min(W * LAYOUT.tabMaxW, Math.max(W * 0.62, contentW + LAYOUT.tabPad * 2)));
-    const tabX = Math.round((W - tabW) / 2);
-    layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, LAYOUT.tabRadius), fill, LAYOUT.tabOpacity), left: tabX, top: 0 });
-    const x0 = (W - contentW) / 2;
-    layers.push(place(main, x0, (tabH - main.h) / 2));
-    if (sub) {
-      // Bottom-align the small text with the big text so they read as one line.
-      layers.push(place(sub, x0 + main.w + LAYOUT.tabGap, (tabH - main.h) / 2 + (main.h - sub.h) * 0.78));
-    }
+    shadows.push({ x: tabX, y: 0, shape: topTabShape(tabW, tabH, LAYOUT.tabRadius), fill: tint });
+    layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, LAYOUT.tabRadius), tint, LAYOUT.tabOpacity), left: tabX, top: 0 });
+    layers.push(place(main, (W - main.w) / 2, (tabH - main.h) / 2));
   }
 
-  // Left dub tag, just under the top tab. Omitted when there is no dub.
+  // Chips under the tab: dub on the left, "S1 E13 aired" on the right
+  // (same tint as the top tab, so they read as one group).
+  const chipY = (tabH || LAYOUT.tabH) + LAYOUT.chipGap;
   const dub = dubTag(badge);
+  let leftW = 0;
   if (dub) {
     const ready = dub.state === "ready";
-    const text = await label(dub.text, ready ? "#FFFFFF" : "#E4E8EE", LAYOUT.sideFont);
-    const w = text.w + LAYOUT.sidePad * 2;
-    const y = (tabH || LAYOUT.tabH) + LAYOUT.sideGap;
-    layers.push({ input: await frosted(base, 0, y, w, LAYOUT.sideH, leftTagShape(w, LAYOUT.sideH, LAYOUT.sideRadius), DUB_FILLS[dub.state], ready ? 0.92 : 0.86), left: 0, top: y });
-    layers.push(place(text, LAYOUT.sidePad, y + (LAYOUT.sideH - text.h) / 2));
+    const text = await label(dub.text, "#FFFFFF", LAYOUT.chipFont);
+    leftW = text.w + LAYOUT.chipPad * 2;
+    shadows.push({ x: 0, y: chipY, shape: leftTagShape(leftW, LAYOUT.chipH, LAYOUT.chipRadius), fill: DUB_FILLS[dub.state] });
+    layers.push({ input: await frosted(base, 0, chipY, leftW, LAYOUT.chipH, leftTagShape(leftW, LAYOUT.chipH, LAYOUT.chipRadius), DUB_FILLS[dub.state], ready ? LAYOUT.chipOpacity : 0.9), left: 0, top: chipY });
+    layers.push(place(text, LAYOUT.chipPad, chipY + (LAYOUT.chipH - text.h) / 2));
+  }
+  if (lines?.sub) {
+    const ink = inkFor(tint);
+    const text = await label(lines.sub, ink, LAYOUT.chipFont);
+    const w = text.w + LAYOUT.chipPad * 2;
+    // If both chips would collide, drop the aired chip one row lower.
+    const y = leftW + w + 16 > W ? chipY + LAYOUT.chipH + 8 : chipY;
+    const x = W - w;
+    const rightShape = `M${w} 0 H${LAYOUT.chipRadius} Q0 0 0 ${LAYOUT.chipRadius} V${LAYOUT.chipH - LAYOUT.chipRadius} Q0 ${LAYOUT.chipH} ${LAYOUT.chipRadius} ${LAYOUT.chipH} H${w} Z`;
+    shadows.push({ x, y, shape: rightShape, fill: tint });
+    layers.push({ input: await frosted(base, x, y, w, LAYOUT.chipH, rightShape, tint, LAYOUT.chipOpacity), left: x, top: y });
+    layers.push(place(text, x + LAYOUT.chipPad, y + (LAYOUT.chipH - text.h) / 2));
   }
 
+  const shadowLayer = tagShadowLayer(shadows);
+  if (shadowLayer) layers.splice(tagsStart, 0, { input: shadowLayer, left: 0, top: 0 });
   return sharp(base).composite(layers).webp({ quality: 90, effort: 5 }).toBuffer();
 }
 
