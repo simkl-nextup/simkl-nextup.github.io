@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { composeTaggedPoster, taggedSignatureParts } from "./poster-tags.mjs";
+import { composeTaggedPoster, dubTag, posterTints, STATUS_TAGS, taggedSignatureParts, topTabLines, topTabText, DUB_FILLS } from "./poster-tags.mjs";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
@@ -334,10 +334,10 @@ async function prepareTitleLogo(buffer) {
   };
 }
 
-function posterFileName(meta, badge, style = "classic") {
+function posterFileName(meta, badge, style = "classic", tagStyle = null) {
   const signature = JSON.stringify({
     version: POSTER_BADGE_STYLE_VERSION,
-    ...(style === "tags" ? { style, ...taggedSignatureParts(badge) } : {}),
+    ...(style === "tags" ? { style, ...taggedSignatureParts(badge, tagStyle) } : {}),
     id: meta.id,
     poster: meta.poster,
     name: badge.name || meta.name,
@@ -357,11 +357,14 @@ export async function decorateCatalogPosters(catalog, badges, {
   fetchImpl = fetch,
   concurrency = 4,
   style = "classic",
+  tagStyle = null,           // poster-style.json settings for the "tags" look
+  studioSamples = 0,         // how many cards to describe for /studio.html
 } = {}) {
   const next = structuredClone(catalog ?? { metas: [] });
   const warnings = [];
+  const studio = [];
   if (!enabled || !baseUrl || !next.metas.length) {
-    return { catalog: next, generated: 0, warnings };
+    return { catalog: next, generated: 0, warnings, studio };
   }
 
   const badgeById = new Map((badges ?? []).map((badge) => [badge.id, badge]));
@@ -386,8 +389,27 @@ export async function decorateCatalogPosters(catalog, badges, {
           if (badge.logo) {
             try { logo = await downloadImage(badge.logo, fetchImpl); } catch { logo = null; }
           }
-          const filename = posterFileName(meta, badge, style);
-          const output = await composeTaggedPoster({ poster: originalPoster, logo, name: badge.name || meta.name, badge });
+          const filename = posterFileName(meta, badge, style, tagStyle);
+          const tints = await posterTints(originalPoster);
+          if (index < studioSamples) {
+            // Everything the studio page needs to preview this card in any style,
+            // computed here so the page shows exactly the server's text and colours.
+            const status = STATUS_TAGS[badge.status];
+            const dub = dubTag(badge);
+            studio[index] = {
+              name: badge.name || meta.name,
+              poster: meta.poster,
+              logo: badge.logo || null,
+              textless: Boolean(badge.textless),
+              status: status ? { label: status.label, fill: status.fill } : null,
+              malScore: badge.malScore ?? null,
+              tints,
+              lines: topTabLines(badge),
+              single: topTabText(badge),
+              dub: dub ? { text: dub.text, fill: DUB_FILLS[dub.state], state: dub.state } : null,
+            };
+          }
+          const output = await composeTaggedPoster({ poster: originalPoster, logo, name: badge.name || meta.name, badge, style: tagStyle, tints });
           await sharp(output).toFile(path.join(posterDirectory, filename));
           meta.poster = `${baseUrl.replace(/\/$/, "")}/posters/${filename}`;
           generated += 1;
@@ -429,5 +451,5 @@ export async function decorateCatalogPosters(catalog, badges, {
 
   const workerCount = Math.max(1, Math.min(Number(concurrency) || 1, next.metas.length));
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return { catalog: next, generated, warnings };
+  return { catalog: next, generated, warnings, studio: studio.filter(Boolean) };
 }

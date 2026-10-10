@@ -1,0 +1,10 @@
+{
+  "topTab": "chip",
+  "size": "large",
+  "outlineOnWhiteText": true,
+  "outlineOnDarkText": false,
+  "outlineWeight": "thin",
+  "tagShadow": "coloured",
+  "contrast": "max",
+  "ratingShadow": true
+}

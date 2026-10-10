@@ -1,5 +1,8 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { DEFAULT_POSTER_STYLE, normalizePosterStyle, POSTER_STYLE_OPTIONS } from "./poster-style.mjs";
+import { DUB_FILLS, SIZE_PRESETS } from "./poster-tags.mjs";
 import { ADDON_ID, APP_VERSION, CATALOG_ID, CATALOG_NAME } from "./constants.mjs";
 import { buildManifest } from "./catalog.mjs";
 import { decorateCatalogPosters } from "./poster-badges.mjs";
@@ -134,6 +137,8 @@ export async function writeSite({
   mediaType = "anime",
   posterStyle = "classic",
   extraStatus = null,
+  tagStyle = null,
+  studio = null,             // { repository, branch, configPath } → publishes /studio.html
 }) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
@@ -145,6 +150,8 @@ export async function writeSite({
     enabled: posterBadgesEnabled,
     fetchImpl,
     style: posterStyle,
+    tagStyle,
+    studioSamples: studio ? 8 : 0,
   });
   const publishedCatalog = posterResult.catalog;
 
@@ -182,6 +189,26 @@ export async function writeSite({
     accountLabel,
   }));
   await writeFile(path.join(outputDir, ".nojekyll"), "");
+
+  if (studio && posterStyle === "tags") {
+    // Poster studio: preview any style combination and save it to the repo.
+    const assets = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets");
+    await mkdir(path.join(outputDir, "studio"), { recursive: true });
+    await copyFile(path.join(assets, "studio.html"), path.join(outputDir, "studio.html"));
+    await copyFile(path.join(assets, "fonts", "Inter-ExtraBold.otf"), path.join(outputDir, "studio", "Inter-ExtraBold.otf"));
+    await writeFile(path.join(outputDir, "studio", "studio-data.json"), json({
+      generatedAt: updatedAt,
+      repository: studio.repository || null,
+      branch: studio.branch || "main",
+      configPath: studio.configPath,
+      currentStyle: normalizePosterStyle(tagStyle),
+      defaultStyle: DEFAULT_POSTER_STYLE,
+      options: POSTER_STYLE_OPTIONS,
+      layouts: SIZE_PRESETS,
+      colours: { dubReady: DUB_FILLS.ready, dubBehind: DUB_FILLS.behind },
+      samples: posterResult.studio ?? [],
+    }));
+  }
   await writeFile(path.join(outputDir, "status.json"), json({
     account: accountLabel,
     addonId,

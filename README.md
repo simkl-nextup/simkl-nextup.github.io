@@ -244,6 +244,16 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
 
+## Updating to 1.12.0 — Poster Studio (anime row only)
+
+Open **https://simkl-nextup.github.io/studio.html** to mix any combination of the anime tag looks built since 1.10.8 (top-tab layout, size, outlines, coloured drop shadows, contrast, score shadow) and preview them live on cards from your own row.
+
+- The settings live in `config/poster-style.json`. Changing that file on `main` starts the refresh workflow, and the new posters are deployed in a few minutes.
+- **Save & deploy** commits the file for you. It needs a GitHub fine-grained token: Repository access → only this repository; Permissions → Contents: Read and write. The token stays in your browser (localStorage) and is never sent anywhere except api.github.com.
+- No token? Use **Copy settings**, then **Edit on GitHub** and paste.
+- The default is 1.11.1's look without the white outline on black text.
+- The TV row (account 2) is unchanged.
+
 ## Updating to 1.10.0 — BetterPosters-style tags and English-dub info (anime row only)
 
 The anime row's posters are redesigned; the account-2 TV row keeps its classic badges.

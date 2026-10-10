@@ -49,6 +49,17 @@ const setupScript = setupHtml.match(/<script type="module">([\s\S]*?)<\/script>/
 if (!setupScript) throw new Error("Setup page is missing its authorization script.");
 new Function(setupScript);
 
+// Poster studio (anime tags site only): page script must parse and its data must be valid JSON.
+let studioHtml = null;
+try { studioHtml = await readFile(path.join(publicDir, "studio.html"), "utf8"); } catch { /* not published here */ }
+if (studioHtml) {
+  const studioScript = studioHtml.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  if (!studioScript) throw new Error("Studio page is missing its script.");
+  new Function(studioScript);
+  const studioData = JSON.parse(await readFile(path.join(publicDir, "studio", "studio-data.json"), "utf8"));
+  if (!studioData.options || !studioData.currentStyle) throw new Error("Studio data is incomplete.");
+}
+
 function safeMetaFilename(id) {
   if (typeof id !== "string" || !id || /[\\/]/.test(id)) throw new Error(`Unsafe metadata ID: ${id}`);
   return `${id}.json`;

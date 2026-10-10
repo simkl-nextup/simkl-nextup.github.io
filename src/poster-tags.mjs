@@ -13,22 +13,33 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { DEFAULT_POSTER_STYLE, normalizePosterStyle } from "./poster-style.mjs";
 
-export const TAG_STYLE_VERSION = 12;
+export const TAG_STYLE_VERSION = 13;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
 const FONT = "Inter ExtraBold";
 
-const LAYOUT = {
-  // Clean BetterPosters look, sized for reading from a sofa (posters show
-  // ~230px wide on a TV, so everything here is roughly halved on screen).
-  tabFont: 46, tabMinFont: 34, tabPad: 30, tabH: 78, tabRadius: 12, tabOpacity: 0.95,
-  chipFont: 30, chipH: 56, chipPad: 16, chipRadius: 12, chipGap: 12, chipOpacity: 0.95,
-  // Measured from BetterPosters: logo ends ~82% down; status/score line ~90%.
-  bandTop: 520, rowY: 640, pillH: 62, pillPad: 18, pillRadius: 12, pillFont: 31, ratingFont: 44, rowGap: 14,
-  logoMaxW: 420, logoMaxH: 170, logoBottom: 616, logoMinTop: 400,
+// Two size presets. "large" is sized for reading from a sofa (posters show
+// ~230px wide on a TV, so everything here is roughly halved on screen).
+export const SIZE_PRESETS = {
+  large: {
+    tabFont: 46, tabMinFont: 34, tabSubFont: 31, tabPad: 30, tabH: 78, tabRadius: 12, tabOpacity: 0.95,
+    chipFont: 30, chipH: 56, chipPad: 16, chipRadius: 12, chipGap: 12, chipOpacity: 0.95,
+    bandTop: 520, rowY: 640, pillH: 62, pillPad: 18, pillRadius: 12, pillFont: 31, ratingFont: 44, rowGap: 14,
+    logoMaxW: 420, logoMaxH: 170, logoBottom: 616, logoMinTop: 400,
+  },
+  compact: {
+    tabFont: 36, tabMinFont: 26, tabSubFont: 26, tabPad: 30, tabH: 64, tabRadius: 10, tabOpacity: 0.9,
+    chipFont: 28, chipH: 54, chipPad: 16, chipRadius: 10, chipGap: 16, chipOpacity: 0.92,
+    bandTop: 540, rowY: 652, pillH: 52, pillPad: 16, pillRadius: 10, pillFont: 26, ratingFont: 32, rowGap: 14,
+    logoMaxW: 420, logoMaxH: 190, logoBottom: 626, logoMinTop: 400,
+  },
 };
+export function layoutFor(style) {
+  return SIZE_PRESETS[style?.size] ?? SIZE_PRESETS.large;
+}
 
 // Status colours keep their meaning; flat BetterPosters finish.
 export const STATUS_TAGS = {
@@ -165,7 +176,7 @@ async function analyzePoster(buffer) {
   return { meanL: sumL / N, hue, sat: ss[best] / w[best], vividShare: near.reduce((a, b) => a + vivid[b], 0) / N };
 }
 
-export function adaptiveTabFill({ hue: h, sat: s, meanL, vividShare }) {
+export function adaptiveTabFill({ hue: h, sat: s, meanL, vividShare }, target = 7) {
   let fill;
   if (vividShare > 0.16) fill = hslToHex(h, Math.min(0.78, Math.max(0.5, s)), 0.5);           // vivid
   else if (meanL >= 0.42) fill = hslToHex(h, Math.min(0.4, Math.max(0.1, s * 0.6)), 0.86);   // pale
@@ -175,7 +186,7 @@ export function adaptiveTabFill({ hue: h, sat: s, meanL, vividShare }) {
   // text, lighter for dark text.
   const [fh, fs, fl] = rgbToHsl(...[1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16)));
   const whiteText = inkFor(fill) === "#FFFFFF";
-  for (let l = fl, i = 0; contrast(fill, inkFor(fill)) < 7 && i < 40; i += 1) {
+  for (let l = fl, i = 0; contrast(fill, inkFor(fill)) < target && i < 40; i += 1) {
     l = whiteText ? Math.max(0.08, l - 0.02) : Math.min(0.95, l + 0.02);
     fill = hslToHex(fh, fs, l);
   }
@@ -201,17 +212,16 @@ async function rawText(text, color, px, { alpha = "100%", width, align } = {}) {
   return { img: out.data, w: out.info.width, h: out.info.height };
 }
 
-// Heavy type with a soft dark outline + drop shadow on light text (the
-// legibility trick from the original badges, toned down for flat tags).
-// Returns an image padded by `pad` on every side.
-// Text with a thin contrasting outline: dark text gets a white outline,
-// light text a black one. Text sitting straight on artwork (the score) also
-// gets a soft shadow.
+// Text. The outline is decided by the style: black outline on white text
+// and/or white outline on black text, thin or bold. Text sitting straight on
+// artwork (the score) can also get a soft shadow.
 async function label(text, color, px, options = {}) {
   const main = await rawText(text, color, px, options);
   const darkText = color.toUpperCase() === "#161616";
-  const outlineColor = darkText ? "#FFFFFF" : "#000000";
-  const r = options.outline === false ? 0 : Math.max(2, Math.round(px * 0.055));
+  const style = options.style ?? DEFAULT_POSTER_STYLE;
+  const wantOutline = options.outline ?? (darkText ? style.outlineOnDarkText : style.outlineOnWhiteText);
+  const weight = style.outlineWeight === "bold" ? 0.075 : 0.055;
+  const r = wantOutline ? Math.max(2, Math.round(px * weight)) : 0;
   const pad = r + 8;
   const none = { r: 0, g: 0, b: 0, alpha: 0 };
   const canvas = { width: main.w + pad * 2, height: main.h + pad * 2 + 3, channels: 4, background: none };
@@ -222,7 +232,7 @@ async function label(text, color, px, options = {}) {
     layers.push({ input: shadow, top: 3, left: 0 });
   }
   if (r) {
-    const stampSrc = await rawText(text, outlineColor, px, { ...options, alpha: darkText ? "85%" : "90%" });
+    const stampSrc = await rawText(text, darkText ? "#FFFFFF" : "#000000", px, { ...options, alpha: darkText ? "85%" : "92%" });
     const inset = pad - r;
     const stamp = await sharp(stampSrc.img).extend({ top: inset, bottom: inset, left: inset, right: inset, background: none }).blur(0.4).png().toBuffer();
     for (const dx of [-r, 0, r]) for (const dy of [-r, 0, r]) {
@@ -236,7 +246,7 @@ async function label(text, color, px, options = {}) {
 
 // Coloured drop shadows: every tag casts a soft shadow in a deeper shade of
 // its own colour, drawn as one layer underneath all the tags.
-function shadowShade(fill) {
+export function shadowShade(fill) {
   const [h, s, l] = rgbToHsl(...[1, 3, 5].map((i) => parseInt(fill.slice(i, i + 2), 16)));
   return hslToHex(h, Math.min(1, s * 1.15 + 0.05), Math.max(0.07, l * 0.5));
 }
@@ -265,8 +275,8 @@ function place(layer, left, top) {
   return { input: layer.img, left: Math.round(left - layer.pad), top: Math.round(top - layer.pad) };
 }
 
-async function bottomBand(poster) {
-  const top = LAYOUT.bandTop, h = H - top;
+async function bottomBand(poster, L) {
+  const top = L.bandTop, h = H - top;
   const shade = Buffer.from(`<svg width="${W}" height="${h}" xmlns="http://www.w3.org/2000/svg">
     <defs><linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0.05"/><stop offset="1" stop-color="#000" stop-opacity="0.62"/></linearGradient></defs>
     <rect width="${W}" height="${h}" fill="url(#d)"/></svg>`);
@@ -278,116 +288,158 @@ async function bottomBand(poster) {
   return { input: img, left: 0, top };
 }
 
-export async function prepareTaggedLogo(buffer) {
+export async function prepareTaggedLogo(buffer, L = SIZE_PRESETS.large) {
   const output = await sharp(buffer, { failOn: "error" })
     .ensureAlpha()
     .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .resize({ width: LAYOUT.logoMaxW, height: LAYOUT.logoMaxH, fit: "inside", withoutEnlargement: false })
+    .resize({ width: L.logoMaxW, height: L.logoMaxH, fit: "inside", withoutEnlargement: false })
     .png().toBuffer({ resolveWithObject: true });
   return {
     input: output.data,
     left: Math.round((W - output.info.width) / 2),
-    top: Math.max(LAYOUT.logoMinTop, LAYOUT.logoBottom - output.info.height),
+    top: Math.max(L.logoMinTop, L.logoBottom - output.info.height),
   };
 }
 
-async function fallbackTitle(name) {
+async function fallbackTitle(name, L, style) {
   const text = String(name ?? "").trim().toUpperCase() || "UNTITLED";
   let px = text.length > 28 ? 34 : 42;
   let layer;
   for (;;) {
-    layer = await label(text, "#FFFFFF", px, { width: LAYOUT.logoMaxW, haloAlpha: "85%" });
-    if (layer.h <= LAYOUT.logoMaxH || px <= 26) break;
+    layer = await label(text, "#FFFFFF", px, { width: L.logoMaxW, style, outline: true, shadow: true });
+    if (layer.h <= L.logoMaxH || px <= 26) break;
     px -= 3;
   }
-  return place(layer, (W - layer.w) / 2, LAYOUT.logoBottom - layer.h);
+  return place(layer, (W - layer.w) / 2, L.logoBottom - layer.h);
 }
 
-// poster: image buffer (any size; covered to 500x750). logo: optional buffer.
-export async function composeTaggedPoster({ poster, logo, name, badge }) {
+// Tab tints for both contrast settings (the studio previews either).
+export async function posterTints(poster) {
   const base = await sharp(poster, { failOn: "error" }).resize(W, H, { fit: "cover", position: "centre" }).png().toBuffer();
-  const layers = [await bottomBand(base)];
-  const shadows = [];
+  const analysis = await analyzePoster(base);
+  return { max: adaptiveTabFill(analysis, 7), standard: adaptiveTabFill(analysis, 4.5) };
+}
 
-  // Title logo (above the band row) or the show name as text.
-  // Draw the name as text only on artwork without its own title text;
-  // otherwise it would be printed twice.
+const rightChipShape = (w, h, r) => `M${w} 0 H${r} Q0 0 0 ${r} V${h - r} Q0 ${h} ${r} ${h} H${w} Z`;
+
+// poster: image buffer (any size; covered to 500x750). logo: optional buffer.
+// style: see poster-style.mjs (defaults to 1.11.1 without the white outline).
+export async function composeTaggedPoster({ poster, logo, name, badge, style: rawStyle, tints }) {
+  const style = normalizePosterStyle(rawStyle ?? DEFAULT_POSTER_STYLE);
+  const L = layoutFor(style);
+  const base = await sharp(poster, { failOn: "error" }).resize(W, H, { fit: "cover", position: "centre" }).png().toBuffer();
+  const layers = [await bottomBand(base, L)];
+  const shadows = [];
+  const text = (value, color, px, extra = {}) => label(value, color, px, { style, ...extra });
+
+  // Title logo (above the band row) or, on textless artwork only, the name.
   let title = null;
   if (logo) {
-    try { title = await prepareTaggedLogo(logo); } catch { title = null; }
+    try { title = await prepareTaggedLogo(logo, L); } catch { title = null; }
   }
-  if (!title && badge.textless) title = await fallbackTitle(name);
+  if (!title && badge.textless) title = await fallbackTitle(name, L, style);
   if (title) layers.push(title);
 
   // Bottom row: [STATUS] ★ score.
   const status = STATUS_TAGS[badge.status];
   if (!status) throw new Error(`Unsupported poster status: ${badge.status}`);
-  const statusInk = inkFor(status.fill);
-  const statusText = await label(status.label, statusInk, LAYOUT.pillFont);
-  const pillW = statusText.w + LAYOUT.pillPad * 2;
-  const rating = badge.malScore ? await label(`★ ${badge.malScore}`, "#FFFFFF", LAYOUT.ratingFont, { shadow: true, shadowAlpha: "85%" }) : null;
-  const rowW = pillW + (rating ? LAYOUT.rowGap + rating.w : 0);
+  const statusText = await text(status.label, inkFor(status.fill), L.pillFont);
+  const pillW = statusText.w + L.pillPad * 2;
+  const rating = badge.malScore
+    ? await text(`★ ${badge.malScore}`, "#FFFFFF", L.ratingFont, { shadow: style.ratingShadow, shadowAlpha: "85%" })
+    : null;
+  const rowW = pillW + (rating ? L.rowGap + rating.w : 0);
   const rowX = Math.round((W - rowW) / 2);
-  const { rowY, pillH } = LAYOUT;
   const tagsStart = layers.length;
-  shadows.push({ x: rowX, y: rowY, shape: roundRect(pillW, pillH, LAYOUT.pillRadius), fill: status.fill });
-  layers.push({ input: await frosted(base, rowX, rowY, pillW, pillH, roundRect(pillW, pillH, LAYOUT.pillRadius), status.fill, 0.92), left: rowX, top: rowY });
-  layers.push(place(statusText, rowX + LAYOUT.pillPad, rowY + (pillH - statusText.h) / 2));
-  if (rating) layers.push(place(rating, rowX + pillW + LAYOUT.rowGap, rowY + (pillH - rating.h) / 2));
+  shadows.push({ x: rowX, y: L.rowY, shape: roundRect(pillW, L.pillH, L.pillRadius), fill: status.fill });
+  layers.push({ input: await frosted(base, rowX, L.rowY, pillW, L.pillH, roundRect(pillW, L.pillH, L.pillRadius), status.fill, 0.92), left: rowX, top: L.rowY });
+  layers.push(place(statusText, rowX + L.pillPad, L.rowY + (L.pillH - statusText.h) / 2));
+  if (rating) layers.push(place(rating, rowX + pillW + L.rowGap, L.rowY + (L.pillH - rating.h) / 2));
 
-  // Top tab: just the action — "Next S1 E2" — big and clean, tinted from the poster.
+  // Top tab, in one of four layouts.
   const lines = topTabLines(badge);
-  const tint = lines ? adaptiveTabFill(await analyzePoster(base)) : null;
-  const tabH = lines ? LAYOUT.tabH : 0;
+  const single = topTabText(badge);
+  let tint = null;
+  let tabH = 0;
   if (lines) {
+    if (tints) tint = style.contrast === "standard" ? tints.standard : tints.max;
+    else tint = adaptiveTabFill(await analyzePoster(base), style.contrast === "standard" ? 4.5 : 7);
     const ink = inkFor(tint);
-    let px = LAYOUT.tabFont, main;
-    for (;;) {
-      main = await label(lines.main, ink, px);
-      if (main.w + LAYOUT.tabPad * 2 <= W * 0.9 || px <= LAYOUT.tabMinFont) break;
-      px -= 2;
+    const fit = async (value, startPx, maxW) => {
+      let px = startPx, layer;
+      for (;;) {
+        layer = await text(value, ink, px);
+        if (layer.w <= maxW || px <= L.tabMinFont) return layer;
+        px -= 2;
+      }
+    };
+    const twoLines = (style.topTab === "boxed" || style.topTab === "band") && lines.sub;
+    if (style.topTab === "single") {
+      const main = await fit(single, L.tabFont - 6, W * 0.9 - L.tabPad * 2);
+      tabH = L.tabH;
+      const tabW = main.w + L.tabPad * 2;
+      const tabX = Math.round((W - tabW) / 2);
+      shadows.push({ x: tabX, y: 0, shape: topTabShape(tabW, tabH, L.tabRadius), fill: tint });
+      layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, L.tabRadius), tint, L.tabOpacity), left: tabX, top: 0 });
+      layers.push(place(main, (W - main.w) / 2, (tabH - main.h) / 2));
+    } else if (twoLines) {
+      const full = style.topTab === "band";
+      const main = await fit(lines.main, L.tabFont + (full ? 2 : 0), W * 0.96 - L.tabPad * 2);
+      const sub = await text(lines.sub, ink, L.tabSubFont, { alpha: "90%" });
+      const gap = 5;
+      tabH = Math.round(main.h + gap + sub.h + 22);
+      const tabW = full ? Math.round(W * 0.98) : Math.max(main.w, sub.w) + L.tabPad * 2;
+      const tabX = Math.round((W - tabW) / 2);
+      shadows.push({ x: tabX, y: 0, shape: topTabShape(tabW, tabH, L.tabRadius), fill: tint });
+      layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, L.tabRadius), tint, L.tabOpacity), left: tabX, top: 0 });
+      const y0 = (tabH - (main.h + gap + sub.h)) / 2;
+      layers.push(place(main, (W - main.w) / 2, y0));
+      layers.push(place(sub, (W - sub.w) / 2, y0 + main.h + gap));
+    } else {
+      // "chip" (and two-line layouts with nothing to put on line two).
+      const main = await fit(lines.main, L.tabFont, W * 0.9 - L.tabPad * 2);
+      tabH = L.tabH;
+      const tabW = main.w + L.tabPad * 2;
+      const tabX = Math.round((W - tabW) / 2);
+      shadows.push({ x: tabX, y: 0, shape: topTabShape(tabW, tabH, L.tabRadius), fill: tint });
+      layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, L.tabRadius), tint, L.tabOpacity), left: tabX, top: 0 });
+      layers.push(place(main, (W - main.w) / 2, (tabH - main.h) / 2));
     }
-    const tabW = main.w + LAYOUT.tabPad * 2;
-    const tabX = Math.round((W - tabW) / 2);
-    shadows.push({ x: tabX, y: 0, shape: topTabShape(tabW, tabH, LAYOUT.tabRadius), fill: tint });
-    layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, LAYOUT.tabRadius), tint, LAYOUT.tabOpacity), left: tabX, top: 0 });
-    layers.push(place(main, (W - main.w) / 2, (tabH - main.h) / 2));
   }
 
-  // Chips under the tab: dub on the left, "S1 E13 aired" on the right
-  // (same tint as the top tab, so they read as one group).
-  const chipY = (tabH || LAYOUT.tabH) + LAYOUT.chipGap;
+  // Chips under the tab: dub on the left; in "chip" mode the aired info on the right.
+  const chipY = (tabH || L.tabH) + L.chipGap;
   const dub = dubTag(badge);
   let leftW = 0;
   if (dub) {
     const ready = dub.state === "ready";
-    const text = await label(dub.text, "#FFFFFF", LAYOUT.chipFont);
-    leftW = text.w + LAYOUT.chipPad * 2;
-    shadows.push({ x: 0, y: chipY, shape: leftTagShape(leftW, LAYOUT.chipH, LAYOUT.chipRadius), fill: DUB_FILLS[dub.state] });
-    layers.push({ input: await frosted(base, 0, chipY, leftW, LAYOUT.chipH, leftTagShape(leftW, LAYOUT.chipH, LAYOUT.chipRadius), DUB_FILLS[dub.state], ready ? LAYOUT.chipOpacity : 0.9), left: 0, top: chipY });
-    layers.push(place(text, LAYOUT.chipPad, chipY + (LAYOUT.chipH - text.h) / 2));
+    const label_ = await text(dub.text, "#FFFFFF", L.chipFont);
+    leftW = label_.w + L.chipPad * 2;
+    shadows.push({ x: 0, y: chipY, shape: leftTagShape(leftW, L.chipH, L.chipRadius), fill: DUB_FILLS[dub.state] });
+    layers.push({ input: await frosted(base, 0, chipY, leftW, L.chipH, leftTagShape(leftW, L.chipH, L.chipRadius), DUB_FILLS[dub.state], ready ? L.chipOpacity : 0.9), left: 0, top: chipY });
+    layers.push(place(label_, L.chipPad, chipY + (L.chipH - label_.h) / 2));
   }
-  if (lines?.sub) {
-    const ink = inkFor(tint);
-    const text = await label(lines.sub, ink, LAYOUT.chipFont);
-    const w = text.w + LAYOUT.chipPad * 2;
-    // If both chips would collide, drop the aired chip one row lower.
-    const y = leftW + w + 16 > W ? chipY + LAYOUT.chipH + 8 : chipY;
+  if (style.topTab === "chip" && lines?.sub) {
+    const label_ = await text(lines.sub, inkFor(tint), L.chipFont);
+    const w = label_.w + L.chipPad * 2;
+    const y = leftW + w + 16 > W ? chipY + L.chipH + 8 : chipY;
     const x = W - w;
-    const rightShape = `M${w} 0 H${LAYOUT.chipRadius} Q0 0 0 ${LAYOUT.chipRadius} V${LAYOUT.chipH - LAYOUT.chipRadius} Q0 ${LAYOUT.chipH} ${LAYOUT.chipRadius} ${LAYOUT.chipH} H${w} Z`;
-    shadows.push({ x, y, shape: rightShape, fill: tint });
-    layers.push({ input: await frosted(base, x, y, w, LAYOUT.chipH, rightShape, tint, LAYOUT.chipOpacity), left: x, top: y });
-    layers.push(place(text, x + LAYOUT.chipPad, y + (LAYOUT.chipH - text.h) / 2));
+    shadows.push({ x, y, shape: rightChipShape(w, L.chipH, L.chipRadius), fill: tint });
+    layers.push({ input: await frosted(base, x, y, w, L.chipH, rightChipShape(w, L.chipH, L.chipRadius), tint, L.chipOpacity), left: x, top: y });
+    layers.push(place(label_, x + L.chipPad, y + (L.chipH - label_.h) / 2));
   }
 
-  const shadowLayer = tagShadowLayer(shadows);
-  if (shadowLayer) layers.splice(tagsStart, 0, { input: shadowLayer, left: 0, top: 0 });
+  if (style.tagShadow === "coloured") {
+    const shadowLayer = tagShadowLayer(shadows);
+    if (shadowLayer) layers.splice(tagsStart, 0, { input: shadowLayer, left: 0, top: 0 });
+  }
   return sharp(base).composite(layers).webp({ quality: 90, effort: 5 }).toBuffer();
 }
 
-export function taggedSignatureParts(badge) {
+export function taggedSignatureParts(badge, style) {
   return {
     tagStyle: TAG_STYLE_VERSION,
+    style: normalizePosterStyle(style ?? DEFAULT_POSTER_STYLE),
     top: topTabText(badge),
     dub: dubTag(badge)?.text ?? null,
     mal: badge?.malScore ?? null,

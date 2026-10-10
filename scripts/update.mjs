@@ -19,6 +19,7 @@ import { enrichTvdbMetadata, TvdbApiError } from "../src/tvdb.mjs";
 import { AnimeScheduleApiError, enrichDubInfo } from "../src/animeschedule.mjs";
 import { enrichMalScores } from "../src/mal-score.mjs";
 import { applyFribbIds, loadFribbIndex } from "../src/anime-ids.mjs";
+import { DEFAULT_POSTER_STYLE, loadPosterStyle } from "../src/poster-style.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const statePath = path.join(root, "state", "simkl-state.json");
@@ -179,6 +180,7 @@ export async function refresh({
   animeScheduleToken = process.env.ANIMESCHEDULE_TOKEN,
   posterStyle = process.env.POSTER_STYLE,
   malScoresEnabled = process.env.MAL_SCORES !== "false",
+  posterStyleFile = path.join(root, "config", "poster-style.json"),
 } = {}) {
   const normalizedMediaType = normalizeMediaType(mediaType);
   // The anime row uses the BetterPosters-style tags; the TV row keeps the
@@ -369,6 +371,14 @@ export async function refresh({
     mediaType: normalizedMediaType,
     posterStyle: resolvedPosterStyle,
     extraStatus,
+    tagStyle: resolvedPosterStyle === "tags" ? await loadPosterStyle(posterStyleFile) : DEFAULT_POSTER_STYLE,
+    studio: resolvedPosterStyle === "tags" && normalizedMediaType === "anime"
+      ? {
+          repository: githubRepository || null,
+          branch: process.env.GITHUB_REF_NAME || "main",
+          configPath: path.relative(root, posterStyleFile).split(path.sep).join("/"),
+        }
+      : null,
   });
   for (const warning of site.posterBadgeWarnings) {
     console.warn(`Poster badge skipped for ${warning.name ?? warning.id ?? "unknown"}: ${warning.message}`);
