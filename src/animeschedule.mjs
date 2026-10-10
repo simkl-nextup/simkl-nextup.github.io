@@ -27,6 +27,21 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 // time, not redistributed). "incomplete" = only partly dubbed.
 export const MAL_DUBS_URL = "https://raw.githubusercontent.com/MAL-Dubs/MAL-Dubs/main/data/dubInfo.json";
 const MAL_DUBS_TTL_MS = 24 * 60 * 60 * 1000;
+// MAL-Dubs lists simuldubs as soon as they start, so "dubbed" only means
+// "fully dubbed" once the show has stopped airing.
+const STILL_AIRING_MS = 60 * 24 * 60 * 60 * 1000;
+
+// Newest episode air date we know for this title (Simkl calendar, next-to-watch, TVDB).
+export function lastAiredAt(item, now = new Date()) {
+  const dates = [item?._addonLatestAiredInfo?.date, item?.next_to_watch_info?.date];
+  for (const video of item?._addonTvdbMeta?.videos ?? []) dates.push(video?.released);
+  let latest = null;
+  for (const value of dates) {
+    const date = validDate(value);
+    if (date && date <= now && (!latest || date > latest)) latest = date;
+  }
+  return latest;
+}
 
 export class AnimeScheduleApiError extends Error {
   constructor(message, status) {
@@ -330,7 +345,12 @@ export async function enrichDubInfo(items, dubState, {
     // are fully dubbed but outside AnimeSchedule's timetable window.
     let dub = match ? resolveDub(match, state.ledger[match.route], now) : null;
     if (!dub && ids.mal && malDubbed.has(ids.mal) && !malIncomplete.has(ids.mal)) {
-      dub = { route: match?.route ?? null, episode: null, full: true, estimated: true, source: "mal-dubs" };
+      const finishedOnSchedule = String(match?.status ?? "").toLowerCase() === "finished";
+      const last = lastAiredAt(item, now);
+      const stillAiring = !finishedOnSchedule && (!last || now - last < STILL_AIRING_MS);
+      dub = stillAiring
+        ? { route: match?.route ?? null, episode: null, full: false, airing: true, estimated: true, source: "mal-dubs" }
+        : { route: match?.route ?? null, episode: null, full: true, estimated: true, source: "mal-dubs" };
     }
     if (dub) {
       // Simkl and AnimeSchedule may number split cours differently. If the dub
@@ -350,7 +370,11 @@ export async function enrichDubInfo(items, dubState, {
     dubState: state,
     warnings,
     enabled: true,
-    stats: { weeksRead, ledgerShows: Object.keys(state.ledger).length, matched, dubbed, titles: targets.length, withIds, responseShape },
+    stats: {
+      weeksRead, ledgerShows: Object.keys(state.ledger).length, matched, dubbed, titles: targets.length, withIds, responseShape,
+      fromSchedule: targets.filter(([, item]) => item._addonDub && !item._addonDub.source).length,
+      malDubsShows: malDubbed.size,
+    },
   };
 }
 

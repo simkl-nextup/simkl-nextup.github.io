@@ -151,12 +151,15 @@ test("MAL-Dubs marks older fully dubbed shows as DUB ALL, but not partial dubs",
     throw new Error(`unexpected ${url}`);
   };
   const items = {
-    1: { status: "watching", anime: { title: "Evangelion", ids: { simkl: 1, mal: 30 } } },
+    1: { status: "watching", next_to_watch_info: { episode: 2, date: "1995-10-11T00:00:00Z" }, anime: { title: "Evangelion", ids: { simkl: 1, mal: 30 } } },
     2: { status: "watching", anime: { title: "Partial", ids: { simkl: 2, mal: 500 } } },
     3: { status: "watching", anime: { title: "Undubbed", ids: { simkl: 3, mal: 777 } } },
+    4: { status: "watching", _addonLatestAiredInfo: { episode: 13, date: "2026-10-04T00:00:00Z" }, anime: { title: "Airing simuldub", ids: { simkl: 4, mal: 790 } } },
   };
   const result = await enrichDubInfo(items, null, { token: "x", fetchImpl, now: NOW, gapMs: 0 });
   assert.equal(result.items[1]._addonDub.full, true);
+  assert.equal(result.items[4]._addonDub.full, false, "a show still airing is never 'fully dubbed'");
+  assert.equal(result.items[4]._addonDub.airing, true);
   assert.equal(result.items[2]._addonDub, undefined);
   assert.equal(result.items[3]._addonDub, undefined);
 });

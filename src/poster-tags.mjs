@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-export const TAG_STYLE_VERSION = 4;
+export const TAG_STYLE_VERSION = 5;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
@@ -64,8 +64,9 @@ export function topTabText(badge) {
 export function dubTag(badge) {
   const dub = badge?.dub;
   const episode = finite(dub?.episode);
-  if (!dub || (!episode && !dub.full)) return null;
+  if (!dub || (!episode && !dub.full && !dub.airing)) return null;
   if (dub.full) return { text: "DUB ✓ ALL", state: "ready" };
+  if (!episode && dub.airing) return { text: "DUB AIRING", state: "behind" };
   if (dub.numberingMismatch) return { text: `DUB E${episode}`, state: "behind" };
   const next = badge.status === "plantowatch" ? 1 : finite(badge?.tags?.next);
   if (!next) return { text: `DUB E${episode}`, state: "behind" };

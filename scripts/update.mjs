@@ -290,7 +290,8 @@ export async function refresh({
     if (dub.stats) {
       console.log(`Dub info: ${dub.stats.weeksRead} timetable week(s) read, ${dub.stats.ledgerShows} dubbed show(s) known, `
         + `${dub.stats.matched}/${dub.stats.titles} title(s) matched on AnimeSchedule (${dub.stats.withIds} had an anime list ID), `
-        + `${dub.stats.dubbed} with an English dub.`
+        + `${dub.stats.dubbed} with an English dub (${dub.stats.fromSchedule} with an exact episode from the dub timetable; `
+        + `MAL-Dubs list has ${dub.stats.malDubsShows} show(s)).`
         + (dub.stats.responseShape ? ` AnimeSchedule /anime response fields: ${dub.stats.responseShape}.` : ""));
     } else {
       console.log("ANIMESCHEDULE_TOKEN not set — dub tags are skipped.");

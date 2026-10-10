@@ -20,6 +20,7 @@ test("dub tag compares the dub with the next episode", () => {
   assert.deepEqual(dubTag(watching({ episode: 5 })), { text: "DUB ✓ E5", state: "ready" });
   assert.deepEqual(dubTag(watching({ episode: 4 })), { text: "DUB E4", state: "behind" });
   assert.deepEqual(dubTag(watching({ episode: 12, full: true })), { text: "DUB ✓ ALL", state: "ready" });
+  assert.deepEqual(dubTag(watching({ episode: null, airing: true })), { text: "DUB AIRING", state: "behind" });
   assert.deepEqual(dubTag(watching({ episode: 20, numberingMismatch: true })), { text: "DUB E20", state: "behind" });
   assert.deepEqual(dubTag({ status: "plantowatch", tags: { aired: 12 }, dub: { episode: 1 } }), { text: "DUB ✓ E1", state: "ready" });
 });

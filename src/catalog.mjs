@@ -256,6 +256,7 @@ function isFreshSeasonPremiere(seriesMeta, info, airedAt, now) {
 function dubSentence(dub) {
   if (!dub) return "";
   if (dub.full) return " English dub: fully dubbed.";
+  if (dub.airing && !dub.episode) return " English dub: airing.";
   return dub.episode ? ` English dub: up to episode ${dub.episode}.` : "";
 }
 
