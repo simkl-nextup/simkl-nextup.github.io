@@ -133,6 +133,7 @@ export async function writeSite({
   accountLabel = siteTitle,
   mediaType = "anime",
   posterStyle = "classic",
+  extraStatus = null,
 }) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
@@ -207,6 +208,7 @@ export async function writeSite({
     unifiedMetadataSeasons: unifiedStats.seasons,
     unifiedMetadataEpisodes: unifiedStats.episodes,
     unifiedMetadataTrackingEpisodes: unifiedStats.trackingEpisodes ?? 0,
+    ...(extraStatus ? { animeExtras: extraStatus } : {}),
     skipped,
   }));
 

@@ -68,7 +68,7 @@ test("catalog combines Watching and Plan to Watch titles with aired episodes", (
       episode: "Ep. 5",
       latestEpisode: "Ep. 5",
       nextEpisode: "Ep. 5",
-      tags: { season: null, aired: 5, next: 5 },
+      tags: { season: 1, aired: 5, airedSeason: 1, next: 5, nextSeason: 1 },
     },
     {
       id: "tt3333333",
@@ -76,7 +76,7 @@ test("catalog combines Watching and Plan to Watch titles with aired episodes", (
       episode: "Ep. 4",
       latestEpisode: "Ep. 4",
       nextEpisode: null,
-      tags: { season: null, aired: 4, next: null },
+      tags: { season: 1, aired: 4, airedSeason: 1, next: null, nextSeason: null },
     },
     {
       id: "tt4444444",
@@ -84,7 +84,7 @@ test("catalog combines Watching and Plan to Watch titles with aired episodes", (
       episode: "Ep. 7",
       latestEpisode: "Ep. 7",
       nextEpisode: null,
-      tags: { season: null, aired: 7, next: null },
+      tags: { season: 1, aired: 7, airedSeason: 1, next: null, nextSeason: null },
     },
   ]);
 });

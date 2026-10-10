@@ -50,7 +50,10 @@ test("resolveDub: no dubPremier means no dub; ledger gives exact episode; old fi
 });
 
 function jsonResponse(body, status = 200) {
-  return { ok: status >= 200 && status < 300, status, headers: { get: () => null }, json: async () => body };
+  return { ok: status >= 200 && status < 300, status, headers: { get: () => null }, json: async () => body, text: async () => JSON.stringify(body) };
+}
+function textResponse(text, status) {
+  return { ok: status >= 200 && status < 300, status, headers: { get: () => null }, json: async () => JSON.parse(text), text: async () => text };
 }
 
 test("enrichDubInfo matches by MAL ID, backfills once, and attaches dub state", async () => {
@@ -162,4 +165,50 @@ test("MAL-Dubs marks older fully dubbed shows as DUB ALL, but not partial dubs",
   assert.equal(result.items[4]._addonDub.airing, true);
   assert.equal(result.items[2]._addonDub, undefined);
   assert.equal(result.items[3]._addonDub, undefined);
+});
+
+test("when list results carry no Websites link, a single-ID lookup is accepted only if the name matches", async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes("MAL-Dubs")) return jsonResponse({ dubbed: [], incomplete: [] });
+    if (url.includes("/timetables/dub")) {
+      return jsonResponse([{ route: "mushoku-tensei-3", airType: "dub", episodeNumber: 15, episodeDate: "2026-10-04T00:00:00Z", airingStatus: "aired" }]);
+    }
+    if (url.includes("/anime?mal-ids=111&mal-ids=222")) return jsonResponse({ anime: [{ route: "mushoku-tensei-3", title: "Mushoku Tensei III" }, { route: "x", title: "Other" }] });
+    if (url.includes("/anime?mal-ids=111")) return jsonResponse({ anime: [{ route: "mushoku-tensei-3", title: "Mushoku Tensei III", status: "Ongoing", episodes: 27 }] });
+    if (url.includes("/anime?mal-ids=222")) return jsonResponse({ anime: [{ route: "something-else", title: "Totally Different Show" }] });
+    throw new Error(`unexpected ${url}`);
+  };
+  const items = {
+    1: { status: "watching", anime: { title: "Mushoku Tensei III: Jobless Reincarnation", ids: { simkl: 1, mal: 111 } } },
+    2: { status: "watching", anime: { title: "Sparks of Tomorrow", ids: { simkl: 2, mal: 222 } } },
+  };
+  const result = await enrichDubInfo(items, null, { token: "x", fetchImpl, now: NOW, gapMs: 0 });
+  assert.equal(result.items[1]._addonDub.episode, 15);
+  assert.equal(result.items[2]._addonDub, undefined, "a name mismatch is never accepted");
+  assert.equal(result.stats.singleLookups, 2);
+});
+
+test("multi-ID lookups use mt=any (the API default 'all' returns nothing), and 'Couldn't find' means no results", async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(url);
+    if (url.includes("MAL-Dubs")) return jsonResponse({ dubbed: [], incomplete: [] });
+    if (url.includes("/timetables/dub")) return jsonResponse([]);
+    if (url.includes("/anime?") && !url.includes("mt=any") && url.includes("&mal-ids=")) return textResponse("Couldn't find anime with these parameters.", 404);
+    if (url.includes("/anime?mal-ids=21&mal-ids=999&mt=any")) {
+      // Shape verified against the live API on 2026-10-10.
+      return jsonResponse({ page: 1, totalAmount: 1, anime: [{ id: "urTI", title: "One Piece", route: "one-piece", dubPremier: "2020-11-24T00:00:00Z", dubTime: "2026-08-27T16:00:00Z", status: "Ongoing", episodes: 0, websites: { mal: "myanimelist.net/anime/21" } }] });
+    }
+    if (url.includes("/anime?mal-ids=999")) return textResponse("Couldn't find anime with these parameters.", 200);
+    throw new Error(`unexpected ${url}`);
+  };
+  const items = {
+    1: { status: "watching", anime: { title: "One Piece", ids: { simkl: 1, mal: 21 } } },
+    2: { status: "watching", anime: { title: "Unknown", ids: { simkl: 2, mal: 999 } } },
+  };
+  const result = await enrichDubInfo(items, null, { token: "x", fetchImpl, now: NOW, gapMs: 0 });
+  assert.ok(urls.some((url) => url.includes("mal-ids=21&mal-ids=999&mt=any")));
+  assert.equal(result.items[1]._addonAnimeScheduleRoute, "one-piece");
+  assert.equal(result.items[2]._addonAnimeScheduleRoute, undefined);
+  assert.deepEqual(result.warnings, []);
 });

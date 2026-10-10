@@ -18,6 +18,7 @@ import { mediaFor } from "./state.mjs";
 const API_BASE = "https://animeschedule.net/api/v3";
 const IDS_PER_PAGE = 18;                       // /anime returns at most 18 per page
 const MATCH_TTL_MS = 24 * 60 * 60 * 1000;      // re-check matches daily
+const MATCH_VERSION = 2;                       // bump to discard cached (failed) matches
 const LEDGER_MAX_AGE_MS = 400 * 24 * 60 * 60 * 1000;
 const BACKFILL_WEEKS = 26;
 const REQUEST_GAP_MS = 600;                    // global limit is 120/min; stay well under
@@ -92,10 +93,19 @@ export function createAnimeScheduleClient({ token, fetchImpl = fetch, gapMs = RE
       await sleep(delay);
       return get(pathAndQuery);
     }
+    // "Couldn't find anime with these parameters." comes back as a non-2xx
+    // plain-text reply; that simply means no results.
+    if (response.status === 404) return null;
     if (!response.ok) {
       throw new AnimeScheduleApiError(`AnimeSchedule responded ${response.status} for ${pathAndQuery.split("?")[0]}`, response.status);
     }
-    return response.json();
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      if (/couldn'?t find/i.test(text)) return null;
+      throw new AnimeScheduleApiError(`AnimeSchedule returned non-JSON for ${pathAndQuery.split("?")[0]}: ${text.slice(0, 80)}`, response.status);
+    }
   }
 
   return {
@@ -109,7 +119,9 @@ export function createAnimeScheduleClient({ token, fetchImpl = fetch, gapMs = RE
       const results = [];
       for (let i = 0; i < ids.length; i += IDS_PER_PAGE) {
         const chunk = ids.slice(i, i + IDS_PER_PAGE);
-        const query = chunk.map((id) => `${kind}-ids=${encodeURIComponent(id)}`).join("&");
+        // mt defaults to "all" (a show must match EVERY id → nothing for 2+ ids);
+        // "any" returns each matching show. Verified against the live API.
+        const query = chunk.map((id) => `${kind}-ids=${encodeURIComponent(id)}`).join("&") + (chunk.length > 1 ? "&mt=any" : "");
         const body = await get(`/anime?${query}`);
         onBody?.(body);
         const list = Array.isArray(body) ? body
@@ -198,6 +210,30 @@ function summarizeAnime(anime) {
         }
       : null,
   };
+}
+
+function normalizeName(value) {
+  return String(value ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function titlesFor(item) {
+  const media = mediaFor(item);
+  return [media?.title, media?.en_title, item?._addonTvdbMeta?.name, item?._addonVisuals?.tmdbName].filter(Boolean);
+}
+
+// Loose name check used only to confirm a single-result lookup.
+export function namesMatch(anime, titles) {
+  const names = [anime?.title, anime?.names?.english, anime?.names?.romaji, anime?.names?.native,
+    ...(Array.isArray(anime?.names?.synonyms) ? anime.names.synonyms : [])].map(normalizeName).filter(Boolean);
+  for (const title of titles.map(normalizeName).filter(Boolean)) {
+    for (const name of names) {
+      if (name === title || name.includes(title) || title.includes(name)) return true;
+      const a = new Set(title.split(" ")), b = new Set(name.split(" "));
+      const common = [...a].filter((word) => b.has(word)).length;
+      if (common / Math.min(a.size, b.size) >= 0.6) return true;
+    }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,8 +332,11 @@ export async function enrichDubInfo(items, dubState, {
   let responseShape = null;
   const stale = (key) => {
     const cached = state.matches[key];
-    return !cached || now - new Date(cached.checkedAt) > MATCH_TTL_MS;
+    return !cached || cached.v !== MATCH_VERSION || now - new Date(cached.checkedAt) > MATCH_TTL_MS;
   };
+  let sampleAnime = null;
+  let singleLookups = 0;
+  const siteKeyFor = { mal: "mal", anilist: "aniList", anidb: "anidb" };
   for (const kind of ["mal", "anilist", "anidb"]) {
     const wanted = new Map();
     for (const [, item] of targets) {
@@ -307,24 +346,40 @@ export async function enrichDubInfo(items, dubState, {
       const stronger = ["mal", "anilist", "anidb"].slice(0, ["mal", "anilist", "anidb"].indexOf(kind));
       if (stronger.some((k) => ids[k] && state.matches[`${k}:${ids[k]}`]?.route)) continue;
       const key = `${kind}:${ids[kind]}`;
-      if (stale(key)) wanted.set(ids[kind], key);
+      if (stale(key)) wanted.set(ids[kind], { key, titles: titlesFor(item) });
     }
     if (!wanted.size) continue;
+    const siteKey = siteKeyFor[kind];
+    const remember = (key, anime) => {
+      state.matches[key] = anime
+        ? { ...summarizeAnime(anime), checkedAt: now.toISOString(), v: MATCH_VERSION }
+        : { route: null, checkedAt: now.toISOString(), v: MATCH_VERSION };
+    };
     try {
+      // Batch lookup (18 IDs per request), matched back by the Websites link.
       const found = await client.animeByIds(kind, [...wanted.keys()], (body) => {
         responseShape ??= Array.isArray(body) ? "array" : Object.keys(body ?? {}).join(",");
       });
-      const siteKey = kind === "mal" ? "mal" : kind === "anilist" ? "aniList" : "anidb";
+      if (!sampleAnime && found[0]) {
+        sampleAnime = { route: found[0].route ?? null, fields: Object.keys(found[0]).join(","), websites: found[0].websites ?? null };
+      }
       const byId = new Map();
       for (const anime of found) {
         const id = websiteId(anime, siteKey);
         if (id && anime?.route) byId.set(id, anime);
       }
-      for (const [id, key] of wanted) {
-        const anime = byId.get(id);
-        state.matches[key] = anime
-          ? { ...summarizeAnime(anime), checkedAt: now.toISOString() }
-          : { route: null, checkedAt: now.toISOString() };
+      // IDs the batch could not map (e.g. list results without Websites):
+      // look them up one at a time and accept a single result only when its
+      // name matches the Simkl/TVDB title.
+      for (const [id, { key, titles }] of wanted) {
+        let anime = byId.get(id) ?? null;
+        if (!anime) {
+          singleLookups += 1;
+          const single = await client.animeByIds(kind, [id]);
+          anime = single.find((candidate) => websiteId(candidate, siteKey) === id)
+            ?? (single.length === 1 && single[0]?.route && namesMatch(single[0], titles) ? single[0] : null);
+        }
+        remember(key, anime);
       }
     } catch (error) {
       if (error.status === 401 || error.status === 403) throw error;
@@ -373,6 +428,9 @@ export async function enrichDubInfo(items, dubState, {
     stats: {
       weeksRead, ledgerShows: Object.keys(state.ledger).length, matched, dubbed, titles: targets.length, withIds, responseShape,
       fromSchedule: targets.filter(([, item]) => item._addonDub && !item._addonDub.source).length,
+      singleLookups,
+      sampleAnime,
+      warnings: warnings.slice(0, 5).map((warning) => warning.message),
       malDubsShows: malDubbed.size,
     },
   };

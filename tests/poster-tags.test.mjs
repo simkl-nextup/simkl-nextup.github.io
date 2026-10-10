@@ -4,13 +4,13 @@ import sharp from "sharp";
 import { composeTaggedPoster, contrast, DUB_FILLS, dubTag, inkFor, STATUS_TAGS, topTabText } from "../src/poster-tags.mjs";
 import { buildCatalog } from "../src/catalog.mjs";
 
-test("top tab wording per status", () => {
-  assert.equal(topTabText({ status: "watching", tags: { aired: 13, next: 2 } }), "E13 Aired · Next E2");
-  assert.equal(topTabText({ status: "watching", tags: { aired: 9, next: 9 } }), "Next E9");
-  assert.equal(topTabText({ status: "completed", tags: { season: 3, aired: 1, next: 1 } }), "S3 · Next E1");
-  assert.equal(topTabText({ status: "completed", tags: { aired: 1, next: 1 } }), "Next E1");
-  assert.equal(topTabText({ status: "completed", tags: { season: 1, aired: 15, next: 15 } }), "Next E15");
-  assert.equal(topTabText({ status: "plantowatch", tags: { aired: 12, next: null } }), "E12 Aired");
+test("top tab always shows the season", () => {
+  assert.equal(topTabText({ status: "watching", tags: { aired: 13, airedSeason: 1, next: 2, nextSeason: 1 } }), "S1 · E13 Aired · Next E2");
+  assert.equal(topTabText({ status: "watching", tags: { aired: 1, airedSeason: 2, next: 10, nextSeason: 1 } }), "S2E1 Aired · Next S1E10");
+  assert.equal(topTabText({ status: "watching", tags: { aired: 9, airedSeason: 4, next: 9, nextSeason: 4 } }), "S4 · Next E9");
+  assert.equal(topTabText({ status: "completed", tags: { aired: 15, airedSeason: 3, next: 15, nextSeason: 3 } }), "S3 · Next E15");
+  assert.equal(topTabText({ status: "plantowatch", tags: { aired: 12, airedSeason: 1 } }), "S1 · E12 Aired");
+  assert.equal(topTabText({ status: "plantowatch", tags: { aired: 12 } }), "S1 · E12 Aired");
 });
 
 test("dub tag compares the dub with the next episode", () => {
@@ -63,7 +63,7 @@ test("catalog badges carry season/episode numbers, dub and MAL score; descriptio
     },
   };
   const { catalog, posterBadges } = buildCatalog(items, { now: "2026-08-02T00:00:00Z" });
-  assert.deepEqual(posterBadges[0].tags, { season: null, aired: 13, next: 2 });
+  assert.deepEqual(posterBadges[0].tags, { season: 1, aired: 13, airedSeason: 1, next: 2, nextSeason: 1 });
   assert.equal(posterBadges[0].dub.episode, 9);
   assert.equal(posterBadges[0].malScore, "7.9");
   assert.match(catalog.metas[0].description, /English dub: up to episode 9\. Data from Simkl\.$/);
@@ -116,4 +116,18 @@ test("TheTVDB ClearLogo is picked (English first) and used when TMDB has no logo
   } };
   const { posterBadges } = buildCatalog(items, { now: "2026-08-02T00:00:00Z" });
   assert.equal(posterBadges[0].logo, "https://artworks.thetvdb.com/banners/logo-en.png");
+});
+
+test("season numbers follow TheTVDB's unified seasons (as in Nuvio's episode list)", () => {
+  const videos = [];
+  for (let s = 1; s <= 3; s += 1) for (let e = 1; e <= 16; e += 1) videos.push({ id: `tt1:${s}:${e}`, season: s, episode: e, released: "2026-01-01T00:00:00Z" });
+  const items = { 1: {
+    status: "watching",
+    next_to_watch_info: { episode: 15, season: 1, date: "2026-10-04T00:00:00Z" },
+    _addonLatestAiredInfo: { episode: 16, season: 1, date: "2026-10-09T00:00:00Z" },
+    _addonTvdbMeta: { parentId: "simkl-tvdb-unified:1", videos, matchedSeasonNumber: 3, matchedEpisodeOffset: 0 },
+    anime: { title: "Mushoku Tensei III", ids: { simkl: 1, imdb: "tt1" } },
+  } };
+  const { posterBadges } = buildCatalog(items, { now: "2026-10-10T00:00:00Z" });
+  assert.equal(topTabText(posterBadges[0]), "S3 · E16 Aired · Next E15");
 });

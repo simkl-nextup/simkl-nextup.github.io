@@ -260,18 +260,57 @@ function dubSentence(dub) {
   return dub.episode ? ` English dub: up to episode ${dub.episode}.` : "";
 }
 
-// Episode numbers for the "tags" poster: latest aired, next to watch, season.
-function posterTagNumbers({ status, info, latestAiredInfo }) {
-  const season = finiteNumber(info?.season);
-  const infoEpisode = finiteNumber(info?.episode);
-  const latestSeason = finiteNumber(latestAiredInfo?.season);
-  const sameSeason = season === null || latestSeason === null || season === latestSeason;
-  const latest = sameSeason ? finiteNumber(latestAiredInfo?.episode) : null;
+// Season from an anime title: "Season 3", "3rd Season", "Part 2" is NOT a season,
+// trailing roman numerals ("Mushoku Tensei III").
+const ROMAN = { ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+function seasonFromTitle(title) {
+  const text = String(title ?? "");
+  const match = text.match(/\bseason\s*(\d+)/i) || text.match(/\b(\d+)(?:st|nd|rd|th)\s+season\b/i);
+  if (match) return Number(match[1]);
+  const roman = text.replace(/[:\-–].*$/, "").trim().match(/\b(ii|iii|iv|v|vi|vii|viii|ix|x)$/i);
+  return roman ? ROMAN[roman[1].toLowerCase()] : null;
+}
+
+// Map a Simkl episode onto the TheTVDB season/episode that Nuvio's detail page
+// lists, so the poster and the episode list always agree.
+function tvdbPosition(seriesMeta, info, { allowMatchedVideo = false } = {}) {
+  if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
+  // Simkl numbers each anime entry as its own "season 1"; when TheTVDB has
+  // matched this entry to a unified season, that season wins.
+  const lookup = finiteNumber(seriesMeta.matchedSeasonNumber) !== null ? { ...info, season: undefined } : info;
+  const id = allowMatchedVideo
+    ? findDefaultVideoId(seriesMeta, lookup)
+    : findDefaultVideoId({ ...seriesMeta, matchedVideoId: null }, lookup);
+  const video = id ? seriesMeta.videos.find((candidate) => candidate.id === id) : null;
+  return video && video.season > 0 ? { season: video.season, episode: video.episode } : null;
+}
+
+// Season/episode numbers for the "tags" poster: latest aired and next to watch.
+function posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title }) {
+  const fallbackSeason = (value) => {
+    const simkl = finiteNumber(value?.season);
+    return (simkl && simkl > 1 ? simkl : null) ?? seasonFromTitle(title) ?? simkl ?? 1;
+  };
+  const position = (value, allowMatchedVideo) => {
+    if (!value || !Number.isFinite(Number(value.episode))) return null;
+    return tvdbPosition(seriesMeta, value, { allowMatchedVideo })
+      ?? { season: fallbackSeason(value), episode: Number(value.episode) };
+  };
+  const later = (a, b) => (!a ? b : !b ? a : (a.season > b.season || (a.season === b.season && a.episode >= b.episode)) ? a : b);
+
   if (status === "plantowatch") {
-    return { season, aired: latest ?? infoEpisode, next: null };
+    const aired = position(latestAiredInfo ?? info, false);
+    return { season: aired?.season ?? null, aired: aired?.episode ?? null, airedSeason: aired?.season ?? null, next: null, nextSeason: null };
   }
-  const aired = [latest, infoEpisode].filter((value) => value !== null);
-  return { season, aired: aired.length ? Math.max(...aired) : null, next: infoEpisode };
+  const next = position(info, true);
+  const aired = later(position(latestAiredInfo, false), next);
+  return {
+    season: next?.season ?? null,
+    aired: aired?.episode ?? null,
+    airedSeason: aired?.season ?? null,
+    next: next?.episode ?? null,
+    nextSeason: next?.season ?? null,
+  };
 }
 
 function buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo }) {
@@ -422,7 +461,7 @@ ${seriesMeta.description}` : description,
         episode,
         latestEpisode,
         nextEpisode,
-        tags: posterTagNumbers({ status, info, latestAiredInfo }),
+        tags: posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title: media.title }),
         ...(item._addonDub ? { dub: item._addonDub } : {}),
         ...(item._addonMalScore ? { malScore: item._addonMalScore } : {}),
         // Official title logo: TMDB first, then TheTVDB's ClearLogo.

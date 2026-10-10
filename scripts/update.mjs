@@ -265,6 +265,8 @@ export async function refresh({
 
   // English dub info + MAL scores (anime only, titles shown in the row only).
   const shownInRow = (item) => isCatalogCandidate(item, now);
+  // Public, credential-free diagnostics written to status.json.
+  let extraStatus = null;
   if (normalizedMediaType === "anime") {
     let fribbFilled = 0;
     try {
@@ -306,7 +308,26 @@ export async function refresh({
     state.items = mal.items;
     state.malScores = mal.cache;
     if (mal.warnings.length) console.warn(`MAL score skipped for ${mal.warnings.length} title(s): ${mal.warnings[0].message}`);
-    console.log(`MAL scores: ${Object.values(state.items).filter((item) => shownInRow(item) && item._addonMalScore).length} title(s) scored (${mal.looked} fetched this run).`);
+    const scored = Object.values(state.items).filter((item) => shownInRow(item) && item._addonMalScore).length;
+    console.log(`MAL scores: ${scored} title(s) scored (${mal.looked} fetched this run).`);
+    extraStatus = {
+      titles: shown.length,
+      withMalId: shown.filter((item) => mediaFor(item)?.ids?.mal).length,
+      malIdsFromFribb: fribbFilled,
+      malIdsFromSimkl: ids.looked,
+      dub: dub.stats ? {
+        timetableWeeksRead: dub.stats.weeksRead,
+        dubbedShowsKnown: dub.stats.ledgerShows,
+        matchedOnAnimeSchedule: dub.stats.matched,
+        withEnglishDub: dub.stats.dubbed,
+        withExactEpisode: dub.stats.fromSchedule,
+        singleLookups: dub.stats.singleLookups,
+        animeResponseFields: dub.stats.responseShape,
+        sampleAnime: dub.stats.sampleAnime,
+        warnings: dub.stats.warnings,
+      } : "ANIMESCHEDULE_TOKEN not set",
+      malScores: { scored, fetchedThisRun: mal.looked, errors: mal.warnings.slice(0, 3).map((warning) => warning.message) },
+    };
   }
 
   state.lastSuccessfulRefresh = new Date(now).toISOString();
@@ -338,6 +359,7 @@ export async function refresh({
     ...(accountLabel ? { accountLabel } : {}),
     mediaType: normalizedMediaType,
     posterStyle: resolvedPosterStyle,
+    extraStatus,
   });
   for (const warning of site.posterBadgeWarnings) {
     console.warn(`Poster badge skipped for ${warning.name ?? warning.id ?? "unknown"}: ${warning.message}`);

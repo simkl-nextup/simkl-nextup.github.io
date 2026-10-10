@@ -6,7 +6,8 @@ import { mediaFor } from "./state.mjs";
 
 const JIKAN_BASE = "https://api.jikan.moe/v4";
 const SUCCESS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const FAILURE_TTL_MS = 12 * 60 * 60 * 1000;
+const FAILURE_TTL_MS = 60 * 60 * 1000;
+const CACHE_VERSION = 2;
 const REQUEST_GAP_MS = 1100;
 const MAX_LOOKUPS_PER_RUN = 40;
 
@@ -18,7 +19,7 @@ function malIdFor(item) {
 }
 
 function fresh(cached, now) {
-  if (!cached?.checkedAt) return false;
+  if (!cached?.checkedAt || cached.v !== CACHE_VERSION) return false;
   const age = now - new Date(cached.checkedAt);
   return age < (cached.score == null ? FAILURE_TTL_MS : SUCCESS_TTL_MS);
 }
@@ -54,17 +55,17 @@ export async function enrichMalScores(items, cache, {
       last = Date.now();
       looked += 1;
       try {
-        let response = await fetchImpl(`${JIKAN_BASE}/anime/${malId}`, { headers: { Accept: "application/json" } });
+        let response = await fetchImpl(`${JIKAN_BASE}/anime/${malId}`, { headers: { Accept: "application/json", "User-Agent": "simkl-nextup-addon/1.10 (+https://github.com/simkl-nextup/simkl-nextup.github.io)" } });
         if (response.status === 429) {
           await sleep(2500);
-          response = await fetchImpl(`${JIKAN_BASE}/anime/${malId}`, { headers: { Accept: "application/json" } });
+          response = await fetchImpl(`${JIKAN_BASE}/anime/${malId}`, { headers: { Accept: "application/json", "User-Agent": "simkl-nextup-addon/1.10 (+https://github.com/simkl-nextup/simkl-nextup.github.io)" } });
         }
-        if (!response.ok) throw new Error(`Jikan responded ${response.status}`);
+        if (!response.ok) throw new Error(`Jikan responded ${response.status} for MAL ${malId}`);
         const body = await response.json();
-        nextCache[key] = { score: formatMalScore(body?.data?.score), checkedAt: now.toISOString() };
+        nextCache[key] = { score: formatMalScore(body?.data?.score), checkedAt: now.toISOString(), v: CACHE_VERSION };
       } catch (error) {
         warnings.push({ malId, message: error.message });
-        nextCache[key] = { score: nextCache[key]?.score ?? null, checkedAt: now.toISOString() };
+        nextCache[key] = { score: nextCache[key]?.score ?? null, checkedAt: now.toISOString(), v: CACHE_VERSION };
       }
     }
     const score = nextCache[key]?.score ?? null;

@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-export const TAG_STYLE_VERSION = 5;
+export const TAG_STYLE_VERSION = 6;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
@@ -44,21 +44,25 @@ function finite(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+// Always shows the season (TheTVDB numbering, as in Nuvio's episode list):
+//   "S3 · E16 Aired · Next E15"   same season, behind
+//   "S2E1 Aired · Next S1E10"     different seasons
+//   "S3 · Next E15"               caught up to the latest release
+//   "S1 · E12 Aired"              Plan to Watch
 export function topTabText(badge) {
   const tags = badge?.tags ?? {};
   const aired = finite(tags.aired);
   const next = finite(tags.next);
-  const season = finite(tags.season);
-  if (badge?.status === "completed") {
-    if (!next) return aired ? `E${aired} Aired` : null;
-    // Simkl splits anime into one entry per season, so "S1" carries no
-    // information; only show a season number when it is 2 or higher.
-    return season && season > 1 ? `S${season} · Next E${next}` : `Next E${next}`;
+  const airedSeason = finite(tags.airedSeason) ?? finite(tags.season) ?? 1;
+  const nextSeason = finite(tags.nextSeason) ?? finite(tags.season) ?? 1;
+  if (badge?.status === "plantowatch" || !next) return aired ? `S${airedSeason} · E${aired} Aired` : null;
+  const ahead = aired && (airedSeason > nextSeason || (airedSeason === nextSeason && aired > next));
+  if (badge?.status !== "completed" && ahead) {
+    return airedSeason === nextSeason
+      ? `S${nextSeason} · E${aired} Aired · Next E${next}`
+      : `S${airedSeason}E${aired} Aired · Next S${nextSeason}E${next}`;
   }
-  if (badge?.status === "plantowatch") return aired ? `E${aired} Aired` : null;
-  if (aired && next && aired > next) return `E${aired} Aired · Next E${next}`;
-  if (next) return `Next E${next}`;
-  return aired ? `E${aired} Aired` : null;
+  return `S${nextSeason} · Next E${next}`;
 }
 
 export function dubTag(badge) {
