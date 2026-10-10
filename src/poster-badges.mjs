@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { composeTaggedPoster, taggedSignatureParts } from "./poster-tags.mjs";
 
 const POSTER_WIDTH = 500;
 const POSTER_HEIGHT = 750;
@@ -333,9 +334,10 @@ async function prepareTitleLogo(buffer) {
   };
 }
 
-function posterFileName(meta, badge) {
+function posterFileName(meta, badge, style = "classic") {
   const signature = JSON.stringify({
     version: POSTER_BADGE_STYLE_VERSION,
+    ...(style === "tags" ? { style, ...taggedSignatureParts(badge) } : {}),
     id: meta.id,
     poster: meta.poster,
     name: badge.name || meta.name,
@@ -354,6 +356,7 @@ export async function decorateCatalogPosters(catalog, badges, {
   enabled = true,
   fetchImpl = fetch,
   concurrency = 4,
+  style = "classic",
 } = {}) {
   const next = structuredClone(catalog ?? { metas: [] });
   const warnings = [];
@@ -377,6 +380,20 @@ export async function decorateCatalogPosters(catalog, badges, {
 
       try {
         const originalPoster = await downloadImage(meta.poster, fetchImpl);
+
+        if (style === "tags") {
+          let logo = null;
+          if (badge.logo) {
+            try { logo = await downloadImage(badge.logo, fetchImpl); } catch { logo = null; }
+          }
+          const filename = posterFileName(meta, badge, style);
+          const output = await composeTaggedPoster({ poster: originalPoster, logo, name: badge.name || meta.name, badge });
+          await sharp(output).toFile(path.join(posterDirectory, filename));
+          meta.poster = `${baseUrl.replace(/\/$/, "")}/posters/${filename}`;
+          generated += 1;
+          continue;
+        }
+
         let titleComposite = { input: buildFallbackTitleSvg(badge.name || meta.name) };
         if (badge.logo) {
           try {

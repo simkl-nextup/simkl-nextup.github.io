@@ -122,6 +122,7 @@ const secrets = [
   process.env.MDBLIST_API_KEY,
   process.env.TVDB_API_KEY,
   process.env.TVDB_SUBSCRIBER_PIN,
+  process.env.ANIMESCHEDULE_TOKEN,
 ].filter(Boolean);
 if (secrets.length) {
   async function scan(dir) {

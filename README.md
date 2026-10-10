@@ -89,6 +89,12 @@ Optional TheTVDB repository variables:
 | `TVDB_LANGUAGE` | Leave blank for English (`eng`) |
 | `TVDB_SEASON_TYPE` | Leave blank for the series default order |
 
+Optional English-dub tags (anime row only):
+
+| Secret | Value |
+|---|---|
+| `ANIMESCHEDULE_TOKEN` | An AnimeSchedule.net API application token (the same token as the Recently Dubbed addon works) |
+
 Optional repository variable:
 
 | Variable | Value |
@@ -237,6 +243,19 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
+
+## Updating to 1.10.0 — BetterPosters-style tags and English-dub info (anime row only)
+
+The anime row's posters are redesigned; the account-2 TV row keeps its classic badges.
+
+- **Top tab** — episode info in the same tinted-tab style as the Recently Dubbed addon: `E13 Aired · Next E2` (Watching), `S3 · Next E1` (New Season), `E12 Aired` (Plan to Watch). Its colour is taken from each poster.
+- **Left dub tag** — English-dub state from AnimeSchedule.net: blue `DUB ✓ E9` when the dub has reached your next episode, grey `DUB E9` when it is behind, `DUB ✓ ALL` when the season is fully dubbed. No tag when a show has no English dub.
+- **Bottom band** — BetterPosters-style blur with the status tag (green New Episode, orange Plan to Watch, purple New Season) and the MyAnimeList score from Jikan.
+- Text uses the bundled Inter ExtraBold font (`assets/fonts`, SIL Open Font License) with a soft outline and shadow, so posters render identically on GitHub's runners.
+
+Dub data: titles are matched to AnimeSchedule by MyAnimeList ID (then AniList / AniDB) — never by title search. The first run reads 26 weeks of the dub timetable; later runs read this week and last week. Older, finished dubs are recognised from the anime's dub premiere, episode count and batch-release overrides. Matches, the dub ledger and MAL scores are cached in the private state, so the state version does not change and no clean rebuild is triggered. Each card's details page gains a "View on AnimeSchedule" link, as AnimeSchedule's API terms request.
+
+Add the `ANIMESCHEDULE_TOKEN` secret, replace the files, and run the refresh workflow. Without the secret the posters still use the new design, just without dub tags. Set `POSTER_STYLE=classic` on the anime refresh step to return to the previous badges.
 
 ## Updating to 1.9.3 — Completed titles no longer climb to "latest aired"
 

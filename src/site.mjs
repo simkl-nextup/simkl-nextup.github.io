@@ -132,6 +132,7 @@ export async function writeSite({
   setupSecretName = "SIMKL_ACCESS_TOKEN",
   accountLabel = siteTitle,
   mediaType = "anime",
+  posterStyle = "classic",
 }) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
@@ -142,6 +143,7 @@ export async function writeSite({
     baseUrl,
     enabled: posterBadgesEnabled,
     fetchImpl,
+    style: posterStyle,
   });
   const publishedCatalog = posterResult.catalog;
 

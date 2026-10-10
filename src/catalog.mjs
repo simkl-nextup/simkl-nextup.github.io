@@ -253,6 +253,26 @@ function isFreshSeasonPremiere(seriesMeta, info, airedAt, now) {
   return Boolean(position && position.episode === 1 && position.season > 1);
 }
 
+function dubSentence(dub) {
+  if (!dub) return "";
+  if (dub.full) return " English dub: fully dubbed.";
+  return dub.episode ? ` English dub: up to episode ${dub.episode}.` : "";
+}
+
+// Episode numbers for the "tags" poster: latest aired, next to watch, season.
+function posterTagNumbers({ status, info, latestAiredInfo }) {
+  const season = finiteNumber(info?.season);
+  const infoEpisode = finiteNumber(info?.episode);
+  const latestSeason = finiteNumber(latestAiredInfo?.season);
+  const sameSeason = season === null || latestSeason === null || season === latestSeason;
+  const latest = sameSeason ? finiteNumber(latestAiredInfo?.episode) : null;
+  if (status === "plantowatch") {
+    return { season, aired: latest ?? infoEpisode, next: null };
+  }
+  const aired = [latest, infoEpisode].filter((value) => value !== null);
+  return { season, aired: aired.length ? Math.max(...aired) : null, next: infoEpisode };
+}
+
 function buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo }) {
   if (status === "plantowatch") {
     return `From your Plan to Watch list: latest release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
@@ -276,6 +296,14 @@ function buildLinks(item, visuals, seriesMeta) {
       name: "View on TheTVDB",
       category: "tvdb",
       url: `https://thetvdb.com/series/${seriesMeta.tvdbId}`,
+    });
+  }
+  if (item?._addonAnimeScheduleRoute) {
+    // AnimeSchedule's API terms ask for a visible credit/link.
+    links.push({
+      name: "View on AnimeSchedule",
+      category: "animeschedule",
+      url: `https://animeschedule.net/anime/${encodeURIComponent(item._addonAnimeScheduleRoute)}`,
     });
   }
   if (visuals.tmdbId) {
@@ -326,7 +354,8 @@ export function buildCatalog(items, options = {}) {
     const status = item.status === "watching" && isFreshSeasonPremiere(seriesMeta, info, airedAt, now)
       ? "completed"
       : effectiveStatus(item);
-    const description = buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo });
+    const description = buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo })
+      .replace(/ Data from Simkl\.$/, `${dubSentence(item._addonDub)} Data from Simkl.`);
     const name = seriesMeta?.name || media.title;
     const poster = visuals.poster || seriesMeta?.poster || posterUrl(media.poster);
     const background = seriesMeta?.background || visuals.background || fanartUrl(media.fanart);
@@ -392,6 +421,9 @@ ${seriesMeta.description}` : description,
         episode,
         latestEpisode,
         nextEpisode,
+        tags: posterTagNumbers({ status, info, latestAiredInfo }),
+        ...(item._addonDub ? { dub: item._addonDub } : {}),
+        ...(item._addonMalScore ? { malScore: item._addonMalScore } : {}),
         ...(visuals.logo ? { logo: visuals.logo } : {}),
       },
       meta: preview,

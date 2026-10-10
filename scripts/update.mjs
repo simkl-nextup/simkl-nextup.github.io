@@ -16,6 +16,8 @@ import {
 } from "../src/state.mjs";
 import { appendPublicPath, deriveBaseUrl, writeSite } from "../src/site.mjs";
 import { enrichTvdbMetadata, TvdbApiError } from "../src/tvdb.mjs";
+import { AnimeScheduleApiError, enrichDubInfo } from "../src/animeschedule.mjs";
+import { enrichMalScores } from "../src/mal-score.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const statePath = path.join(root, "state", "simkl-state.json");
@@ -140,8 +142,14 @@ export async function refresh({
   setupSecretName = process.env.SETUP_SECRET_NAME,
   accountLabel = process.env.ACCOUNT_LABEL,
   mediaType = process.env.MEDIA_TYPE || "anime",
+  animeScheduleToken = process.env.ANIMESCHEDULE_TOKEN,
+  posterStyle = process.env.POSTER_STYLE,
+  malScoresEnabled = process.env.MAL_SCORES !== "false",
 } = {}) {
   const normalizedMediaType = normalizeMediaType(mediaType);
+  // The anime row uses the BetterPosters-style tags; the TV row keeps the
+  // classic badges unless POSTER_STYLE says otherwise.
+  const resolvedPosterStyle = posterStyle || (normalizedMediaType === "anime" ? "tags" : "classic");
   const client = createSimklClient({ clientId, accessToken, mediaType: normalizedMediaType, fetchImpl });
   let state = await loadState(stateFile, normalizedMediaType);
 
@@ -220,6 +228,37 @@ export async function refresh({
   for (const warning of tvdb.warnings) {
     console.warn(`TVDB metadata skipped for Simkl ${warning.simklId ?? "unknown"}: ${warning.message}`);
   }
+
+  // English dub info + MAL scores (anime only, titles shown in the row only).
+  const shownInRow = (item) => isCatalogCandidate(item, now);
+  if (normalizedMediaType === "anime") {
+    const dub = await enrichDubInfo(state.items, state.dub, {
+      token: animeScheduleToken,
+      fetchImpl,
+      now: new Date(now),
+      itemFilter: shownInRow,
+    });
+    state.items = dub.items;
+    state.dub = dub.dubState;
+    for (const warning of dub.warnings) console.warn(`Dub info: ${warning.message}`);
+    if (dub.stats) {
+      console.log(`Dub info: ${dub.stats.weeksRead} timetable week(s) read, ${dub.stats.ledgerShows} dubbed show(s) known, `
+        + `${dub.stats.matched}/${dub.stats.titles} title(s) matched on AnimeSchedule, ${dub.stats.dubbed} with an English dub.`);
+    } else {
+      console.log("ANIMESCHEDULE_TOKEN not set — dub tags are skipped.");
+    }
+
+    const mal = await enrichMalScores(state.items, state.malScores, {
+      enabled: malScoresEnabled && posterBadgesEnabled && resolvedPosterStyle === "tags",
+      fetchImpl,
+      now: new Date(now),
+      itemFilter: shownInRow,
+    });
+    state.items = mal.items;
+    state.malScores = mal.cache;
+    if (mal.warnings.length) console.warn(`MAL score skipped for ${mal.warnings.length} title(s).`);
+  }
+
   state.lastSuccessfulRefresh = new Date(now).toISOString();
 
   const { catalog, metadata: detailMetadata, posterBadges, skipped, sourceCounts, unifiedStats } = buildCatalog(state.items, { now, maxItems });
@@ -248,6 +287,7 @@ export async function refresh({
     ...(setupSecretName ? { setupSecretName } : {}),
     ...(accountLabel ? { accountLabel } : {}),
     mediaType: normalizedMediaType,
+    posterStyle: resolvedPosterStyle,
   });
   for (const warning of site.posterBadgeWarnings) {
     console.warn(`Poster badge skipped for ${warning.name ?? warning.id ?? "unknown"}: ${warning.message}`);
@@ -292,7 +332,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } catch (error) {
     if (error instanceof SimklApiError && error.status === 401) {
       console.error(`Simkl authorization was revoked or expired. Run the authorization step again and replace ${accessTokenSecretName}.`);
-    } else if ((error instanceof MetadataApiError || error instanceof TvdbApiError) && (error.status === 401 || error.status === 403)) {
+    } else if ((error instanceof MetadataApiError || error instanceof TvdbApiError || error instanceof AnimeScheduleApiError) && (error.status === 401 || error.status === 403)) {
       console.error(`${error.provider} rejected its configured API credential. Replace or rotate the corresponding GitHub secret.`);
     } else {
       console.error(error.stack || error.message);
