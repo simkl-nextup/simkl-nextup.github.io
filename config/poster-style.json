@@ -1,7 +1,7 @@
 {
   "anime": {
     "look": "tags",
-    "topTab": "chip",
+    "topTab": "single",
     "size": "large",
     "outlineOnWhiteText": true,
     "outlineOnDarkText": false,
@@ -11,8 +11,8 @@
     "ratingShadow": true
   },
   "tv": {
-    "look": "classic",
-    "topTab": "chip",
+    "look": "tags",
+    "topTab": "single",
     "size": "large",
     "outlineOnWhiteText": true,
     "outlineOnDarkText": false,
