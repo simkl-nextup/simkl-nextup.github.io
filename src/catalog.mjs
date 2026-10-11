@@ -287,18 +287,32 @@ function tvdbPosition(seriesMeta, info, { allowMatchedVideo = false } = {}) {
 }
 
 // Dub episode → the same TheTVDB season/episode numbering as the top tab.
-// Tries the season-local match first, then TheTVDB's absolute numbering
-// (long runners such as One Piece), else keeps the number in the row's season.
+// The season shown always belongs to the DUB, never to your own progress:
+//   - a later season's dub keeps the season from its AnimeSchedule page;
+//   - a fully dubbed entry shows this entry's own season;
+//   - a number we could not place keeps this entry's season;
+//   - no episode number at all → no season (the tag says "DUB ONGOING").
 function dubDisplay(dub, { seriesMeta, info, tags }) {
   if (!dub) return null;
-  const fallbackSeason = tags?.nextSeason ?? tags?.airedSeason ?? tags?.season ?? 1;
+  const entrySeason = finiteNumber(seriesMeta?.matchedSeasonNumber)
+    ?? tags?.nextSeason ?? tags?.airedSeason ?? tags?.season ?? 1;
   const episode = finiteNumber(dub.episode);
-  if (!episode) return { ...dub, season: fallbackSeason };
-  const local = tvdbPosition(seriesMeta, { episode, season: info?.season });
-  if (local) return { ...dub, season: local.season, episode: local.episode };
-  const absolute = (seriesMeta?.videos ?? []).filter((video) => video.season > 0 && Number(video.absoluteNumber) === episode);
-  if (absolute.length === 1) return { ...dub, season: absolute[0].season, episode: absolute[0].episode };
-  return { ...dub, season: fallbackSeason };
+  if (dub.laterSeason) return { ...dub, season: finiteNumber(dub.season) ?? entrySeason, episode };
+  if (dub.full) return { ...dub, season: entrySeason };
+  if (!episode) return { ...dub, season: null };
+  const videos = (seriesMeta?.videos ?? []).filter((video) => video.season > 0);
+  const byAbsolute = () => {
+    const found = videos.filter((video) => Number(video.absoluteNumber) === episode);
+    return found.length === 1 ? { season: found[0].season, episode: found[0].episode } : null;
+  };
+  // Long runners (One Piece) count dub episodes across the whole show: a number
+  // bigger than any single season can only be an absolute episode number.
+  const longestSeason = videos.reduce((max, video) => Math.max(max, Number(video.episode) || 0), 0);
+  const position = (longestSeason && episode > longestSeason ? byAbsolute() : null)
+    ?? tvdbPosition(seriesMeta, { episode, season: info?.season })
+    ?? byAbsolute();
+  if (position) return { ...dub, season: position.season, episode: position.episode };
+  return { ...dub, season: entrySeason };
 }
 
 // Season/episode numbers for the "tags" poster: latest aired and next to watch.
@@ -492,6 +506,7 @@ ${seriesMeta.description}` : description,
         tags,
         ...(item._addonDub ? { dub: dubDisplay(item._addonDub, { seriesMeta, info, tags }) } : {}),
         ...(item._addonMalScore ? { malScore: item._addonMalScore } : {}),
+        ...(media.ids?.mal ? { mal: Number(media.ids.mal) } : {}),
         ...(posterScore(item, visuals, options) ? { score: posterScore(item, visuals, options) } : {}),
         // Official title logo: TMDB first, then TheTVDB's ClearLogo.
         ...((visuals.logo || seriesMeta?.logo) ? { logo: visuals.logo || seriesMeta.logo } : {}),

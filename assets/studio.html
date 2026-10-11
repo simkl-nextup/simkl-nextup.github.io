@@ -63,6 +63,15 @@
   .opt.off .seg button { cursor: default; }
   .note { color: var(--muted); font-size: 12.5px; margin: -4px 0 12px; }
   .classic-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .dubs { margin-top: 26px; }
+  .dubs h2 { font-size: 16px; margin: 0 0 4px; }
+  .dubs .sub { color: var(--muted); font-size: 13px; margin: 0 0 12px; max-width: 70ch; }
+  .dub-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 130px; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); margin-bottom: 6px; }
+  .dub-row .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dub-row .cur { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .dub-row input { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font: inherit; font-size: 14px; }
+  .dub-row input.changed { border-color: var(--warn); }
+  @media (max-width: 560px) { .dub-row { grid-template-columns: 1fr 110px; } .dub-row .cur { grid-column: 1; } }
 </style>
 </head>
 <body>
@@ -82,6 +91,7 @@
       </span>
     </div>
     <div class="cards" id="cards"></div>
+    <div class="dubs" id="dubs"></div>
   </section>
 </main>
 <footer>
@@ -142,21 +152,28 @@
   const newest = Object.values(loaded).sort((a, b) => String(b.generatedAt).localeCompare(String(a.generatedAt)))[0];
   const live = structuredClone(newest.config || data.defaultConfig);
   for (const k of Object.keys(accounts)) live[k] = live[k] || structuredClone(data.defaultConfig[k]);
+  const liveOverrides = { ...(newest.config?.dubOverrides || {}) };
   let styles = structuredClone(live);
+  delete styles.dubOverrides;
+  let overrides = { ...liveOverrides };
   try {
     const draft = JSON.parse(store.get("studio-draft-v2") || "null");
     if (draft) for (const k of Object.keys(accounts)) if (draft[k]) styles[k] = { ...styles[k], ...draft[k] };
+    if (draft?.dubOverrides) overrides = { ...draft.dubOverrides };
   } catch {}
+  const dubTitles = loaded.anime?.dubTitles || [];
+  const overridesChanged = () => JSON.stringify(Object.entries(overrides).sort()) !== JSON.stringify(Object.entries(liveOverrides).sort());
   let account = Object.keys(accounts).includes(store.get("studio-account")) ? store.get("studio-account") : "anime";
   let style = styles[account];
   const samplesFor = (k) => loaded[k]?.samples || [];
-  const saveDraft = () => store.set("studio-draft-v2", JSON.stringify(styles));
+  const saveDraft = () => store.set("studio-draft-v2", JSON.stringify({ ...styles, dubOverrides: overrides }));
 
   function renderMeta() {
     const n = samplesFor(account).length;
     $("meta").textContent = `${accounts[account].label} · ${n} sample card${n === 1 ? "" : "s"} · settings file ${data.configPath}` + (data.repository ? ` · ${data.repository}` : "");
   }
-  const differs = (k) => [...Object.keys(options), "look"].some((key) => String(styles[k][key]) !== String(live[k][key]));
+  const differs = (k) => [...Object.keys(options), "look"].some((key) => String(styles[k][key]) !== String(live[k][key]))
+    || (k === "anime" && overridesChanged());
   function renderTabs() {
     const box = $("tabs");
     box.innerHTML = "";
@@ -377,18 +394,53 @@
   });
 
   // ---------- saving ----------
-  const fileText = () => JSON.stringify(styles, null, 2) + "\n";
+  const fileText = () => JSON.stringify({ ...styles, dubOverrides: overrides }, null, 2) + "\n";
+
+  // ---------- typed dub episode numbers (anime row) ----------
+  function renderDubs() {
+    const box = $("dubs");
+    box.innerHTML = "";
+    if (account !== "anime" || !dubTitles.length) return;
+    box.innerHTML = `<h2>Dub episode numbers</h2>
+      <p class="sub">For dubs no schedule tracks (One Piece's batch releases), type the latest English-dubbed episode as the show's overall episode number. Leave blank for automatic. The dub schedule takes over by itself once it reports a higher episode.</p>`;
+    for (const title of dubTitles) {
+      const row = document.createElement("div");
+      row.className = "dub-row";
+      const name = document.createElement("span");
+      name.className = "t"; name.textContent = title.name;
+      const cur = document.createElement("span");
+      cur.className = "cur";
+      cur.textContent = title.tag ? `now: ${title.tag}${title.typed ? " (typed)" : ""}` : "now: no dub tag";
+      const input = document.createElement("input");
+      input.type = "number"; input.min = "1"; input.inputMode = "numeric"; input.placeholder = "auto";
+      input.setAttribute("aria-label", `Latest dubbed episode for ${title.name}`);
+      const key = String(title.mal);
+      input.value = overrides[key] ?? "";
+      const mark = () => input.classList.toggle("changed", String(overrides[key] ?? "") !== String(liveOverrides[key] ?? ""));
+      mark();
+      input.oninput = () => {
+        const n = Number(input.value);
+        if (Number.isInteger(n) && n > 0) overrides[key] = n; else delete overrides[key];
+        saveDraft(); mark(); renderTabs(); renderState();
+      };
+      row.append(name, cur, input);
+      box.append(row);
+    }
+  }
   const changedRows = () => Object.keys(accounts).filter(differs);
   function renderState() {
     const rows = changedRows().map((k) => accounts[k].label);
     $("state").innerHTML = rows.length ? `<b>Unsaved changes</b> — ${rows.join(" and ")} not live yet.` : "Showing the live settings.";
   }
-  function renderAll() { renderTabs(); renderMeta(); renderControls(); renderCards(); renderState(); }
+  function renderAll() { renderTabs(); renderMeta(); renderControls(); renderCards(); renderDubs(); renderState(); }
   const repo = data.repository;
   const branch = data.branch || "main";
   if (repo) $("edit").href = `https://github.com/${repo}/edit/${branch}/${data.configPath}`;
   else $("edit").style.display = "none";
-  $("reset-live").onclick = () => { styles = structuredClone(live); style = styles[account]; store.del("studio-draft-v2"); renderAll(); };
+  $("reset-live").onclick = () => {
+    styles = structuredClone(live); delete styles.dubOverrides; style = styles[account];
+    overrides = { ...liveOverrides }; store.del("studio-draft-v2"); renderAll();
+  };
   $("copy").onclick = async () => {
     try { await navigator.clipboard.writeText(fileText()); $("copy").textContent = "Copied ✓"; }
     catch { prompt("Copy these settings:", fileText()); }
@@ -434,6 +486,8 @@
           : `GitHub said ${put.status}${detail.message ? `: ${detail.message}` : ""}.`);
       }
       for (const k of Object.keys(accounts)) live[k] = { ...styles[k] };
+      for (const k of Object.keys(liveOverrides)) delete liveOverrides[k];
+      Object.assign(liveOverrides, overrides);
       store.del("studio-draft-v2");
       renderAll();
       msg.className = "msg ok";

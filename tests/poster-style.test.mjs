@@ -165,3 +165,32 @@ test("TV row publishes its studio samples (no page, no dub) and can use the tags
   const tags = await site("tags")();
   assert.notEqual(classic.result.catalog.metas[0].poster, tags.result.catalog.metas[0].poster, "switching the look changes the poster");
 });
+
+test("typed dub episode numbers are kept per MyAnimeList ID and validated", () => {
+  const config = normalizePosterConfig({ dubOverrides: { 21: 1155, "abc": 4, 99: -1, 7: "12", 8: 2.5 } });
+  assert.deepEqual(config.dubOverrides, { 21: 1155, 7: 12 });
+  assert.deepEqual(normalizePosterConfig({}).dubOverrides, {});
+});
+
+test("anime studio data lists titles that can take a typed dub number", async () => {
+  const source = await sharp({ create: { width: 400, height: 600, channels: 3, background: "#704060" } }).jpeg().toBuffer();
+  const dir = await mkdtemp(path.join(os.tmpdir(), "simkl-dubtitles-"));
+  await writeSite({
+    outputDir: dir,
+    catalog: { metas: [
+      { id: "tt1", type: "series", name: "One Piece", poster: "https://image.tmdb.org/t/p/w500/x.jpg" },
+      { id: "tt2", type: "series", name: "Sub Only", poster: "https://image.tmdb.org/t/p/w500/x.jpg" },
+    ] },
+    items: {}, updatedAt: "2026-10-10T00:00:00.000Z", baseUrl: "https://example.github.io",
+    posterBadges: [
+      { id: "tt1", mal: 21, status: "watching", episode: "Ep. 2", tags: { next: 2, nextSeason: 1 }, dub: { episode: 1155, season: 3, manual: true } },
+      { id: "tt2", mal: 99, status: "watching", episode: "Ep. 2", tags: { next: 2, nextSeason: 1 } },
+    ],
+    posterBadgesEnabled: true, posterStyle: "tags",
+    studio: { account: "anime", config: normalizePosterConfig({ dubOverrides: { 21: 1155 } }), configPath: "config/poster-style.json" },
+    fetchImpl: fetchImplFor(source),
+  });
+  const data = JSON.parse(await readFile(path.join(dir, "studio", "studio-data.json"), "utf8"));
+  assert.deepEqual(data.config.dubOverrides, { 21: 1155 });
+  assert.deepEqual(data.dubTitles.map((t) => [t.name, t.tag, t.typed]), [["One Piece", "DUB ✓ S3 E1155", true], ["Sub Only", null, false]]);
+});

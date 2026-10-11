@@ -33,10 +33,18 @@ const MAL_DUBS_TTL_MS = 24 * 60 * 60 * 1000;
 const FINISHED_LONG_AGO_MS = 60 * 24 * 60 * 60 * 1000;   // Japanese run ended 60+ days ago
 const STILL_AIRING_MS = 14 * 24 * 60 * 60 * 1000;        // an episode aired in the last 2 weeks
 
-// Newest episode air date we know for this title (Simkl calendar, next-to-watch, TVDB).
+// Newest episode air date we know for THIS Simkl entry (Simkl calendar,
+// next-to-watch, and TheTVDB episodes of the entry's own season only). TheTVDB
+// lists every season of a franchise, so using all of them made a long-finished
+// season look "still airing" whenever a later season was on air (Re:Zero).
 export function lastAiredAt(item, now = new Date()) {
   const dates = [item?._addonLatestAiredInfo?.date, item?.next_to_watch_info?.date];
-  for (const video of item?._addonTvdbMeta?.videos ?? []) dates.push(video?.released);
+  const ownSeason = Number(item?._addonTvdbMeta?.matchedSeasonNumber);
+  if (Number.isInteger(ownSeason) && ownSeason > 0) {
+    for (const video of item?._addonTvdbMeta?.videos ?? []) {
+      if (Number(video?.season) === ownSeason) dates.push(video?.released);
+    }
+  }
   let latest = null;
   for (const value of dates) {
     const date = validDate(value);
@@ -238,6 +246,46 @@ export function namesMatch(anime, titles) {
 }
 
 // ---------------------------------------------------------------------------
+// Franchise seasons. AnimeSchedule gives each season its own page ("route"),
+// e.g. re-zero-kara-hajimeru-isekai-seikatsu-2-part-2 and …-4th-season. The
+// API has no sequel links, so seasons of one show are recognised by sharing the
+// same route once the season suffix is removed.
+// ---------------------------------------------------------------------------
+const SEASON_SUFFIX = /-(?:(\d+)(?:st|nd|rd|th)-season|season-(\d+)|s(\d+)|(?:part|cour)-\d+|(\d+))$/;
+export function routeFamily(route) {
+  let stem = String(route ?? "").toLowerCase();
+  let season = null;
+  for (let i = 0; i < 3; i += 1) {
+    const match = stem.match(SEASON_SUFFIX);
+    if (!match || match.index === 0) break;
+    const raw = match[1] ?? match[2] ?? match[3] ?? match[4];
+    if (raw !== undefined) {
+      const number = Number(raw);
+      if (!(number >= 1 && number <= 30)) break;     // "mob-psycho-100", "steins-gate-0" are names
+      season ??= number;
+    }
+    stem = stem.slice(0, match.index);
+  }
+  return { stem, season: season ?? 1 };
+}
+
+// The newest dub of a LATER season of the same show, from the dub timetable.
+export function laterSeasonDub(route, ledger) {
+  if (!route) return null;
+  const own = routeFamily(route);
+  let best = null;
+  for (const [other, entry] of Object.entries(ledger ?? {})) {
+    if (other === route || !entry?.episode) continue;
+    const family = routeFamily(other);
+    if (family.stem !== own.stem || family.season <= own.season) continue;
+    if (!best || family.season > best.season || (family.season === best.season && String(entry.date) > String(best.date))) {
+      best = { route: other, season: family.season, episode: entry.episode, date: entry.date };
+    }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------
 // Dub state for one title.
 // ---------------------------------------------------------------------------
 // Returns { route, episode, full, estimated } or null when no dub is known.
@@ -280,6 +328,7 @@ export async function enrichDubInfo(items, dubState, {
   now = new Date(),
   itemFilter = () => true,
   gapMs,
+  overrides = {},            // { [malId]: episode } typed in /studio.html
 } = {}) {
   const client = createAnimeScheduleClient({ token, fetchImpl, gapMs });
   const nextItems = structuredClone(items ?? {});
@@ -402,21 +451,36 @@ export async function enrichDubInfo(items, dubState, {
     // are fully dubbed but outside AnimeSchedule's timetable window.
     let dub = match ? resolveDub(match, state.ledger[match.route], now) : null;
     if (!dub && ids.mal && malDubbed.has(ids.mal) && !malIncomplete.has(ids.mal)) {
-      // AnimeSchedule's "Finished" is the JAPANESE run, not the dub, so it is
-      // never used here. Only a Japanese run that ended 60+ days ago makes
-      // "fully dubbed" a safe claim; otherwise say what is actually known.
+      // AnimeSchedule's "Finished" is the JAPANESE run, not the dub, so it never
+      // proves a full dub. "Ongoing" does prove the dub cannot be complete. A
+      // Japanese run that ended 60+ days ago makes "fully dubbed" a safe claim.
       const last = lastAiredAt(item, now);
       const age = last ? now - last : null;
+      const ongoing = String(match?.status ?? "").toLowerCase() === "ongoing";
       const base = { route: match?.route ?? null, episode: null, estimated: true, source: "mal-dubs" };
-      if (age !== null && age >= FINISHED_LONG_AGO_MS) dub = { ...base, full: true };
+      if (ongoing) dub = { ...base, full: false, airing: true };
+      else if (age !== null && age >= FINISHED_LONG_AGO_MS) dub = { ...base, full: true };
       else if (age === null || age < STILL_AIRING_MS) dub = { ...base, full: false, airing: true };
       else dub = { ...base, full: false, unknown: true };
+    }
+    // A newer season of the same show being dubbed beats this entry's own dub
+    // (watching Re:Zero S2 while the S4 dub airs → "DUB ✓ S4 E5").
+    const later = match?.route ? laterSeasonDub(match.route, state.ledger) : null;
+    if (later) {
+      dub = { route: later.route, episode: later.episode, season: later.season, laterSeason: true, full: false, estimated: false };
+    }
+    // Episode number typed in the studio, for batch dubs no schedule tracks
+    // (One Piece). The dub timetable wins once it reports a higher episode.
+    const manual = ids.mal ? positiveInt(overrides?.[ids.mal] ?? overrides?.[String(ids.mal)]) : null;
+    if (manual && !dub?.laterSeason && !dub?.full && !(dub?.episode >= manual)) {
+      dub = { route: match?.route ?? null, episode: manual, full: false, estimated: false, manual: true };
     }
     if (dub) {
       // Simkl and AnimeSchedule may number split cours differently. If the dub
       // episode is beyond Simkl's own episode count, never claim "ready".
       const simklTotal = positiveInt(item.total_episodes_count);
-      dub.numberingMismatch = Boolean(!dub.full && simklTotal && dub.episode > simklTotal);
+      dub.numberingMismatch = Boolean(!dub.full && !dub.laterSeason && !dub.manual && simklTotal && dub.episode > simklTotal);
+      dub.mal = ids.mal ?? null;
       item._addonDub = dub;
       dubbed += 1;
     } else {
@@ -432,7 +496,12 @@ export async function enrichDubInfo(items, dubState, {
       dubPremier: match?.dubPremier ?? null,
       dubTimetableEpisode: match?.route ? state.ledger[match.route]?.episode ?? null : null,
       onMalDubs: ids.mal ? malDubbed.has(ids.mal) : null,
-      result: dub ? (dub.full ? "ALL" : dub.episode ? `E${dub.episode}` : dub.airing ? "AIRING" : "DUB (progress unknown)") : "no dub",
+      result: dub
+        ? (dub.full ? "ALL"
+          : dub.laterSeason ? `S${dub.season} E${dub.episode} (later season: ${dub.route})`
+          : dub.manual ? `E${dub.episode} (typed in studio)`
+          : dub.episode ? `E${dub.episode}` : dub.airing ? "ONGOING" : "DUB (progress unknown)")
+        : "no dub",
     });
   }
 

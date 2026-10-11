@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { enrichDubInfo, isoWeek, recordTimetable, resolveDub, websiteId } from "../src/animeschedule.mjs";
+import { enrichDubInfo, isoWeek, laterSeasonDub, recordTimetable, resolveDub, routeFamily, websiteId } from "../src/animeschedule.mjs";
 import { enrichMalScores } from "../src/mal-score.mjs";
 
 const NOW = new Date("2026-10-10T12:00:00Z");
@@ -85,7 +85,7 @@ test("enrichDubInfo matches by MAL ID, backfills once, and attaches dub state", 
   assert.equal(calls.filter((url) => url.includes("/timetables/dub")).length, 26);
   assert.equal(calls.filter((url) => url.includes("/anime?")).length, 1);
   assert.ok(first.dubState.backfilledAt);
-  assert.deepEqual(first.items[1]._addonDub, { route: "chainsmoker-cat", episode: 11, full: false, estimated: false, numberingMismatch: false });
+  assert.deepEqual(first.items[1]._addonDub, { route: "chainsmoker-cat", episode: 11, full: false, estimated: false, numberingMismatch: false, mal: 100 });
   assert.equal(first.items[1]._addonAnimeScheduleRoute, "chainsmoker-cat");
   assert.equal(first.items[2]._addonDub, undefined);
   assert.equal(first.items[3]._addonDub.numberingMismatch, true);
@@ -238,4 +238,88 @@ test("Japanese 'Finished' alone never makes a recent show 'fully dubbed'", async
   assert.equal(result.items[1]._addonDub.full, false);
   assert.equal(result.items[1]._addonDub.unknown, true);
   assert.equal(result.stats.perTitle[0].result, "DUB (progress unknown)");
+});
+
+test("routeFamily splits a season suffix off AnimeSchedule routes", () => {
+  assert.deepEqual(routeFamily("re-zero-kara-hajimeru-isekai-seikatsu-2-part-2"), { stem: "re-zero-kara-hajimeru-isekai-seikatsu", season: 2 });
+  assert.deepEqual(routeFamily("re-zero-kara-hajimeru-isekai-seikatsu-4th-season"), { stem: "re-zero-kara-hajimeru-isekai-seikatsu", season: 4 });
+  assert.deepEqual(routeFamily("re-zero-kara-hajimeru-isekai-seikatsu"), { stem: "re-zero-kara-hajimeru-isekai-seikatsu", season: 1 });
+  assert.deepEqual(routeFamily("shi-guang-dai-li-ren-3"), { stem: "shi-guang-dai-li-ren", season: 3 });
+  assert.deepEqual(routeFamily("one-piece"), { stem: "one-piece", season: 1 });
+  assert.deepEqual(routeFamily("mob-psycho-100"), { stem: "mob-psycho-100", season: 1 }, "numbers that are part of the name stay");
+  assert.deepEqual(routeFamily("steins-gate-0"), { stem: "steins-gate-0", season: 1 });
+});
+
+test("laterSeasonDub finds a newer season of the same show only", () => {
+  const ledger = {
+    "re-zero-kara-hajimeru-isekai-seikatsu-4th-season": { episode: 5, date: "2026-10-08T00:00:00Z" },
+    "re-zero-kara-hajimeru-isekai-seikatsu-3rd-season": { episode: 16, date: "2025-03-01T00:00:00Z" },
+    "one-piece-film-red": { episode: 1, date: "2026-10-08T00:00:00Z" },
+  };
+  assert.deepEqual(laterSeasonDub("re-zero-kara-hajimeru-isekai-seikatsu-2-part-2", ledger),
+    { route: "re-zero-kara-hajimeru-isekai-seikatsu-4th-season", season: 4, episode: 5, date: "2026-10-08T00:00:00Z" });
+  assert.equal(laterSeasonDub("re-zero-kara-hajimeru-isekai-seikatsu-4th-season", ledger), null, "nothing newer than S4");
+  assert.equal(laterSeasonDub("one-piece", ledger), null, "a film is not a later season");
+});
+
+function dubFetch({ timetable = [], anime = [], malDubs = { dubbed: [], incomplete: [] } }) {
+  return async (url) => {
+    if (url.includes("MAL-Dubs")) return jsonResponse(malDubs);
+    if (url.includes("/timetables/dub")) return jsonResponse(timetable);
+    if (url.includes("/anime?")) return jsonResponse({ page: 1, totalAmount: anime.length, anime });
+    throw new Error(`unexpected ${url}`);
+  };
+}
+
+test("Re:Zero: watching S2 Part 2 while the S4 dub airs shows the S4 dub, not 'S2 AIRING'", async () => {
+  const fetchImpl = dubFetch({
+    timetable: [{ route: "re-zero-kara-hajimeru-isekai-seikatsu-4th-season", airType: "dub", episodeNumber: 5, episodeDate: "2026-10-07T00:00:00Z", airingStatus: "aired" }],
+    anime: [{ route: "re-zero-kara-hajimeru-isekai-seikatsu-2-part-2", title: "Re:Zero 2 Part 2", status: "Finished", episodes: 12, websites: { mal: "myanimelist.net/anime/42203" } }],
+    malDubs: { dubbed: [42203], incomplete: [] },
+  });
+  const items = { 1: { status: "watching", anime: { title: "Re:Zero 2 Part 2", ids: { simkl: 1, mal: 42203 } } } };
+  const { items: out, stats } = await enrichDubInfo(items, null, { token: "x", fetchImpl, now: NOW, gapMs: 0 });
+  assert.equal(out[1]._addonDub.laterSeason, true);
+  assert.equal(out[1]._addonDub.season, 4);
+  assert.equal(out[1]._addonDub.episode, 5);
+  assert.match(stats.perTitle[0].result, /^S4 E5 \(later season/);
+});
+
+test("a finished season is not 'airing' just because a later season is on TheTVDB's list", async () => {
+  const videos = [
+    { id: "tt1:2:25", season: 2, episode: 25, released: "2021-03-24T00:00:00Z" },
+    { id: "tt1:4:5", season: 4, episode: 5, released: "2026-10-07T00:00:00Z" },
+  ];
+  const fetchImpl = dubFetch({
+    anime: [{ route: "re-zero-kara-hajimeru-isekai-seikatsu-2-part-2", title: "Re:Zero 2 Part 2", status: "Finished", episodes: 12, websites: { mal: "myanimelist.net/anime/42203" } }],
+    malDubs: { dubbed: [42203], incomplete: [] },
+  });
+  const items = { 1: {
+    status: "watching",
+    _addonLatestAiredInfo: { episode: 25, date: "2021-03-24T00:00:00Z" },
+    _addonTvdbMeta: { videos, matchedSeasonNumber: 2 },
+    anime: { title: "Re:Zero 2 Part 2", ids: { simkl: 1, mal: 42203 } },
+  } };
+  const { items: out } = await enrichDubInfo(items, null, { token: "x", fetchImpl, now: NOW, gapMs: 0 });
+  assert.equal(out[1]._addonDub.full, true, "S2 finished in 2021 → fully dubbed");
+});
+
+test("One Piece: ongoing Japanese run means 'ongoing', and a typed episode number is used until the schedule passes it", async () => {
+  const onePiece = { route: "one-piece", title: "One Piece", status: "Ongoing", dubPremier: "2020-11-24T00:00:00Z", websites: { mal: "myanimelist.net/anime/21" } };
+  const items = { 1: { status: "watching", anime: { title: "One Piece", ids: { simkl: 1, mal: 21 } } } };
+  const malDubs = { dubbed: [21], incomplete: [] };
+
+  const plain = await enrichDubInfo(items, null, { token: "x", fetchImpl: dubFetch({ anime: [onePiece], malDubs }), now: NOW, gapMs: 0 });
+  assert.equal(plain.items[1]._addonDub.airing, true);
+  assert.equal(plain.items[1]._addonDub.episode, null);
+
+  const typed = await enrichDubInfo(items, null, { token: "x", fetchImpl: dubFetch({ anime: [onePiece], malDubs }), now: NOW, gapMs: 0, overrides: { 21: 1155 } });
+  assert.equal(typed.items[1]._addonDub.episode, 1155);
+  assert.equal(typed.items[1]._addonDub.manual, true);
+
+  const weekly = dubFetch({ anime: [onePiece], malDubs,
+    timetable: [{ route: "one-piece", airType: "dub", episodeNumber: 1157, episodeDate: "2026-10-06T00:00:00Z", airingStatus: "aired" }] });
+  const scheduled = await enrichDubInfo(items, null, { token: "x", fetchImpl: weekly, now: NOW, gapMs: 0, overrides: { 21: 1155 } });
+  assert.equal(scheduled.items[1]._addonDub.episode, 1157, "the dub timetable wins once it is ahead");
+  assert.equal(scheduled.items[1]._addonDub.manual, undefined);
 });

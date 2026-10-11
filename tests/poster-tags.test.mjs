@@ -21,7 +21,7 @@ test("dub tag shows the season and compares with the next episode", () => {
   assert.deepEqual(dubTag(watching({ episode: 4, season: 3 })), { text: "DUB S3 E4", state: "behind" });
   assert.deepEqual(dubTag(watching({ episode: 12, season: 2 })), { text: "DUB S2 E12", state: "behind" }, "earlier season is behind");
   assert.deepEqual(dubTag(watching({ episode: 12, full: true, season: 3 })), { text: "DUB ✓ S3 ALL", state: "ready" });
-  assert.deepEqual(dubTag(watching({ episode: null, airing: true })), { text: "DUB S3 AIRING", state: "behind" });
+  assert.deepEqual(dubTag(watching({ episode: null, airing: true })), { text: "DUB ONGOING", state: "behind" });
   assert.deepEqual(dubTag(watching({ episode: 20, numberingMismatch: true, season: 3 })), { text: "DUB S3 E20", state: "behind" });
   assert.deepEqual(dubTag({ status: "plantowatch", tags: { aired: 12, airedSeason: 1 }, dub: { episode: 1 } }), { text: "DUB ✓ S1 E1", state: "ready" });
 });
@@ -150,6 +150,43 @@ test("dub episode uses the same TheTVDB season as the top tab (Mushoku S3)", () 
   assert.deepEqual(dubTag(ready), { text: "DUB ✓ S3 E15", state: "ready" });
 });
 
-test("dub with unknown progress shows a plain grey 'DUB S1'", () => {
-  assert.deepEqual(dubTag({ status: "watching", tags: { next: 2, nextSeason: 1 }, dub: { episode: null, unknown: true } }), { text: "DUB S1", state: "behind" });
+test("dub with unknown progress shows a plain grey 'DUB' (no borrowed season)", () => {
+  assert.deepEqual(dubTag({ status: "watching", tags: { next: 2, nextSeason: 1 }, dub: { episode: null, unknown: true } }), { text: "DUB", state: "behind" });
+});
+
+test("dub tag never borrows your season: the table's new column end to end", () => {
+  const unified = (seasons) => {
+    const videos = [];
+    let absolute = 0;
+    for (const [s, count] of seasons) for (let e = 1; e <= count; e += 1) {
+      absolute += 1;
+      videos.push({ id: `tt1:${s}:${e}`, season: s, episode: e, absoluteNumber: absolute, released: "2020-01-01T00:00:00Z" });
+    }
+    return videos;
+  };
+  const now = { now: "2026-10-10T00:00:00Z" };
+  const reZero = (dub) => buildCatalog({ 1: {
+    status: "watching",
+    next_to_watch_info: { episode: 23, season: 1, date: "2021-03-01T00:00:00Z" },
+    _addonLatestAiredInfo: { episode: 25, season: 1, date: "2021-03-24T00:00:00Z" },
+    _addonTvdbMeta: { parentId: "simkl-tvdb-unified:1", videos: unified([[1, 25], [2, 25], [3, 16], [4, 8]]), matchedSeasonNumber: 2, matchedEpisodeOffset: 0 },
+    _addonDub: dub,
+    anime: { title: "Re:Zero 2 Part 2", ids: { simkl: 1, imdb: "tt1" } },
+  } }, now).posterBadges[0];
+  // Row 3: a later season's dub.
+  assert.deepEqual(dubTag(reZero({ route: "rz-4th-season", episode: 5, season: 4, laterSeason: true })), { text: "DUB ✓ S4 E5", state: "ready" });
+  // Row 5: this entry fully dubbed → its own season.
+  assert.deepEqual(dubTag(reZero({ episode: null, full: true })), { text: "DUB ✓ S2 ALL", state: "ready" });
+  // Row 7: airing, no number → no season at all.
+  assert.deepEqual(dubTag(reZero({ episode: null, airing: true })), { text: "DUB ONGOING", state: "behind" });
+
+  // Row 8: One Piece with a typed absolute episode number → TheTVDB season/episode.
+  const onePiece = buildCatalog({ 1: {
+    status: "watching",
+    next_to_watch_info: { episode: 2, season: 1, date: "1999-10-27T00:00:00Z" },
+    _addonTvdbMeta: { parentId: "simkl-tvdb-unified:21", videos: unified([[1, 400], [2, 400], [3, 400]]), matchedSeasonNumber: null, matchedEpisodeOffset: 0 },
+    _addonDub: { episode: 1155, manual: true },
+    anime: { title: "One Piece", ids: { simkl: 1, imdb: "tt0388629" } },
+  } }, now).posterBadges[0];
+  assert.deepEqual(dubTag(onePiece), { text: "DUB ✓ S3 E355", state: "ready" });
 });

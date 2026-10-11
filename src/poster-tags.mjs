@@ -92,26 +92,35 @@ export function topTabText(badge) {
   return `S${nextSeason} · Next E${next}`;
 }
 
-// Dub tag, with the season (same TheTVDB numbering as the top tab):
-//   "DUB ✓ S3 E11" dub has reached your next episode
-//   "DUB S3 E13"   dub is behind
-//   "DUB ✓ S1 ALL" fully dubbed      "DUB S2 AIRING" dub airing, episode unknown
+// Dub tag. Season and episode always describe the DUB (same TheTVDB numbering
+// as the top tab), never your own progress:
+//   "DUB ✓ S4 E5"  dub has reached your next episode (blue)
+//   "DUB S3 E13"   dub is behind your next episode (grey)
+//   "DUB ✓ S1 ALL" fully dubbed
+//   "DUB ONGOING"  dub is airing but no episode number is known (grey)
+//   "DUB"          a dub exists, progress unknown (grey)
 export function dubTag(badge) {
   const dub = badge?.dub;
   const episode = finite(dub?.episode);
   if (!dub || (!episode && !dub.full && !dub.airing && !dub.unknown)) return null;
   const tags = badge?.tags ?? {};
-  const season = finite(dub.season) ?? finite(tags.nextSeason) ?? finite(tags.airedSeason) ?? finite(tags.season) ?? 1;
-  if (dub.full) return { text: `DUB ✓ S${season} ALL`, state: "ready" };
-  if (!episode && dub.airing) return { text: `DUB S${season} AIRING`, state: "behind" };
-  if (!episode) return { text: `DUB S${season}`, state: "behind" };          // dub exists, progress unknown
-  const label = `S${season} E${episode}`;
+  const season = finite(dub.season);
+  if (dub.full) {
+    const fullSeason = season ?? finite(tags.nextSeason) ?? finite(tags.airedSeason) ?? finite(tags.season);
+    return { text: fullSeason ? `DUB ✓ S${fullSeason} ALL` : "DUB ✓ ALL", state: "ready" };
+  }
+  if (!episode) return { text: dub.airing ? "DUB ONGOING" : "DUB", state: "behind" };
+  // A known episode belongs to this entry unless the catalog placed it elsewhere.
+  const dubSeason = season ?? finite(tags.nextSeason) ?? finite(tags.airedSeason) ?? finite(tags.season) ?? 1;
+  const label = `S${dubSeason} E${episode}`;
   if (dub.numberingMismatch) return { text: `DUB ${label}`, state: "behind" };
   if (badge.status === "plantowatch") return { text: `DUB ✓ ${label}`, state: "ready" };
   const next = finite(tags.next);
-  const nextSeason = finite(tags.nextSeason) ?? finite(tags.season) ?? season;
+  const nextSeason = finite(tags.nextSeason) ?? finite(tags.season);
   if (!next) return { text: `DUB ${label}`, state: "behind" };
-  const reached = season > nextSeason || (season === nextSeason && episode >= next);
+  const reached = nextSeason
+    ? dubSeason > nextSeason || (dubSeason === nextSeason && episode >= next)
+    : episode >= next;
   return reached ? { text: `DUB ✓ ${label}`, state: "ready" } : { text: `DUB ${label}`, state: "behind" };
 }
 

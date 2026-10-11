@@ -20,5 +20,8 @@
     "tagShadow": "coloured",
     "contrast": "max",
     "ratingShadow": true
+  },
+  "dubOverrides": {
+    "21": 1155
   }
 }

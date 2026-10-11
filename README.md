@@ -244,6 +244,14 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
 
+## Updating to 1.14.0 — dub tag tells the truth about the dub
+
+- The dub tag's season and episode now always belong to the **dub**, never to your own progress. Before, a dub with no known episode borrowed your season ("DUB S23 AIRING" on One Piece).
+- **Newer seasons count:** if a later season of the same show is being dubbed, the tag shows that dub, e.g. Re:Zero watched at S2 while the S4 dub airs → `DUB ✓ S4 E5`. Seasons are recognised by AnimeSchedule page names (`…-2-part-2`, `…-4th-season`).
+- **Finished seasons aren't "airing":** a season's age is judged from that season's own episodes, not from the whole show's newest episode.
+- **No number known:** the tag says `DUB ONGOING` (Japanese run still going) or `DUB`, in grey.
+- **Typed dub numbers:** `/studio.html` has a *Dub episode numbers* list. Type the latest dubbed episode for batch dubs no schedule tracks. It's stored as `dubOverrides` (MAL ID → overall episode number) in `config/poster-style.json`, and the dub schedule takes over once it reports a higher episode. Shipped with One Piece = 1155 (end of the Egghead dub; weekly Elbaph dubs start at 1156 on 20 Oct 2026).
+
 ## Updating to 1.13.1 — ★ score on the TV row
 
 With the tags look, TV posters show the TMDB rating beside the status tag. It comes from the TMDB lookup the addon already makes, so no new key or secret is needed. A show needs at least 20 TMDB votes to get a score. The anime row keeps its MyAnimeList score. Cached TMDB data is refreshed once on the first run after updating.

@@ -103,7 +103,21 @@ export function normalizePosterConfig(raw) {
   for (const account of Object.keys(POSTER_ACCOUNTS)) {
     config[account] = normalizeAccountStyle(legacy && account === "anime" ? source : source[account], account);
   }
+  config.dubOverrides = normalizeDubOverrides(source.dubOverrides);
   return config;
+}
+
+// { "<MyAnimeList ID>": <latest English-dubbed episode> } for batch dubs that no
+// schedule tracks (One Piece). Typed in /studio.html; anime row only.
+export function normalizeDubOverrides(input) {
+  const out = {};
+  if (!input || typeof input !== "object") return out;
+  for (const [key, value] of Object.entries(input)) {
+    const mal = Number(key);
+    const episode = Number(value);
+    if (Number.isInteger(mal) && mal > 0 && Number.isInteger(episode) && episode > 0 && episode < 100000) out[String(mal)] = episode;
+  }
+  return out;
 }
 
 export function defaultPosterConfig() {

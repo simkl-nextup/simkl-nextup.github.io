@@ -287,6 +287,7 @@ export async function refresh({
 
     const dub = await enrichDubInfo(state.items, state.dub, {
       token: animeScheduleToken,
+      overrides: posterConfig.dubOverrides,
       fetchImpl,
       now: new Date(now),
       itemFilter: shownInRow,

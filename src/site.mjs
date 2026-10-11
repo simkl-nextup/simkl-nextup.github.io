@@ -2,7 +2,7 @@ import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultPosterConfig, normalizePosterConfig, POSTER_ACCOUNTS, POSTER_LOOKS, POSTER_STYLE_OPTIONS } from "./poster-style.mjs";
-import { DUB_FILLS, SIZE_PRESETS } from "./poster-tags.mjs";
+import { DUB_FILLS, SIZE_PRESETS, dubTag } from "./poster-tags.mjs";
 import { ADDON_ID, APP_VERSION, CATALOG_ID, CATALOG_NAME } from "./constants.mjs";
 import { buildManifest } from "./catalog.mjs";
 import { decorateCatalogPosters } from "./poster-badges.mjs";
@@ -214,6 +214,8 @@ export async function writeSite({
       layouts: SIZE_PRESETS,
       colours: { dubReady: DUB_FILLS.ready, dubBehind: DUB_FILLS.behind },
       samples: posterResult.studio ?? [],
+      // Anime titles the studio can attach a typed dub episode number to.
+      dubTitles: account === "anime" ? studioDubTitles(posterBadges, catalog) : [],
     }));
   }
   await writeFile(path.join(outputDir, "status.json"), json({
@@ -251,4 +253,17 @@ export async function writeSite({
     posterBadgesGenerated: posterResult.generated,
     posterBadgeWarnings: posterResult.warnings,
   };
+}
+
+function studioDubTitles(posterBadges, catalog) {
+  const names = new Map((catalog?.metas ?? []).map((meta) => [meta.id, meta.name]));
+  return (posterBadges ?? [])
+    .filter((badge) => Number.isInteger(badge?.mal))
+    .map((badge) => ({
+      mal: badge.mal,
+      name: names.get(badge.id) ?? badge.name ?? `MAL ${badge.mal}`,
+      tag: dubTag(badge)?.text ?? null,
+      typed: Boolean(badge.dub?.manual),
+    }))
+    .sort((a, b) => Number(Boolean(b.tag)) - Number(Boolean(a.tag)) || a.name.localeCompare(b.name));
 }
