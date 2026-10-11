@@ -475,3 +475,19 @@ test("a Completed title is not revived by an old unwatched episode (gap in watch
   assert.equal(buildCatalog({ 1: old }, { now: "2026-10-10T00:00:00Z" }).catalog.metas.length, 0);
   assert.equal(buildCatalog({ 1: fresh }, { now: "2026-10-10T00:00:00Z" }).catalog.metas.length, 1);
 });
+
+test("TV row shows the TMDB score; anime keeps MAL; few votes means no score", async () => {
+  const { buildCatalog } = await import("../src/catalog.mjs");
+  const show = (extra) => ({ 1: {
+    status: "watching",
+    next_to_watch_info: { episode: 3, season: 2, date: "2026-10-01T00:00:00Z" },
+    anime: { title: "A Show", ids: { simkl: 1, imdb: "tt1000009" } },
+    ...extra,
+  } });
+  const opts = { now: "2026-10-02T00:00:00Z" };
+  const visuals = (rating, votes) => ({ _addonVisuals: { tmdbRating: rating, tmdbVoteCount: votes } });
+  assert.equal(buildCatalog(show(visuals(8.437, 900)), { ...opts, tmdbScores: true }).posterBadges[0].score, "8.4");
+  assert.equal(buildCatalog(show(visuals(9.9, 5)), { ...opts, tmdbScores: true }).posterBadges[0].score, undefined, "too few votes");
+  assert.equal(buildCatalog(show(visuals(8.4, 900)), opts).posterBadges[0].score, undefined, "anime row ignores TMDB");
+  assert.equal(buildCatalog(show({ ...visuals(6.1, 900), _addonMalScore: "8.9" }), { ...opts, tmdbScores: true }).posterBadges[0].score, "8.9", "MAL wins");
+});

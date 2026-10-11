@@ -1,7 +1,7 @@
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_POSTER_STYLE, normalizePosterStyle, POSTER_STYLE_OPTIONS } from "./poster-style.mjs";
+import { defaultPosterConfig, normalizePosterConfig, POSTER_ACCOUNTS, POSTER_LOOKS, POSTER_STYLE_OPTIONS } from "./poster-style.mjs";
 import { DUB_FILLS, SIZE_PRESETS } from "./poster-tags.mjs";
 import { ADDON_ID, APP_VERSION, CATALOG_ID, CATALOG_NAME } from "./constants.mjs";
 import { buildManifest } from "./catalog.mjs";
@@ -138,7 +138,7 @@ export async function writeSite({
   posterStyle = "classic",
   extraStatus = null,
   tagStyle = null,
-  studio = null,             // { repository, branch, configPath } → publishes /studio.html
+  studio = null,             // { account, config, repository, branch, configPath } → /studio.html data
 }) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(path.join(outputDir, "catalog", "series"), { recursive: true });
@@ -190,19 +190,26 @@ export async function writeSite({
   }));
   await writeFile(path.join(outputDir, ".nojekyll"), "");
 
-  if (studio && posterStyle === "tags") {
-    // Poster studio: preview any style combination and save it to the repo.
+  if (studio) {
+    // Poster studio: every row publishes sample cards + its settings under
+    // studio/; the anime row (site root) also publishes the page and its font.
     const assets = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets");
+    const account = POSTER_ACCOUNTS[studio.account] ? studio.account : (mediaType === "tv" ? "tv" : "anime");
     await mkdir(path.join(outputDir, "studio"), { recursive: true });
-    await copyFile(path.join(assets, "studio.html"), path.join(outputDir, "studio.html"));
-    await copyFile(path.join(assets, "fonts", "Inter-ExtraBold.otf"), path.join(outputDir, "studio", "Inter-ExtraBold.otf"));
+    if (account === "anime") {
+      await copyFile(path.join(assets, "studio.html"), path.join(outputDir, "studio.html"));
+      await copyFile(path.join(assets, "fonts", "Inter-ExtraBold.otf"), path.join(outputDir, "studio", "Inter-ExtraBold.otf"));
+    }
     await writeFile(path.join(outputDir, "studio", "studio-data.json"), json({
       generatedAt: updatedAt,
+      account,
       repository: studio.repository || null,
       branch: studio.branch || "main",
       configPath: studio.configPath,
-      currentStyle: normalizePosterStyle(tagStyle),
-      defaultStyle: DEFAULT_POSTER_STYLE,
+      config: normalizePosterConfig(studio.config ?? { [account]: { ...tagStyle, look: posterStyle } }),
+      defaultConfig: defaultPosterConfig(),
+      accounts: POSTER_ACCOUNTS,
+      looks: POSTER_LOOKS,
       options: POSTER_STYLE_OPTIONS,
       layouts: SIZE_PRESETS,
       colours: { dubReady: DUB_FILLS.ready, dubBehind: DUB_FILLS.behind },

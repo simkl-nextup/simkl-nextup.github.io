@@ -19,7 +19,7 @@ import { enrichTvdbMetadata, TvdbApiError } from "../src/tvdb.mjs";
 import { AnimeScheduleApiError, enrichDubInfo } from "../src/animeschedule.mjs";
 import { enrichMalScores } from "../src/mal-score.mjs";
 import { applyFribbIds, loadFribbIndex } from "../src/anime-ids.mjs";
-import { DEFAULT_POSTER_STYLE, loadPosterStyle } from "../src/poster-style.mjs";
+import { loadPosterConfig } from "../src/poster-style.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const statePath = path.join(root, "state", "simkl-state.json");
@@ -183,9 +183,12 @@ export async function refresh({
   posterStyleFile = path.join(root, "config", "poster-style.json"),
 } = {}) {
   const normalizedMediaType = normalizeMediaType(mediaType);
-  // The anime row uses the BetterPosters-style tags; the TV row keeps the
-  // classic badges unless POSTER_STYLE says otherwise.
-  const resolvedPosterStyle = posterStyle || (normalizedMediaType === "anime" ? "tags" : "classic");
+  // Each row's look (tags or classic) and tag options come from
+  // config/poster-style.json, edited in /studio.html. POSTER_STYLE still wins
+  // when set, for one-off overrides.
+  const posterConfig = await loadPosterConfig(posterStyleFile);
+  const { look: configuredLook, ...accountTagStyle } = posterConfig[normalizedMediaType];
+  const resolvedPosterStyle = ["tags", "classic"].includes(posterStyle) ? posterStyle : configuredLook;
   const client = createSimklClient({ clientId, accessToken, mediaType: normalizedMediaType, fetchImpl });
   let state = await loadState(stateFile, normalizedMediaType);
 
@@ -343,7 +346,7 @@ export async function refresh({
 
   state.lastSuccessfulRefresh = new Date(now).toISOString();
 
-  const { catalog, metadata: detailMetadata, posterBadges, skipped, sourceCounts, unifiedStats } = buildCatalog(state.items, { now, maxItems });
+  const { catalog, metadata: detailMetadata, posterBadges, skipped, sourceCounts, unifiedStats } = buildCatalog(state.items, { now, maxItems, tmdbScores: normalizedMediaType === "tv" });
   const rootBaseUrl = deriveBaseUrl({ explicitBaseUrl, githubRepository });
   const baseUrl = appendPublicPath(rootBaseUrl, publicPathPrefix);
   const site = await writeSite({
@@ -371,14 +374,16 @@ export async function refresh({
     mediaType: normalizedMediaType,
     posterStyle: resolvedPosterStyle,
     extraStatus,
-    tagStyle: resolvedPosterStyle === "tags" ? await loadPosterStyle(posterStyleFile) : DEFAULT_POSTER_STYLE,
-    studio: resolvedPosterStyle === "tags" && normalizedMediaType === "anime"
-      ? {
-          repository: githubRepository || null,
-          branch: process.env.GITHUB_REF_NAME || "main",
-          configPath: path.relative(root, posterStyleFile).split(path.sep).join("/"),
-        }
-      : null,
+    tagStyle: accountTagStyle,
+    // Both rows publish sample cards for /studio.html; the anime row (site root)
+    // also publishes the page itself.
+    studio: {
+      account: normalizedMediaType,
+      config: posterConfig,
+      repository: githubRepository || null,
+      branch: process.env.GITHUB_REF_NAME || "main",
+      configPath: path.relative(root, posterStyleFile).split(path.sep).join("/"),
+    },
   });
   for (const warning of site.posterBadgeWarnings) {
     console.warn(`Poster badge skipped for ${warning.name ?? warning.id ?? "unknown"}: ${warning.message}`);

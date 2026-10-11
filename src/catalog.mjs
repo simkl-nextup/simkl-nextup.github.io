@@ -373,6 +373,17 @@ function buildLinks(item, visuals, seriesMeta) {
   return links;
 }
 
+// The ★ score drawn on a poster: MyAnimeList for anime, TMDB for the TV row
+// (only with enough votes to mean something).
+export const TMDB_MIN_VOTES = 20;
+function posterScore(item, visuals, options) {
+  if (item._addonMalScore) return String(item._addonMalScore);
+  if (!options.tmdbScores) return null;
+  const rating = Number(visuals?.tmdbRating);
+  if (!(rating > 0) || Number(visuals?.tmdbVoteCount) < TMDB_MIN_VOTES) return null;
+  return rating.toFixed(1);
+}
+
 export function buildCatalog(items, options = {}) {
   const now = options.now ? new Date(options.now) : new Date();
   const maxItems = Number(options.maxItems ?? DEFAULT_MAX_ITEMS);
@@ -481,6 +492,7 @@ ${seriesMeta.description}` : description,
         tags,
         ...(item._addonDub ? { dub: dubDisplay(item._addonDub, { seriesMeta, info, tags }) } : {}),
         ...(item._addonMalScore ? { malScore: item._addonMalScore } : {}),
+        ...(posterScore(item, visuals, options) ? { score: posterScore(item, visuals, options) } : {}),
         // Official title logo: TMDB first, then TheTVDB's ClearLogo.
         ...((visuals.logo || seriesMeta?.logo) ? { logo: visuals.logo || seriesMeta.logo } : {}),
         ...(visuals.posterTextless && poster === visuals.poster ? { textless: true } : {}),

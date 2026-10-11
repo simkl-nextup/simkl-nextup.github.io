@@ -56,8 +56,13 @@ if (studioHtml) {
   const studioScript = studioHtml.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   if (!studioScript) throw new Error("Studio page is missing its script.");
   new Function(studioScript);
-  const studioData = JSON.parse(await readFile(path.join(publicDir, "studio", "studio-data.json"), "utf8"));
-  if (!studioData.options || !studioData.currentStyle) throw new Error("Studio data is incomplete.");
+}
+let studioDataText = null;
+try { studioDataText = await readFile(path.join(publicDir, "studio", "studio-data.json"), "utf8"); } catch { /* not published here */ }
+if (studioHtml && !studioDataText) throw new Error("Studio page is published without its data.");
+if (studioDataText) {
+  const studioData = JSON.parse(studioDataText);
+  if (!studioData.options || !studioData.config?.anime || !studioData.config?.tv) throw new Error("Studio data is incomplete.");
 }
 
 function safeMetaFilename(id) {

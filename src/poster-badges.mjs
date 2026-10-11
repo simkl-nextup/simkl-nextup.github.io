@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { composeTaggedPoster, dubTag, posterTints, STATUS_TAGS, taggedSignatureParts, topTabLines, topTabText, DUB_FILLS } from "./poster-tags.mjs";
@@ -350,6 +350,23 @@ function posterFileName(meta, badge, style = "classic", tagStyle = null) {
   return `${createHash("sha256").update(signature).digest("hex").slice(0, 24)}.webp`;
 }
 
+// The classic (pre-1.10) badge poster as a WebP buffer.
+async function renderClassicPoster({ poster, logo, name, badge }) {
+  let titleComposite = { input: buildFallbackTitleSvg(name) };
+  if (logo) {
+    try { titleComposite = await prepareTitleLogo(logo); } catch { /* fall back to the text title */ }
+  }
+  return sharp(poster, { failOn: "error" })
+    .resize(POSTER_WIDTH, POSTER_HEIGHT, { fit: "cover", position: "centre" })
+    .composite([
+      { input: buildLowerVignetteSvg(), gravity: "northwest" },
+      titleComposite,
+      { input: buildPosterBadgeSvg(badge), gravity: "northwest" },
+    ])
+    .webp({ quality: 90, effort: 5 })
+    .toBuffer();
+}
+
 export async function decorateCatalogPosters(catalog, badges, {
   outputDirectory,
   baseUrl,
@@ -383,60 +400,50 @@ export async function decorateCatalogPosters(catalog, badges, {
 
       try {
         const originalPoster = await downloadImage(meta.poster, fetchImpl);
-
-        if (style === "tags") {
-          let logo = null;
-          if (badge.logo) {
-            try { logo = await downloadImage(badge.logo, fetchImpl); } catch { logo = null; }
-          }
-          const filename = posterFileName(meta, badge, style, tagStyle);
-          const tints = await posterTints(originalPoster);
-          if (index < studioSamples) {
-            // Everything the studio page needs to preview this card in any style,
-            // computed here so the page shows exactly the server's text and colours.
-            const status = STATUS_TAGS[badge.status];
-            const dub = dubTag(badge);
-            studio[index] = {
-              name: badge.name || meta.name,
-              poster: meta.poster,
-              logo: badge.logo || null,
-              textless: Boolean(badge.textless),
-              status: status ? { label: status.label, fill: status.fill } : null,
-              malScore: badge.malScore ?? null,
-              tints,
-              lines: topTabLines(badge),
-              single: topTabText(badge),
-              dub: dub ? { text: dub.text, fill: DUB_FILLS[dub.state], state: dub.state } : null,
-            };
-          }
-          const output = await composeTaggedPoster({ poster: originalPoster, logo, name: badge.name || meta.name, badge, style: tagStyle, tints });
-          await sharp(output).toFile(path.join(posterDirectory, filename));
-          meta.poster = `${baseUrl.replace(/\/$/, "")}/posters/${filename}`;
-          generated += 1;
-          continue;
-        }
-
-        let titleComposite = { input: buildFallbackTitleSvg(badge.name || meta.name) };
+        let logo = null;
         if (badge.logo) {
+          // A missing logo must not block poster generation.
+          try { logo = await downloadImage(badge.logo, fetchImpl); } catch { logo = null; }
+        }
+        const name = badge.name || meta.name;
+
+        let tints = null;
+        if (style === "tags" || index < studioSamples) tints = await posterTints(originalPoster);
+        if (index < studioSamples) {
+          // Everything /studio.html needs to preview this card in either look:
+          // the tag text and colours computed here (so the page matches the
+          // build), plus a ready-rendered classic version.
+          const sampleDir = path.join(outputDirectory, "studio", "samples");
+          await mkdir(sampleDir, { recursive: true });
+          let classicImage = null;
           try {
-            const logo = await downloadImage(badge.logo, fetchImpl);
-            titleComposite = await prepareTitleLogo(logo);
-          } catch {
-            // A missing logo must not block poster generation. The show name is
-            // rendered as high-contrast text in the same reserved logo area.
-          }
+            // Best effort: a preview problem must never block the real poster.
+            await sharp(await renderClassicPoster({ poster: originalPoster, logo, name, badge }))
+              .resize(340, 510).webp({ quality: 82 }).toFile(path.join(sampleDir, `${index}-classic.webp`));
+            classicImage = `samples/${index}-classic.webp`;
+          } catch { classicImage = null; }
+          const status = STATUS_TAGS[badge.status];
+          const dub = dubTag(badge);
+          studio[index] = {
+            name,
+            poster: meta.poster,
+            logo: badge.logo || null,
+            textless: Boolean(badge.textless),
+            classicImage,
+            status: status ? { label: status.label, fill: status.fill } : null,
+            malScore: badge.score ?? badge.malScore ?? null,
+            tints,
+            lines: topTabLines(badge),
+            single: topTabText(badge),
+            dub: dub ? { text: dub.text, fill: DUB_FILLS[dub.state], state: dub.state } : null,
+          };
         }
 
-        const filename = posterFileName(meta, badge);
-        await sharp(originalPoster, { failOn: "error" })
-          .resize(POSTER_WIDTH, POSTER_HEIGHT, { fit: "cover", position: "centre" })
-          .composite([
-            { input: buildLowerVignetteSvg(), gravity: "northwest" },
-            titleComposite,
-            { input: buildPosterBadgeSvg(badge), gravity: "northwest" },
-          ])
-          .webp({ quality: 90, effort: 5 })
-          .toFile(path.join(posterDirectory, filename));
+        const filename = posterFileName(meta, badge, style, tagStyle);
+        const output = style === "tags"
+          ? await composeTaggedPoster({ poster: originalPoster, logo, name, badge, style: tagStyle, tints })
+          : await renderClassicPoster({ poster: originalPoster, logo, name, badge });
+        await writeFile(path.join(posterDirectory, filename), output);
         meta.poster = `${baseUrl.replace(/\/$/, "")}/posters/${filename}`;
         generated += 1;
       } catch (error) {

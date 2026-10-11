@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, writeFile, access } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { DEFAULT_POSTER_STYLE, loadPosterStyle, normalizePosterStyle, POSTER_STYLE_OPTIONS } from "../src/poster-style.mjs";
+import { DEFAULT_POSTER_STYLE, loadPosterConfig, loadPosterStyle, normalizePosterConfig, normalizePosterStyle, POSTER_STYLE_OPTIONS } from "../src/poster-style.mjs";
 import { composeTaggedPoster, taggedSignatureParts } from "../src/poster-tags.mjs";
 import { decorateCatalogPosters } from "../src/poster-badges.mjs";
 import { writeSite } from "../src/site.mjs";
@@ -37,7 +37,31 @@ test("loadPosterStyle reads the config file and falls back on missing/broken fil
   await writeFile(path.join(dir, "ok.json"), JSON.stringify({ topTab: "single" }));
   assert.equal((await loadPosterStyle(path.join(dir, "ok.json"))).topTab, "single");
   const shipped = JSON.parse(await readFile(new URL("../config/poster-style.json", import.meta.url), "utf8"));
-  assert.deepEqual(normalizePosterStyle(shipped), shipped, "shipped config is already normalized");
+  assert.deepEqual(normalizePosterConfig(shipped), shipped, "shipped config is already normalized");
+});
+
+test("config has a section per row; anime defaults to tags, TV to classic", async () => {
+  const empty = normalizePosterConfig({});
+  assert.equal(empty.anime.look, "tags");
+  assert.equal(empty.tv.look, "classic");
+  const mixed = normalizePosterConfig({ anime: { look: "classic" }, tv: { look: "tags", topTab: "band", look2: "x" } });
+  assert.equal(mixed.anime.look, "classic");
+  assert.equal(mixed.tv.look, "tags");
+  assert.equal(mixed.tv.topTab, "band");
+  assert.equal("look2" in mixed.tv, false);
+  assert.equal(normalizePosterConfig({ tv: { look: "neon" } }).tv.look, "classic", "unknown look falls back");
+});
+
+test("a flat 1.12.0 config file is read as the anime section", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "simkl-legacy-style-"));
+  const file = path.join(dir, "legacy.json");
+  await writeFile(file, JSON.stringify({ topTab: "boxed", size: "compact" }));
+  const config = await loadPosterConfig(file);
+  assert.equal(config.anime.look, "tags");
+  assert.equal(config.anime.topTab, "boxed");
+  assert.equal(config.tv.topTab, DEFAULT_POSTER_STYLE.topTab);
+  const tvStyle = await loadPosterStyle(file, "tv");
+  assert.equal("look" in tvStyle, false, "renderer style has no look key");
 });
 
 test("every top-tab mode and size renders a 500x750 poster", async () => {
@@ -88,31 +112,56 @@ test("anime tags site publishes the studio page and its data", async () => {
     items: {},
     updatedAt: "2026-10-10T00:00:00.000Z",
     baseUrl: "https://example.github.io",
-    posterBadges: [{ id: "tt1", status: "watching", tags: { aired: 13, next: 2 }, dub: { episode: 9 }, malScore: "7.9" }],
+    posterBadges: [{ id: "tt1", status: "watching", episode: "Ep. 2", tags: { aired: 13, next: 2 }, dub: { episode: 9 }, malScore: "7.9" }],
     posterBadgesEnabled: true,
     posterStyle: "tags",
     tagStyle: { ...DEFAULT_POSTER_STYLE, topTab: "boxed" },
-    studio: { repository: "me/repo", branch: "main", configPath: "config/poster-style.json" },
+    studio: { account: "anime", config: normalizePosterConfig({ anime: { topTab: "boxed" } }), repository: "me/repo", branch: "main", configPath: "config/poster-style.json" },
     fetchImpl: fetchImplFor(source),
   });
   await access(path.join(dir, "studio.html"));
   await access(path.join(dir, "studio", "Inter-ExtraBold.otf"));
   const data = JSON.parse(await readFile(path.join(dir, "studio", "studio-data.json"), "utf8"));
   assert.equal(data.repository, "me/repo");
-  assert.equal(data.currentStyle.topTab, "boxed");
-  assert.deepEqual(data.defaultStyle, DEFAULT_POSTER_STYLE);
+  assert.equal(data.account, "anime");
+  assert.equal(data.config.anime.topTab, "boxed");
+  assert.equal(data.config.tv.look, "classic");
   assert.equal(data.samples.length, 1);
   assert.equal(data.samples[0].name, "Studio Anime");
   assert.ok(data.samples[0].dub?.text);
+  const classic = await sharp(path.join(dir, "studio", data.samples[0].classicImage)).metadata();
+  assert.equal(classic.format, "webp", "classic preview is rendered by the build");
   const raw = JSON.stringify(data);
   assert.doesNotMatch(raw, /token|secret/i, "studio data never carries credentials");
 });
 
-test("classic TV site does not publish the studio", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "simkl-nostudio-"));
-  await writeSite({
-    outputDir: dir, catalog: { metas: [] }, items: {}, updatedAt: "2026-10-10T00:00:00.000Z",
-    baseUrl: "https://example.github.io/account-2", mediaType: "tv",
-  });
-  assert.equal((await readdir(dir)).includes("studio.html"), false);
+test("TV row publishes its studio samples (no page, no dub) and can use the tags look", async () => {
+  const source = await sharp({ create: { width: 400, height: 600, channels: 3, background: "#305040" } }).jpeg().toBuffer();
+  const site = (posterStyle) => async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "simkl-tv-studio-"));
+    const result = await writeSite({
+      outputDir: dir,
+      catalog: { metas: [{ id: "tt7", type: "series", name: "A TV Show", poster: "https://image.tmdb.org/t/p/w500/x.jpg" }] },
+      items: {}, updatedAt: "2026-10-10T00:00:00.000Z",
+      baseUrl: "https://example.github.io/account-2", mediaType: "tv",
+      posterBadges: [{ id: "tt7", status: "watching", episode: "S2E3", tags: { aired: 4, airedSeason: 2, next: 3, nextSeason: 2 } }],
+      posterBadgesEnabled: true, posterStyle,
+      studio: { account: "tv", config: normalizePosterConfig({ tv: { look: posterStyle } }), configPath: "config/poster-style.json" },
+      fetchImpl: fetchImplFor(source),
+    });
+    return { dir, result };
+  };
+  for (const look of ["classic", "tags"]) {
+    const { dir, result } = await site(look)();
+    assert.equal((await readdir(dir)).includes("studio.html"), false, "only the site root hosts the page");
+    const data = JSON.parse(await readFile(path.join(dir, "studio", "studio-data.json"), "utf8"));
+    assert.equal(data.account, "tv");
+    assert.equal(data.config.tv.look, look);
+    assert.equal(data.samples[0].dub, null);
+    assert.equal(data.samples[0].malScore, null);
+    assert.equal(result.posterBadgesGenerated, 1);
+  }
+  const classic = await site("classic")();
+  const tags = await site("tags")();
+  assert.notEqual(classic.result.catalog.metas[0].poster, tags.result.catalog.metas[0].poster, "switching the look changes the poster");
 });

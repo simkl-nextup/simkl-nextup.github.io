@@ -53,6 +53,16 @@
   .msg { font-size: 13.5px; margin-top: 8px; }
   .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
   .empty { color: var(--muted); padding: 30px 0; }
+  .tabs { display: flex; gap: 6px; padding: 0 24px 6px; flex-wrap: wrap; }
+  .tabs button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .tabs button .dot { color: var(--warn); margin-left: 6px; }
+  .opt.look h3 { color: var(--text); font-size: 14px; }
+  .opt.look { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .opt.off { opacity: .42; }
+  .opt.off .seg button { cursor: default; }
+  .note { color: var(--muted); font-size: 12.5px; margin: -4px 0 12px; }
+  .classic-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 </style>
 </head>
 <body>
@@ -60,6 +70,7 @@
   <h1>Poster Studio</h1>
   <span class="sub" id="meta">Loading…</span>
 </header>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Row"></nav>
 <main>
   <section class="panel" id="controls" aria-label="Style options"></section>
   <section>
@@ -83,7 +94,7 @@
 
 <dialog id="dlg">
   <h3 style="margin-top:0">Save &amp; deploy</h3>
-  <p>This commits <code id="cfg-path"></code> to <span id="repo-name"></span>. Saving that file starts the refresh workflow, and the new posters appear in Nuvio once it finishes (usually a few minutes).</p>
+  <p>This commits <code id="cfg-path"></code> to <span id="repo-name"></span> with the settings for <b>both rows</b>. Saving that file starts the refresh workflow, and the new posters appear in Nuvio once it finishes (usually a few minutes).</p>
   <p>It needs a GitHub <b>fine-grained personal access token</b>:</p>
   <ol>
     <li>GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token.</li>
@@ -111,20 +122,53 @@
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
 
-  let data;
-  try {
-    const res = await fetch("studio/studio-data.json", { cache: "no-store" });
-    data = await res.json();
-  } catch {
+  // Each row publishes its own sample cards; the TV row lives under account-2/.
+  const SOURCES = { anime: "studio/", tv: "account-2/studio/" };
+  const loaded = {};
+  await Promise.all(Object.entries(SOURCES).map(async ([account, base]) => {
+    try {
+      const res = await fetch(base + "studio-data.json", { cache: "no-store" });
+      if (res.ok) loaded[account] = await res.json();
+    } catch {}
+  }));
+  const data = loaded.anime || loaded.tv;
+  if (!data) {
     $("meta").textContent = "Studio data not found yet — run the refresh workflow once.";
     return;
   }
-  const { options, layouts, samples } = data;
-  const live = { ...data.currentStyle };
-  let style = { ...live };
-  try { const draft = JSON.parse(store.get("studio-draft") || "null"); if (draft) style = { ...style, ...draft }; } catch {}
+  const { options, layouts, looks } = data;
+  const accounts = data.accounts || { anime: { label: "Anime row" }, tv: { label: "TV row · Account 2" } };
+  // Both builds read the same file in the same run; take the newest copy.
+  const newest = Object.values(loaded).sort((a, b) => String(b.generatedAt).localeCompare(String(a.generatedAt)))[0];
+  const live = structuredClone(newest.config || data.defaultConfig);
+  for (const k of Object.keys(accounts)) live[k] = live[k] || structuredClone(data.defaultConfig[k]);
+  let styles = structuredClone(live);
+  try {
+    const draft = JSON.parse(store.get("studio-draft-v2") || "null");
+    if (draft) for (const k of Object.keys(accounts)) if (draft[k]) styles[k] = { ...styles[k], ...draft[k] };
+  } catch {}
+  let account = Object.keys(accounts).includes(store.get("studio-account")) ? store.get("studio-account") : "anime";
+  let style = styles[account];
+  const samplesFor = (k) => loaded[k]?.samples || [];
+  const saveDraft = () => store.set("studio-draft-v2", JSON.stringify(styles));
 
-  $("meta").textContent = `${samples.length} sample cards · settings file ${data.configPath}` + (data.repository ? ` · ${data.repository}` : "");
+  function renderMeta() {
+    const n = samplesFor(account).length;
+    $("meta").textContent = `${accounts[account].label} · ${n} sample card${n === 1 ? "" : "s"} · settings file ${data.configPath}` + (data.repository ? ` · ${data.repository}` : "");
+  }
+  const differs = (k) => [...Object.keys(options), "look"].some((key) => String(styles[k][key]) !== String(live[k][key]));
+  function renderTabs() {
+    const box = $("tabs");
+    box.innerHTML = "";
+    for (const [k, info] of Object.entries(accounts)) {
+      const b = document.createElement("button");
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(k === account));
+      b.innerHTML = info.label + (differs(k) ? '<span class="dot" title="Unsaved changes">●</span>' : "");
+      b.onclick = () => { account = k; style = styles[k]; store.set("studio-account", k); renderAll(); };
+      box.append(b);
+    }
+  }
 
   // ---------- colour helpers (same maths as the build) ----------
   const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
@@ -140,29 +184,41 @@
   const rgba = (hex, a) => { const [r, g, b] = hex2rgb(hex); return `rgba(${r},${g},${b},${a})`; };
 
   // ---------- controls ----------
+  function optionBlock(key, opt, value, liveValue, { disabled = false, isLook = false } = {}) {
+    const wrap = document.createElement("div");
+    wrap.className = "opt" + (isLook ? " look" : "") + (disabled ? " off" : "");
+    wrap.innerHTML = `<h3>${opt.label}</h3>`;
+    const seg = document.createElement("div");
+    seg.className = "seg";
+    for (const [choice, text] of Object.entries(opt.choices)) {
+      const b = document.createElement("button");
+      b.setAttribute("aria-pressed", String(String(value) === choice));
+      b.disabled = disabled;
+      b.innerHTML = `${text}${String(liveValue) === choice ? '<span class="live">● live</span>' : ""}`;
+      b.onclick = () => {
+        style[key] = isLook ? choice : (typeof data.defaultConfig.anime[key] === "boolean" ? choice === "true" : choice);
+        saveDraft();
+        renderAll();
+      };
+      seg.append(b);
+    }
+    wrap.append(seg);
+    return wrap;
+  }
   function renderControls() {
     const box = $("controls");
     box.innerHTML = "";
+    box.append(optionBlock("look", looks, style.look, live[account].look, { isLook: true }));
+    const classic = style.look === "classic";
+    if (classic) {
+      const note = document.createElement("p");
+      note.className = "note";
+      note.textContent = "The options below only apply to the tags look. They are kept, so switching back restores them.";
+      box.append(note);
+    }
     for (const [key, opt] of Object.entries(options)) {
-      const wrap = document.createElement("div");
-      wrap.className = "opt";
-      wrap.innerHTML = `<h3>${opt.label}</h3>`;
-      const seg = document.createElement("div");
-      seg.className = "seg";
-      for (const [value, text] of Object.entries(opt.choices)) {
-        const b = document.createElement("button");
-        const current = String(style[key]) === value;
-        b.setAttribute("aria-pressed", String(current));
-        b.innerHTML = `${text}${String(live[key]) === value ? '<span class="live">● live</span>' : ""}`;
-        b.onclick = () => {
-          style[key] = typeof data.defaultStyle[key] === "boolean" ? value === "true" : value;
-          store.set("studio-draft", JSON.stringify(style));
-          renderControls(); renderCards(); renderState();
-        };
-        seg.append(b);
-      }
-      wrap.append(seg);
-      box.append(wrap);
+      if (opt.accounts && !opt.accounts.includes(account)) continue;
+      box.append(optionBlock(key, opt, style[key], live[account][key], { disabled: classic }));
     }
   }
 
@@ -204,6 +260,20 @@
     card.className = "card";
     card.style.width = zoom + "px";
     card.style.height = Math.round(zoom * 1.5) + "px";
+    const caption = () => {
+      const name = document.createElement("div");
+      name.className = "name"; name.style.width = zoom + "px"; name.textContent = sample.name;
+      return name;
+    };
+    if (style.look === "classic") {
+      // Rendered by the build, so this is exactly what Nuvio shows.
+      const img = document.createElement("img");
+      img.className = "classic-img"; img.alt = ""; img.loading = "lazy";
+      img.src = sample.classicImage ? SOURCES[account] + sample.classicImage : sample.poster;
+      card.append(img);
+      outer.append(card, caption());
+      return outer;
+    }
     const stage = document.createElement("div");
     stage.className = "stage";
     stage.style.transform = `scale(${zoom / W})`;
@@ -287,16 +357,17 @@
     }
 
     card.append(stage);
-    outer.append(card);
-    const name = document.createElement("div");
-    name.className = "name"; name.style.width = zoom + "px"; name.textContent = sample.name;
-    outer.append(name);
+    outer.append(card, caption());
     return outer;
   }
   function renderCards() {
     const box = $("cards");
     box.innerHTML = "";
-    if (!samples.length) { box.innerHTML = '<div class="empty">No sample cards yet — they appear after the next refresh run.</div>'; return; }
+    const samples = samplesFor(account);
+    if (!samples.length) {
+      box.innerHTML = `<div class="empty">No sample cards for the ${accounts[account].label} yet — they appear after the next refresh run. You can still change and save its settings.</div>`;
+      return;
+    }
     for (const s of samples) box.append(renderCard(s));
   }
   document.querySelectorAll("[data-zoom]").forEach((b) => b.onclick = () => {
@@ -306,16 +377,18 @@
   });
 
   // ---------- saving ----------
-  const fileText = () => JSON.stringify(style, null, 2) + "\n";
-  const changed = () => Object.keys(options).some((k) => String(style[k]) !== String(live[k]));
+  const fileText = () => JSON.stringify(styles, null, 2) + "\n";
+  const changedRows = () => Object.keys(accounts).filter(differs);
   function renderState() {
-    $("state").innerHTML = changed() ? "<b>Unsaved changes</b> — these settings are not live yet." : "Showing the live settings.";
+    const rows = changedRows().map((k) => accounts[k].label);
+    $("state").innerHTML = rows.length ? `<b>Unsaved changes</b> — ${rows.join(" and ")} not live yet.` : "Showing the live settings.";
   }
+  function renderAll() { renderTabs(); renderMeta(); renderControls(); renderCards(); renderState(); }
   const repo = data.repository;
   const branch = data.branch || "main";
   if (repo) $("edit").href = `https://github.com/${repo}/edit/${branch}/${data.configPath}`;
   else $("edit").style.display = "none";
-  $("reset-live").onclick = () => { style = { ...live }; store.del("studio-draft"); renderControls(); renderCards(); renderState(); };
+  $("reset-live").onclick = () => { styles = structuredClone(live); style = styles[account]; store.del("studio-draft-v2"); renderAll(); };
   $("copy").onclick = async () => {
     try { await navigator.clipboard.writeText(fileText()); $("copy").textContent = "Copied ✓"; }
     catch { prompt("Copy these settings:", fileText()); }
@@ -360,9 +433,9 @@
           ? "GitHub refused the token. It needs Contents: Read and write on this repository."
           : `GitHub said ${put.status}${detail.message ? `: ${detail.message}` : ""}.`);
       }
-      Object.assign(live, style);
-      store.del("studio-draft");
-      renderControls(); renderState();
+      for (const k of Object.keys(accounts)) live[k] = { ...styles[k] };
+      store.del("studio-draft-v2");
+      renderAll();
       msg.className = "msg ok";
       msg.innerHTML = `Saved. The refresh is starting — <a href="https://github.com/${repo}/actions" target="_blank" rel="noopener" style="color:inherit">watch it on GitHub Actions</a>. New posters show in Nuvio when it finishes.`;
     } catch (error) {
@@ -372,7 +445,7 @@
     }
   };
 
-  renderControls(); renderCards(); renderState();
+  renderAll();
 })();
 </script>
 </body>

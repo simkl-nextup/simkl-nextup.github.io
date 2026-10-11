@@ -244,6 +244,18 @@ Version 1.8.7 added an optional second generation pass under `public/account-2`.
 Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
 
 
+## Updating to 1.13.1 — ★ score on the TV row
+
+With the tags look, TV posters show the TMDB rating beside the status tag. It comes from the TMDB lookup the addon already makes, so no new key or secret is needed. A show needs at least 20 TMDB votes to get a score. The anime row keeps its MyAnimeList score. Cached TMDB data is refreshed once on the first run after updating.
+
+## Updating to 1.13.0 — Studio covers both rows, tags or classic
+
+- `/studio.html` now has a tab per row: **Anime row** and **TV row · Account 2**.
+- Each row has a **Poster look** switch: *Tags* (BetterPosters style, 1.10+) or *Classic badge* (before 1.10). The classic preview is rendered by the build, so it matches Nuvio exactly.
+- The TV row gets every tag option except the dub tag (TV shows have no English-dub data). Its ★ score comes from TMDB (your existing TMDB key, no extra calls), shown only when a show has at least 20 TMDB votes.
+- `config/poster-style.json` now holds both rows: `{ "anime": {...}, "tv": {...} }`. A flat 1.12.0 file still works; it's read as the anime section. Defaults: anime = tags, TV = classic, so nothing changes until you choose.
+- One save in the studio updates both rows in one commit.
+
 ## Updating to 1.12.0 — Poster Studio (anime row only)
 
 Open **https://simkl-nextup.github.io/studio.html** to mix any combination of the anime tag looks built since 1.10.8 (top-tab layout, size, outlines, coloured drop shadows, contrast, score shadow) and preview them live on cards from your own row.

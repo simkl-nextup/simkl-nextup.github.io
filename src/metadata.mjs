@@ -168,7 +168,7 @@ function chooseTitleLogo(images, originalLanguage) {
 
 function sourceSignature(ids, sources) {
   return JSON.stringify({
-    version: 4,
+    version: 5, // 5: adds the TMDB rating
     sources,
     imdb: ids?.imdb ?? null,
     tmdb: ids?.tmdb ?? null,
@@ -245,6 +245,9 @@ export async function enrichCatalogMetadata(items, {
           posterTextless: Boolean(chooseTextlessPoster(tmdbResult.images)),
           background: tmdbImage(tmdbResult.backdrop_path, "w1280"),
           logo: tmdbImage(chooseTitleLogo(tmdbResult.images, tmdbResult.original_language), "w500"),
+          // Shown as the ★ score on the TV row's posters.
+          tmdbRating: Number(tmdbResult.vote_average) || null,
+          tmdbVoteCount: Number(tmdbResult.vote_count) || 0,
           tmdbId: tmdbResult.id,
           tmdbMediaType: tmdbResult._addonTmdbMediaType || "tv",
           tmdbName: tmdbResult.name || tmdbResult.title || null,

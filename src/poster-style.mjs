@@ -1,6 +1,7 @@
-// Poster style settings for the anime row, edited from /studio.html and
-// stored in config/poster-style.json. Every option maps to a look we built
-// between 1.10.8 and 1.11.1, so any combination can be mixed.
+// Poster style settings for both rows, edited from /studio.html and stored in
+// config/poster-style.json as { anime: {...}, tv: {...} }. Each section picks a
+// look (the BetterPosters-style tags or the classic pre-1.10 badge) plus the tag
+// options. Every tag option maps to a look built between 1.10.8 and 1.11.1.
 
 import { readFile } from "node:fs/promises";
 
@@ -44,6 +45,21 @@ export const POSTER_STYLE_OPTIONS = {
   },
 };
 
+// Which poster design a row uses. Kept apart from the tag options so it never
+// changes tag-poster filenames on its own.
+export const POSTER_LOOKS = {
+  label: "Poster look",
+  choices: {
+    tags: "Tags — BetterPosters style (1.10+)",
+    classic: "Classic badge (before 1.10)",
+  },
+};
+
+export const POSTER_ACCOUNTS = {
+  anime: { label: "Anime row", defaultLook: "tags" },
+  tv: { label: "TV row · Account 2", defaultLook: "classic" },
+};
+
 // 1.11.1 without the white outline on black text.
 export const DEFAULT_POSTER_STYLE = Object.freeze({
   topTab: "chip",
@@ -71,12 +87,41 @@ export function normalizePosterStyle(input) {
   return style;
 }
 
-export async function loadPosterStyle(filePath) {
-  if (!filePath) return { ...DEFAULT_POSTER_STYLE };
+// One row's settings: { look, ...tag options }.
+export function normalizeAccountStyle(input, account = "anime") {
+  const defaultLook = POSTER_ACCOUNTS[account]?.defaultLook ?? "tags";
+  const look = input && Object.keys(POSTER_LOOKS.choices).includes(input.look) ? input.look : defaultLook;
+  return { look, ...normalizePosterStyle(input) };
+}
+
+// The whole file. A flat file from 1.12.0 (tag options at the top level) is
+// read as the anime section, so older configs keep working.
+export function normalizePosterConfig(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const legacy = !source.anime && !source.tv && Object.keys(POSTER_STYLE_OPTIONS).some((key) => key in source);
+  const config = {};
+  for (const account of Object.keys(POSTER_ACCOUNTS)) {
+    config[account] = normalizeAccountStyle(legacy && account === "anime" ? source : source[account], account);
+  }
+  return config;
+}
+
+export function defaultPosterConfig() {
+  return normalizePosterConfig({});
+}
+
+export async function loadPosterConfig(filePath) {
+  if (!filePath) return defaultPosterConfig();
   try {
-    return normalizePosterStyle(JSON.parse(await readFile(filePath, "utf8")));
+    return normalizePosterConfig(JSON.parse(await readFile(filePath, "utf8")));
   } catch (error) {
     if (error.code !== "ENOENT") console.warn(`Poster style file ignored (${error.message}); using defaults.`);
-    return { ...DEFAULT_POSTER_STYLE };
+    return defaultPosterConfig();
   }
+}
+
+// Tag options for one row (without the look), as the poster renderer expects.
+export async function loadPosterStyle(filePath, account = "anime") {
+  const { look, ...style } = (await loadPosterConfig(filePath))[account] ?? normalizeAccountStyle(null, account);
+  return style;
 }

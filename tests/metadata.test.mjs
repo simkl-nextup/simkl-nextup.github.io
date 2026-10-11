@@ -124,6 +124,8 @@ test("metadata enrichment prefers a textless TMDB poster and English title logo"
         poster_path: "/default-poster.jpg",
         backdrop_path: "/backdrop.jpg",
         original_language: "ja",
+        vote_average: 8.437,
+        vote_count: 1200,
         external_ids: { imdb_id: "tt1234567", tvdb_id: 654 },
         images: {
           posters: [
@@ -151,6 +153,8 @@ test("metadata enrichment prefers a textless TMDB poster and English title logo"
   const visuals = result.items["101"]._addonVisuals;
   assert.equal(visuals.poster, "https://image.tmdb.org/t/p/w500/textless-poster.jpg");
   assert.equal(visuals.logo, "https://image.tmdb.org/t/p/w500/english-logo.png");
+  assert.equal(visuals.tmdbRating, 8.437);
+  assert.equal(visuals.tmdbVoteCount, 1200);
 });
 
 test("MDBList can bridge a MAL ID into TMDB enrichment", async () => {

@@ -345,8 +345,9 @@ export async function composeTaggedPoster({ poster, logo, name, badge, style: ra
   if (!status) throw new Error(`Unsupported poster status: ${badge.status}`);
   const statusText = await text(status.label, inkFor(status.fill), L.pillFont);
   const pillW = statusText.w + L.pillPad * 2;
-  const rating = badge.malScore
-    ? await text(`★ ${badge.malScore}`, "#FFFFFF", L.ratingFont, { shadow: style.ratingShadow, shadowAlpha: "85%" })
+  const score = badge.score ?? badge.malScore;
+  const rating = score
+    ? await text(`★ ${score}`, "#FFFFFF", L.ratingFont, { shadow: style.ratingShadow, shadowAlpha: "85%" })
     : null;
   const rowW = pillW + (rating ? L.rowGap + rating.w : 0);
   const rowX = Math.round((W - rowW) / 2);
@@ -442,7 +443,7 @@ export function taggedSignatureParts(badge, style) {
     style: normalizePosterStyle(style ?? DEFAULT_POSTER_STYLE),
     top: topTabText(badge),
     dub: dubTag(badge)?.text ?? null,
-    mal: badge?.malScore ?? null,
+    mal: badge?.score ?? badge?.malScore ?? null,
     textless: Boolean(badge?.textless),
   };
 }
