@@ -10,6 +10,7 @@ on:
       - "config/poster-style.json"
       - "src/**"
       - "scripts/**"
+      - "assets/fonts/**"
       - "tests/**"
       - "package.json"
       - "package-lock.json"
@@ -38,6 +39,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          # Recover the original font even if a replacement archive omits it.
+          fetch-depth: 0
+
+      - name: Ensure poster font is available
+        run: |
+          if [ ! -s assets/fonts/Inter-ExtraBold.otf ]; then
+            echo "Poster font missing; restoring it from the repository commit before it was deleted."
+            mkdir -p assets/fonts
+            git show de46231:assets/fonts/Inter-ExtraBold.otf > assets/fonts/Inter-ExtraBold.otf
+          fi
+          test -s assets/fonts/Inter-ExtraBold.otf
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
