@@ -6,6 +6,7 @@ import {
   DEFAULT_MAX_ITEMS,
 } from "./constants.mjs";
 import { effectiveStatus, mediaFor, simklIdFor } from "./state.mjs";
+import { resolveTvdbEpisode } from "./tvdb.mjs";
 
 function validDate(value) {
   if (!value) return null;
@@ -181,29 +182,10 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function findDefaultVideoId(seriesMeta, info) {
-  if (seriesMeta?.matchedVideoId) return seriesMeta.matchedVideoId;
-  if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
-  const localEpisode = Number(info.episode);
-  const episode = localEpisode + Number(seriesMeta.matchedEpisodeOffset ?? 0);
-  const preferredSeasons = [
-    finiteNumber(info?.season),
-    finiteNumber(seriesMeta.matchedSeasonNumber),
-  ].filter((value, index, values) => value !== null && values.indexOf(value) === index);
-
-  for (const season of preferredSeasons) {
-    const match = seriesMeta.videos.find((video) => video.season === season && video.episode === episode);
-    if (match) return match.id;
-  }
-
-  const regularSeasons = [...new Set(seriesMeta.videos.filter((video) => video.season > 0).map((video) => video.season))];
-  if (regularSeasons.length === 1) {
-    const match = seriesMeta.videos.find((video) => video.season === regularSeasons[0] && video.episode === episode);
-    if (match) return match.id;
-  }
-
-  const matches = seriesMeta.videos.filter((video) => video.episode === episode && video.season > 0);
-  return matches.length === 1 ? matches[0].id : null;
+function findDefaultVideoId(seriesMeta, info, { preferMatchedSeason = false } = {}) {
+  // matchedVideoId is a historical *anchor*, not the user's current next
+  // episode. Never return it unconditionally after playback advances.
+  return resolveTvdbEpisode(seriesMeta, info, { preferMatchedSeason })?.id ?? null;
 }
 
 function trackingEpisodeCount(seriesMeta) {
@@ -226,30 +208,23 @@ const REVIVAL_FRESHNESS_DAYS = 365;
 // what makes checking "season > 1, episode === 1" a reliable stand-in for
 // "the previous season was completed", without needing separate watched-
 // count bookkeeping.
-function resolveSeasonPosition(seriesMeta, info) {
-  if (Number.isFinite(Number(info?.season)) && Number.isFinite(Number(info?.episode))) {
+function resolveSeasonPosition(seriesMeta, info, { preferMatchedSeason = false } = {}) {
+  const video = resolveTvdbEpisode(seriesMeta, info, { preferMatchedSeason });
+  if (video) return { season: video.season, episode: video.episode };
+  if (finiteNumber(info?.season) !== null && finiteNumber(info?.episode) !== null) {
     return { season: Number(info.season), episode: Number(info.episode) };
   }
-  if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
-  const localEpisode = Number(info.episode);
-  const episode = localEpisode + Number(seriesMeta.matchedEpisodeOffset ?? 0);
-  const season = finiteNumber(seriesMeta.matchedSeasonNumber);
-  if (season !== null) {
-    const match = seriesMeta.videos.find((video) => video.season === season && video.episode === episode);
-    if (match) return { season: match.season, episode: match.episode };
-  }
-  const matches = seriesMeta.videos.filter((video) => video.episode === episode && video.season > 0);
-  return matches.length === 1 ? { season: matches[0].season, episode: matches[0].episode } : null;
+  return null;
 }
 
 // A title Simkl has already auto-promoted to "watching" whose very next
 // unwatched episode is a fresh season premiere. Treated as a revived
 // Completed title (purple badge) until that one episode is watched.
-function isFreshSeasonPremiere(seriesMeta, info, airedAt, now) {
+function isFreshSeasonPremiere(seriesMeta, info, airedAt, now, { preferMatchedSeason = false } = {}) {
   if (!airedAt) return false;
   const ageDays = (now.getTime() - airedAt.getTime()) / MS_PER_DAY;
   if (ageDays < 0 || ageDays >= REVIVAL_FRESHNESS_DAYS) return false;
-  const position = resolveSeasonPosition(seriesMeta, info);
+  const position = resolveSeasonPosition(seriesMeta, info, { preferMatchedSeason });
   return Boolean(position && position.episode === 1 && position.season > 1);
 }
 
@@ -274,16 +249,9 @@ function seasonFromTitle(title) {
 
 // Map a Simkl episode onto the TheTVDB season/episode that Nuvio's detail page
 // lists, so the poster and the episode list always agree.
-function tvdbPosition(seriesMeta, info, { allowMatchedVideo = false } = {}) {
-  if (!seriesMeta?.videos?.length || !Number.isFinite(Number(info?.episode))) return null;
-  // Simkl numbers each anime entry as its own "season 1"; when TheTVDB has
-  // matched this entry to a unified season, that season wins.
-  const lookup = finiteNumber(seriesMeta.matchedSeasonNumber) !== null ? { ...info, season: undefined } : info;
-  const id = allowMatchedVideo
-    ? findDefaultVideoId(seriesMeta, lookup)
-    : findDefaultVideoId({ ...seriesMeta, matchedVideoId: null }, lookup);
-  const video = id ? seriesMeta.videos.find((candidate) => candidate.id === id) : null;
-  return video && video.season > 0 ? { season: video.season, episode: video.episode } : null;
+function tvdbPosition(seriesMeta, info, { preferMatchedSeason = false } = {}) {
+  const video = resolveTvdbEpisode(seriesMeta, info, { preferMatchedSeason });
+  return video ? { season: video.season, episode: video.episode } : null;
 }
 
 // Dub episode → the same TheTVDB season/episode numbering as the top tab.
@@ -292,7 +260,7 @@ function tvdbPosition(seriesMeta, info, { allowMatchedVideo = false } = {}) {
 //   - a fully dubbed entry shows this entry's own season;
 //   - a number we could not place keeps this entry's season;
 //   - no episode number at all → no season (the tag says "DUB ONGOING").
-function dubDisplay(dub, { seriesMeta, info, tags }) {
+function dubDisplay(dub, { seriesMeta, info, tags, preferMatchedSeason = false }) {
   if (!dub) return null;
   const entrySeason = finiteNumber(seriesMeta?.matchedSeasonNumber)
     ?? tags?.nextSeason ?? tags?.airedSeason ?? tags?.season ?? 1;
@@ -309,31 +277,31 @@ function dubDisplay(dub, { seriesMeta, info, tags }) {
   // bigger than any single season can only be an absolute episode number.
   const longestSeason = videos.reduce((max, video) => Math.max(max, Number(video.episode) || 0), 0);
   const position = (longestSeason && episode > longestSeason ? byAbsolute() : null)
-    ?? tvdbPosition(seriesMeta, { episode, season: info?.season })
+    ?? tvdbPosition(seriesMeta, { episode, season: info?.season }, { preferMatchedSeason })
     ?? byAbsolute();
   if (position) return { ...dub, season: position.season, episode: position.episode };
   return { ...dub, season: entrySeason };
 }
 
 // Season/episode numbers for the "tags" poster: latest aired and next to watch.
-function posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title }) {
+function posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title, preferMatchedSeason = false }) {
   const fallbackSeason = (value) => {
     const simkl = finiteNumber(value?.season);
     return (simkl && simkl > 1 ? simkl : null) ?? seasonFromTitle(title) ?? simkl ?? 1;
   };
-  const position = (value, allowMatchedVideo) => {
+  const position = (value) => {
     if (!value || !Number.isFinite(Number(value.episode))) return null;
-    return tvdbPosition(seriesMeta, value, { allowMatchedVideo })
+    return tvdbPosition(seriesMeta, value, { preferMatchedSeason })
       ?? { season: fallbackSeason(value), episode: Number(value.episode) };
   };
   const later = (a, b) => (!a ? b : !b ? a : (a.season > b.season || (a.season === b.season && a.episode >= b.episode)) ? a : b);
 
   if (status === "plantowatch") {
-    const aired = position(latestAiredInfo ?? info, false);
+    const aired = position(latestAiredInfo ?? info);
     return { season: aired?.season ?? null, aired: aired?.episode ?? null, airedSeason: aired?.season ?? null, next: null, nextSeason: null };
   }
-  const next = position(info, true);
-  const aired = later(position(latestAiredInfo, false), next);
+  const next = position(info);
+  const aired = later(position(latestAiredInfo), next);
   return {
     season: next?.season ?? null,
     aired: aired?.episode ?? null,
@@ -343,14 +311,14 @@ function posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title }) 
   };
 }
 
-function buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo }) {
+function buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo, latestEpisode }) {
   if (status === "plantowatch") {
     return `From your Plan to Watch list: latest release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
   }
   if (status === "completed") {
     return `Previously completed: new release ${episode}${info.title ? ` — ${info.title}` : ""}, aired ${displayDate(airedAt)}. Data from Simkl.`;
   }
-  return `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. ${sortAt > airedAt && latestAiredInfo?.episode ? `Latest release: ${episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}Data from Simkl.`;
+  return `Next unwatched: ${episode}${info.title ? ` — ${info.title}` : ""}. ${sortAt > airedAt && latestAiredInfo?.episode ? `Latest release: ${latestEpisode ?? episodeLabel(latestAiredInfo)}, aired ${displayDate(sortAt)}. ` : ""}Data from Simkl.`;
 }
 
 function buildLinks(item, visuals, seriesMeta) {
@@ -424,7 +392,15 @@ export function buildCatalog(items, options = {}) {
     }
 
     const seriesMeta = item._addonTvdbMeta;
-    const episode = episodeLabel(info);
+    const preferMatchedSeason = Boolean(item.anime);
+    // Keep classic badges, descriptions and the catalog's episode label in
+    // sync with the newer tags layout; all must use the resolved TVDB season.
+    const currentPosition = resolveTvdbEpisode(seriesMeta, info, { preferMatchedSeason });
+    const latestPosition = resolveTvdbEpisode(seriesMeta, latestAiredInfo, { preferMatchedSeason });
+    const episode = episodeLabel(currentPosition ?? info);
+    const latestEpisode = latestAiredInfo?.episode
+      ? episodeLabel(latestPosition ?? latestAiredInfo)
+      : episode;
     const visuals = item._addonVisuals ?? {};
     const links = buildLinks(item, visuals, seriesMeta);
     // Simkl's own status can already say "watching" for a title the user
@@ -432,15 +408,15 @@ export function buildCatalog(items, options = {}) {
     // check (isFreshSeasonPremiere) when season data is available; fall
     // back to the watched-count snapshot (effectiveStatus, in state.mjs)
     // for titles Simkl hasn't matched to TVDB.
-    const status = item.status === "watching" && isFreshSeasonPremiere(seriesMeta, info, airedAt, now)
+    const status = item.status === "watching" && isFreshSeasonPremiere(seriesMeta, info, airedAt, now, { preferMatchedSeason: Boolean(item.anime) })
       ? "completed"
       : effectiveStatus(item);
-    const description = buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo })
+    const description = buildDescription({ status, info, episode, airedAt, sortAt, latestAiredInfo, latestEpisode })
       .replace(/ Data from Simkl\.$/, `${dubSentence(item._addonDub)} Data from Simkl.`);
     const name = seriesMeta?.name || media.title;
     const poster = visuals.poster || seriesMeta?.poster || posterUrl(media.poster);
     const background = seriesMeta?.background || visuals.background || fanartUrl(media.fanart);
-    const defaultVideoId = findDefaultVideoId(seriesMeta, info);
+    const defaultVideoId = findDefaultVideoId(seriesMeta, info, { preferMatchedSeason: Boolean(item.anime) });
 
     const basePreview = {
       id,
@@ -488,11 +464,8 @@ ${seriesMeta.description}` : description,
         }
       : basePreview;
 
-    const latestEpisode = latestAiredInfo?.episode
-      ? episodeLabel(latestAiredInfo)
-      : episode;
     const nextEpisode = status === "watching" ? episode : null;
-    const tags = posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title: media.title });
+    const tags = posterTagNumbers({ status, info, latestAiredInfo, seriesMeta, title: media.title, preferMatchedSeason: Boolean(item.anime) });
 
     const entry = {
       airedAt: sortAt,
@@ -504,7 +477,7 @@ ${seriesMeta.description}` : description,
         latestEpisode,
         nextEpisode,
         tags,
-        ...(item._addonDub ? { dub: dubDisplay(item._addonDub, { seriesMeta, info, tags }) } : {}),
+        ...(item._addonDub ? { dub: dubDisplay(item._addonDub, { seriesMeta, info, tags, preferMatchedSeason: Boolean(item.anime) }) } : {}),
         ...(item._addonMalScore ? { malScore: item._addonMalScore } : {}),
         ...(media.ids?.mal ? { mal: Number(media.ids.mal) } : {}),
         ...(posterScore(item, visuals, options) ? { score: posterScore(item, visuals, options) } : {}),

@@ -276,3 +276,20 @@ test("disabling TVDB removes cached TVDB metadata and returns to the original pe
   assert.equal(result.usesTvdb, false);
   assert.equal(result.items["101"]._addonTvdbMeta, undefined);
 });
+
+test("TVDB inferred position trusts a matching S2 air date over a stale Simkl S1", () => {
+  const item = {
+    status: "watching",
+    show: { title: "Adults", ids: { simkl: 801 } },
+    next_to_watch_info: { season: 1, episode: 2, date: "2026-08-07T00:00:00Z" },
+  };
+  const result = inferTvdbPosition(item, {
+    videos: [
+      { id: "tvdb:1:1:2", season: 1, episode: 2, released: "2025-08-07T00:00:00Z" },
+      { id: "tvdb:1:2:2", season: 2, episode: 2, released: "2026-08-07T00:00:00Z" },
+    ],
+  });
+  assert.deepEqual(result, {
+    matchedSeasonNumber: 2, matchedEpisodeOffset: 0, matchedVideoId: "tvdb:1:2:2",
+  });
+});

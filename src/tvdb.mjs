@@ -2,9 +2,11 @@ import { mediaFor, simklIdFor } from "./state.mjs";
 
 const TVDB_API_BASE = "https://api4.thetvdb.com/v4/";
 const TVDB_ARTWORK_BASE = "https://artworks.thetvdb.com/banners/";
-const SUCCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Currently airing shows gain new episodes between syncs. Recheck the episode
+// list every three days instead of freezing the mapping for a whole month.
+const SUCCESS_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 6 * 60 * 60 * 1000;
-const TVDB_METADATA_VERSION = 3;
+const TVDB_METADATA_VERSION = 4;
 const MAX_EPISODE_PAGES = 100;
 
 export class TvdbApiError extends Error {
@@ -700,12 +702,81 @@ export function unifyTvdbMetadata(items) {
   return next;
 }
 
+// Resolve the *current* episode, not the episode that was on deck when TVDB
+// metadata was first fetched. A matching TVDB air date takes priority over a
+// stale S1 supplied by Simkl or an old matchedVideoId. For split anime entries,
+// the inferred TVDB season is preferred when there is no date evidence.
+export function resolveTvdbEpisode(seriesMeta, info, { preferMatchedSeason = false } = {}) {
+  const videos = Array.isArray(seriesMeta?.videos)
+    ? seriesMeta.videos.filter((video) => Number(video.season) > 0 && positiveInteger(video.episode))
+    : [];
+  const episode = positiveInteger(info?.episode);
+  if (!episode || !videos.length) return null;
+  const offset = integer(seriesMeta.matchedEpisodeOffset) ?? 0;
+  const expected = episode + offset;
+  const date = dateKey(info?.date);
+  const title = normalizedTitle(info?.title);
+  const explicitSeason = positiveInteger(info?.season);
+  const mappedSeason = positiveInteger(seriesMeta.matchedSeasonNumber);
+  const seasonPreference = preferMatchedSeason
+    ? [mappedSeason, explicitSeason]
+    : [explicitSeason, mappedSeason];
+  const pick = (candidates) => {
+    if (!candidates.length) return null;
+    if (title) {
+      const titled = candidates.filter((video) => normalizedTitle(video.title) === title);
+      if (titled.length === 1) return titled[0];
+      if (titled.length) candidates = titled;
+    }
+    for (const season of seasonPreference) {
+      const matching = candidates.filter((video) => Number(video.season) === season);
+      if (matching.length === 1) return matching[0];
+    }
+    return candidates.length === 1 ? candidates[0] : null;
+  };
+
+  // Exact episode number + matching air date identifies the actual season,
+  // even if the tracking provider still calls it season one. Dates may differ
+  // by a day or two due to local broadcasting timezones and release delays.
+  if (date) {
+    const dated = videos
+      .map((video) => ({ video, distance: dayDistance(date, dateKey(video.released)) }))
+      .filter(({ video, distance }) => distance <= 2 && (video.episode === expected || video.episode === episode));
+    if (dated.length) {
+      const closestDistance = Math.min(...dated.map(({ distance }) => distance));
+      const closest = dated.filter(({ distance }) => distance === closestDistance).map(({ video }) => video);
+      const selected = pick(closest);
+      if (selected) return selected;
+    }
+  }
+
+  const sameEpisode = videos.filter((video) => video.episode === expected);
+  const byTitle = title ? sameEpisode.filter((video) => normalizedTitle(video.title) === title) : [];
+  if (byTitle.length === 1) return byTitle[0];
+  return pick(sameEpisode);
+}
+
 export function inferTvdbPosition(item, seriesMeta) {
   const videos = Array.isArray(seriesMeta?.videos) ? seriesMeta.videos : [];
   if (!videos.length) return { matchedSeasonNumber: null, matchedEpisodeOffset: 0, matchedVideoId: null };
   const media = mediaFor(item);
 
   for (const hint of itemHints(item)) {
+    // A date + episode match is stronger than Simkl's season number, which
+    // can stay at S1 when an ongoing show has already entered S2.
+    const datedExact = videos
+      .map((video) => ({ video, distance: dayDistance(hint.date, dateKey(video.released)) }))
+      .filter(({ video, distance }) => video.season > 0 && video.episode === hint.episode && distance <= 2)
+      .sort((a, b) => a.distance - b.distance);
+    if (datedExact.length) {
+      const nearest = datedExact.filter(({ distance }) => distance === datedExact[0].distance);
+      const selected = nearest.find(({ video }) => video.season === hint.season)?.video
+        ?? (nearest.length === 1 ? nearest[0].video : null);
+      if (selected) {
+        return { matchedSeasonNumber: selected.season, matchedEpisodeOffset: 0, matchedVideoId: selected.id };
+      }
+    }
+
     if (hint.season !== null) {
       const target = videos.find((video) => video.season === hint.season && video.episode === hint.episode);
       if (target) {
@@ -713,13 +784,14 @@ export function inferTvdbPosition(item, seriesMeta) {
       }
     }
 
+    // Some anime sources number episodes consecutively instead of restarting
+    // at episode one. Keep the existing date-based offset bridge in that case.
     const dateMatches = videos
       .map((video) => ({ video, distance: dayDistance(hint.date, dateKey(video.released)) }))
-      .filter(({ distance }) => distance <= 2)
+      .filter(({ video, distance }) => video.season > 0 && distance <= 2)
       .sort((a, b) => a.distance - b.distance || Math.abs(a.video.episode - hint.episode) - Math.abs(b.video.episode - hint.episode));
     if (dateMatches.length) {
-      const exactEpisode = dateMatches.find(({ video }) => video.episode === hint.episode);
-      const selected = exactEpisode?.video ?? dateMatches[0].video;
+      const selected = dateMatches[0].video;
       return {
         matchedSeasonNumber: selected.season,
         matchedEpisodeOffset: selected.episode - hint.episode,
@@ -776,6 +848,9 @@ function sourceSignature(ids, seasonType, language) {
 
 function stillFresh(meta, signature, now) {
   if (!meta?.attemptedAt || meta.signature !== signature) return false;
+  // An older episode resolver / cached episode list must be rebuilt at the
+  // first deployment after this fix, even if its 30-day timer has not expired.
+  if (Array.isArray(meta.videos) && meta.videos.length && meta.version !== TVDB_METADATA_VERSION) return false;
   const attemptedAt = new Date(meta.attemptedAt).getTime();
   if (!Number.isFinite(attemptedAt)) return false;
   const ttl = meta.error ? FAILURE_TTL_MS : SUCCESS_TTL_MS;

@@ -491,3 +491,87 @@ test("TV row shows the TMDB score; anime keeps MAL; few votes means no score", a
   assert.equal(buildCatalog(show(visuals(8.4, 900)), opts).posterBadges[0].score, undefined, "anime row ignores TMDB");
   assert.equal(buildCatalog(show({ ...visuals(6.1, 900), _addonMalScore: "8.9" }), { ...opts, tmdbScores: true }).posterBadges[0].score, "8.9", "MAL wins");
 });
+
+// Regression fixtures for the season-2 poster mismatch: the calendar and
+// tracking provider may still label an episode S1 even when TheTVDB's dated
+// episode list correctly places it in season 2.
+function tvShowWithStaleSeason(name, airedEpisode, airedDate, nextDate) {
+  const videos = [
+    { id: "tt9000001:1:2", season: 1, episode: 2, released: "2025-07-01T00:00:00Z" },
+    { id: `tt9000001:1:${airedEpisode}`, season: 1, episode: airedEpisode, released: "2025-08-01T00:00:00Z" },
+    { id: "tt9000001:2:2", season: 2, episode: 2, released: nextDate },
+    { id: `tt9000001:2:${airedEpisode}`, season: 2, episode: airedEpisode, released: airedDate },
+  ];
+  return {
+    status: "watching",
+    watched_episodes_count: 10,
+    total_episodes_count: 20,
+    show: { title: name, ids: { simkl: 801, imdb: "tt9000001" } },
+    next_to_watch_info: { season: 1, episode: 2, date: nextDate },
+    _addonLatestAiredInfo: { season: 1, episode: airedEpisode, date: airedDate },
+    _addonTvdbMeta: {
+      parentId: "tt9000001", videos,
+      matchedSeasonNumber: 1,
+      matchedVideoId: "tt9000001:1:2",
+      matchedEpisodeOffset: 0,
+    },
+  };
+}
+
+test("Adults S2: maps latest aired E8 and next E2 independently despite stale S1 and matchedVideoId", () => {
+  const item = tvShowWithStaleSeason("Adults", 8, "2026-09-18T00:00:00Z", "2026-08-07T00:00:00Z");
+  const result = buildCatalog({ 801: item }, { now: "2026-10-10T00:00:00Z" });
+  assert.deepEqual(result.posterBadges[0].tags, {
+    season: 2, aired: 8, airedSeason: 2, next: 2, nextSeason: 2,
+  });
+  assert.equal(result.catalog.metas[0].behaviorHints.defaultVideoId, "tt9000001:2:2");
+  assert.equal(result.posterBadges[0].episode, "S02E02", "classic badge uses the TVDB season");
+  assert.equal(result.posterBadges[0].latestEpisode, "S02E08", "classic badge latest airing uses S2");
+  assert.equal(result.posterBadges[0].nextEpisode, "S02E02");
+  assert.match(result.catalog.metas[0].description, /Latest release: S02E08/);
+});
+
+test("MobLand S2: maps latest aired E4 and next E2 rather than old cached S1", () => {
+  const item = tvShowWithStaleSeason("MobLand", 4, "2026-10-09T00:00:00Z", "2026-09-25T00:00:00Z");
+  const result = buildCatalog({ 801: item }, { now: "2026-10-12T00:00:00Z" });
+  assert.deepEqual(result.posterBadges[0].tags, {
+    season: 2, aired: 4, airedSeason: 2, next: 2, nextSeason: 2,
+  });
+  assert.equal(result.metadata[0].behaviorHints.defaultVideoId, "tt9000001:2:2");
+});
+
+test("explicit S2 remains S2 even if a cached match anchors to S1 and no dates are available", () => {
+  const item = tvShowWithStaleSeason("Example", 4, "2026-10-09T00:00:00Z", "2026-09-25T00:00:00Z");
+  item.next_to_watch_info = { season: 2, episode: 2, date: "2026-09-26T00:00:00Z" };
+  const result = buildCatalog({ 801: item }, { now: "2026-10-12T00:00:00Z" });
+  assert.equal(result.posterBadges[0].tags.nextSeason, 2);
+  assert.equal(result.catalog.metas[0].behaviorHints.defaultVideoId, "tt9000001:2:2");
+});
+
+test("a legitimate season-one show is not incorrectly promoted to season two", () => {
+  const item = tvShowWithStaleSeason("WAR", 4, "2026-10-09T00:00:00Z", "2026-09-25T00:00:00Z");
+  item.next_to_watch_info = { season: 1, episode: 2, date: "2025-07-01T00:00:00Z" };
+  item._addonLatestAiredInfo = { season: 1, episode: 4, date: "2025-08-01T00:00:00Z" };
+  const result = buildCatalog({ 801: item }, { now: "2026-10-12T00:00:00Z" });
+  assert.equal(result.posterBadges[0].tags.nextSeason, 1);
+  assert.equal(result.posterBadges[0].tags.airedSeason, 1);
+});
+
+test("anime sequel entry continues to use the mapped unified season without release-date evidence", () => {
+  const item = watching({
+    anime: { title: "Anime Season 2", ids: { simkl: 910, imdb: "tt9000010" } },
+    next_to_watch_info: { season: 1, episode: 2, date: "2026-09-01T00:00:00Z" },
+    _addonTvdbMeta: {
+      parentId: "tt9000010", matchedSeasonNumber: 2, matchedEpisodeOffset: 0,
+      matchedVideoId: "tt9000010:2:1",
+      videos: [
+        { id: "tt9000010:1:2", season: 1, episode: 2 },
+        { id: "tt9000010:2:1", season: 2, episode: 1 },
+        { id: "tt9000010:2:2", season: 2, episode: 2 },
+      ],
+    },
+  });
+  const result = buildCatalog({ 910: item }, { now: "2026-10-12T00:00:00Z" });
+  assert.equal(result.posterBadges[0].tags.nextSeason, 2);
+  assert.equal(result.catalog.metas[0].behaviorHints.defaultVideoId, "tt9000010:2:2");
+});

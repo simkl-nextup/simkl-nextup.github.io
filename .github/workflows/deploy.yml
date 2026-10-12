@@ -2,11 +2,18 @@ name: Refresh two Simkl catalogs and deploy Pages
 
 on:
   workflow_dispatch:
-  # Saving poster settings from /studio.html (or editing the file on GitHub)
-  # rebuilds and redeploys straight away.
+  # Regenerate on actual code changes too, not only Studio poster settings.
+  # Otherwise a season-mapping fix waits for the next scheduled refresh.
   push:
     branches: [main]
-    paths: ["config/poster-style.json"]
+    paths:
+      - "config/poster-style.json"
+      - "src/**"
+      - "scripts/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy.yml"
   schedule:
     # Run once per hour, away from GitHub's busy top-of-hour period.
     - cron: "23 * * * *"
