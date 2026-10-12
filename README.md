@@ -1,321 +1,151 @@
-# My Anime Up Next · Simkl
+<div align="center">
 
-A personal Stremio/Nuvio project that publishes two isolated rows from the same GitHub repository: the existing root addon reads **anime** from account 1, while `/account-2/` reads normal **TV shows** from account 2. Each row combines its Simkl **Watching** and **Plan to Watch** lists, plus previously **Completed** titles that receive an additional episode, and bumps a title whenever a new episode airs.
+# Simkl Next Up
 
-Optional TMDB enrichment replaces Simkl's smaller artwork with clean `w500` posters and `w1280` backdrops. MDBList is used only as an ID-mapping fallback when Simkl lacks IMDb, TMDB and TVDB identifiers.
+### One row. Zero guesswork.
 
-Optional TheTVDB enrichment adds English series/episode metadata, high-resolution episode stills, aired-order seasons, and cross-record grouping. When TheTVDB stores anime sequels as separate series, the addon can merge matching records into one Nuvio detail page while retaining each source episode ID so watched-state sync continues to work.
+**Your next TV and anime episodes, automatically organized for Stremio and Nuvio.**  
+Powered by [Simkl](https://simkl.com) · Hosted on GitHub Pages · Open source
 
-Each generated poster uses large left-edge ribbons. Watching cards now show three clearly labelled rows: green **NEW EPISODE**, a dark-green **NEW · EP 11** row for the latest aired release, and a blue **NEXT · EP 5** row for your next unwatched episode. Plan to Watch and revived Completed cards use one labelled detail row beneath their gold or purple status ribbon. Thick black text outlines plus a compact drop shadow improve legibility on television screens without covering Nuvio's native top-right checkmark.
+[**Anime addon**](https://simkl-nextup.github.io/manifest.json) · [**TV addon**](https://simkl-nextup.github.io/account-2/manifest.json) · [**Poster Studio**](https://simkl-nextup.github.io/studio.html)
 
-For Watching titles, the poster therefore distinguishes the latest available episode from the episode you should play next. The sorting timestamp comes from the show's latest aired episode, so a title is bumped even when you are several episodes behind. Plan to Watch titles display their latest aired episode and are bumped on every subsequent release. A Completed title re-enters only when the calendar reports an episode number beyond its saved watched count, then disappears after the new episode is recorded. Future-only titles remain excluded until an episode actually airs.
+</div>
 
-Anime seasons are often separate Simkl titles. TheTVDB mode now also scans completed sibling entries in your Simkl library, allowing an active sequel card to expose earlier seasons. The catalog still only surfaces titles that meet the Up Next rules; completed siblings are used as metadata sources rather than added as extra cards.
+## See it in action
 
-## What the row includes
+[![Simkl Next Up — animated product preview](assets/promo/nextup-preview.gif)](assets/promo/simkl-nextup-X-landscape-16x9.mp4)
 
-- Simkl status is `watching`, with a next unwatched episode already available; or
-- Simkl status is `plantowatch`, with at least one aired episode observed by the addon; or
-- Simkl status is `completed`, but a newly aired episode number exceeds the saved watched count.
-- One card per anime: next unwatched episode for Watching, latest aired episode for Plan to Watch or revived Completed.
-- Every new episode bumps its show to the top, regardless of which eligible list it is in.
+**▶ [Watch the full 18-second promo (landscape)](assets/promo/simkl-nextup-X-landscape-16x9.mp4)**  
+**↗ [Watch the vertical version (Reels / Shorts / TikTok)](assets/promo/simkl-nextup-vertical-1080x1920.mp4)**
 
-It does **not** include recommendations, caught-up Completed anime, movies, On Hold, Dropped, or future-only episodes.
+*The preview above is an animated GIF that plays directly in GitHub's README. Click it for the full MP4 with sound. Depending on the browser, GitHub may open or download the MP4.*
 
-## Deployment
+## What it does
 
-### 1. Create the repository
+Simkl Next Up creates personalized **Up Next** catalogs from your Simkl watchlists. New releases move their shows toward the front, while custom posters make episode progress easy to recognize at a glance.
 
-1. Create a new GitHub repository.
-2. Upload all files from this project, preserving the folders.
-3. A public repository works with GitHub Pages on GitHub Free. The generated catalog is publicly readable; the Simkl access token is not.
+- **Watching:** Shows the next unwatched episode when it has aired.
+- **Plan to Watch:** Includes titles that have at least one released episode.
+- **Completed:** Brings a title back when new episodes become available.
+- **Episode awareness:** Distinguishes the *latest aired episode* from the *next unwatched episode*.
+- **Clean catalogs:** Excludes dropped/on-hold titles, movies, and episodes that have not aired.
+- **Automatic refresh:** GitHub Actions refreshes the catalogs hourly (scheduled for minute `:23`).
 
-### 2. Register a Simkl API application
+The addon **provides catalogs and metadata, not video streams**. Playback still comes from your Stremio/Nuvio streaming addons.
 
-1. Open [Simkl developer settings](https://simkl.com/settings/developer/).
-2. Create an application for personal/non-commercial use.
-3. Copy its `client_id`.
+## Two independent feeds
 
-### 3. Enable GitHub Pages and deploy the setup page
+| | Anime | TV series |
+|---|---|---|
+| Simkl library | Account 1 — anime | Account 2 — TV shows |
+| Addon URL | [`/manifest.json`](https://simkl-nextup.github.io/manifest.json) | [`/account-2/manifest.json`](https://simkl-nextup.github.io/account-2/manifest.json) |
+| State and catalog | Separate | Separate |
+| Poster settings | Independent | Independent |
 
-1. Open **Settings → Pages**.
-2. Set **Source** to **GitHub Actions**.
-3. Open **Actions → Deploy setup page only**.
-4. Select **Run workflow**.
+The TV feed is optional: configure `SIMKL_ACCESS_TOKEN_2` to enable it. Neither feed overwrites the other's catalog or tracking state.
 
-This publishes the included empty catalog and browser-based Simkl authorization page without requiring any secrets.
+## Artwork and customization
 
-### 4. Authorize your Simkl account
+- Custom poster labels for **New Episode**, **Plan to Watch**, and **New Season**.
+- **Latest aired** and **next unwatched** episode information on supported titles.
+- TMDB artwork, title logos, and TV ratings (when available).
+- TheTVDB metadata, seasons, episode stills, and grouping of related series records (when configured).
+- Anime extras: MyAnimeList scores and optional English-dub progress via AnimeSchedule.
+- **[Poster Studio](https://simkl-nextup.github.io/studio.html):** Customize the anime and TV rows separately with *Tags* or *Classic* looks, then preview your settings.
 
-Use either method:
+Poster preferences are saved in [`config/poster-style.json`](config/poster-style.json). Some enriched metadata and episode labels depend on the accuracy of their upstream sources.
 
-- Run `npm run authorize -- YOUR_CLIENT_ID` with Node.js 20 or newer.
-- Open `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/setup.html`, enter the client ID, approve the PIN at Simkl, and copy the resulting token.
+## Set up your own deployment
 
-Never commit the access token.
+**Requirements:** Node.js 20.9+ for local use, a GitHub repository with Actions and Pages enabled, and a Simkl developer application.
 
-### 5. Add GitHub secrets
+1. **Fork or upload the project** to a GitHub repository, preserving its folder structure.
+2. In **Settings → Pages**, choose **GitHub Actions** as the source.
+3. Run **Actions → Deploy setup page only** to publish the authorization page.
+4. Create a client ID in [Simkl developer settings](https://simkl.com/settings/developer/), then visit your deployed `/setup.html` and authorize Account 1.
+5. Add `SIMKL_CLIENT_ID` and `SIMKL_ACCESS_TOKEN` under **Settings → Secrets and variables → Actions → Repository secrets**.
+6. Optionally configure Account 2 using the instructions in [`SECOND_ACCOUNT_SETUP.md`](SECOND_ACCOUNT_SETUP.md).
+7. Run **Actions → Refresh two Simkl catalogs and deploy Pages**. Once it succeeds, install the appropriate manifest URL in Stremio or import it through your Nuvio setup.
 
-Open **Repository → Settings → Secrets and variables → Actions** and create:
+### Credentials
 
-| Secret | Value |
+| Secret | Purpose |
 |---|---|
-| `SIMKL_CLIENT_ID` | The app's Simkl client ID |
-| `SIMKL_ACCESS_TOKEN` | The token returned by the PIN authorization |
+| `SIMKL_CLIENT_ID` | **Required.** Simkl application client ID |
+| `SIMKL_ACCESS_TOKEN` | **Required.** Account 1 access token |
+| `SIMKL_ACCESS_TOKEN_2` | Optional second Simkl account (TV feed) |
+| `SIMKL_CLIENT_ID_2` | Optional separate client ID for account 2 |
+| `TMDB_READ_ACCESS_TOKEN` | Recommended: artwork, logos, and TV ratings |
+| `TVDB_API_KEY` | Optional: series/episode details and season grouping |
+| `TVDB_SUBSCRIBER_PIN` | Only if required by your TVDB subscription |
+| `MDBLIST_API_KEY` | Optional external-ID mapping fallback |
+| `ANIMESCHEDULE_TOKEN` | Optional English-dub status for anime |
 
-Recommended artwork secret:
+For TVDB, leave the repository variables `TVDB_LANGUAGE` and `TVDB_SEASON_TYPE` unset unless you need nondefault settings. Set `PUBLIC_BASE_URL` only if hosting under a custom domain.
 
-| Secret | Value |
-|---|---|
-| `TMDB_READ_ACCESS_TOKEN` | The long TMDB API Read Access Token beginning with `eyJ`, not the short API key |
+**Never commit your access tokens or API keys.** The generated catalogs are public, but credentials and sync state are not meant to be deployed.
 
-Optional metadata fallback:
-
-| Secret | Value |
-|---|---|
-| `MDBLIST_API_KEY` | Your MDBList API key; queried only when strong external IDs are missing |
-
-Optional TheTVDB metadata and season grouping:
-
-| Secret | Value |
-|---|---|
-| `TVDB_API_KEY` | Your TheTVDB v4 project API key |
-| `TVDB_SUBSCRIBER_PIN` | Leave absent unless your specific TVDB key requires a subscriber PIN |
-
-Optional TheTVDB repository variables:
-
-| Variable | Value |
-|---|---|
-| `TVDB_LANGUAGE` | Leave blank for English (`eng`) |
-| `TVDB_SEASON_TYPE` | Leave blank for the series default order |
-
-Optional English-dub tags (anime row only):
-
-| Secret | Value |
-|---|---|
-| `ANIMESCHEDULE_TOKEN` | An AnimeSchedule.net API application token (the same token as the Recently Dubbed addon works) |
-
-Optional repository variable:
-
-| Variable | Value |
-|---|---|
-| `PUBLIC_BASE_URL` | Only needed for a custom domain; for example `https://anime.example.com` |
-
-### 6. Run the personalized deployment
-
-1. Open **Actions → Refresh Simkl catalog and deploy Pages**.
-2. Select **Run workflow**.
-
-The workflow runs tests, refreshes Simkl, verifies that no token reached the public files, and deploys the addon. It then refreshes once per hour at minute 23.
-
-The same workflow also updates a harmless `.github/keepalive` marker once per month. That automated commit keeps the public repository active, preventing GitHub's 60-day inactivity rule from disabling the scheduled refresh. You do not need to remember to touch or re-enable it manually.
-
-### 7. Install or import the addon
-
-Your manifest URL will normally be:
+## How it works
 
 ```text
-https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/manifest.json
+Simkl watchlists and episode calendars
+            ↓
+GitHub Actions (hourly refresh)
+            ↓
+Optional TMDB / TVDB / anime metadata
+            ↓
+Episode selection + poster generation
+            ↓
+GitHub Pages: manifests, catalogs, metadata, posters
+            ↓
+Stremio / Nuvio
 ```
 
-Recommended for Nuvio:
+Updates use Simkl activity checks and cached metadata to avoid unnecessary full-library downloads. The workflow verifies its outputs before deploying; a failed generation does not replace an existing successful Pages deployment. Scheduled workflows can occasionally run late.
 
-1. In Xperience, choose **Import from another add-on**.
-2. Paste the manifest URL.
-3. Keep the single `My Anime Up Next · Simkl` row.
-4. Push the profile to Nuvio.
-5. Put the row where your broken Trakt `Your Recently Aired` row used to be.
-
-Importing through Xperience gives it the best chance to normalize IMDb, TMDB, TVDB and anime IDs. Direct manifest installation also works best for titles carrying IMDb IDs.
-
-## Second Simkl account for normal TV shows
-
-Version 1.8.9 keeps the existing root anime addon unchanged and publishes account 2 as a fully isolated normal-TV addon:
+### Repository layout
 
 ```text
-Primary:  https://simkl-nextup.github.io/manifest.json
-Account 2: https://simkl-nextup.github.io/account-2/manifest.json
+simkl-nextup.github.io/
+├── README.md                    ← this page, including the promo
+├── assets/
+│   ├── promo/                   ← promo files live HERE (not in public/)
+│   │   ├── nextup-preview.gif                ← auto-playing README preview
+│   │   ├── simkl-nextup-X-landscape-16x9.mp4 ← X + full README video
+│   │   ├── simkl-nextup-vertical-1080x1920.mp4 ← Reels / Shorts / TikTok
+│   │   ├── simkl-nextup-promo-cover-X.jpg
+│   │   └── simkl-nextup-promo-cover-vertical.jpg
+│   ├── studio.html              ← Poster Studio source
+│   └── fonts/                   ← bundled poster font and license
+├── config/poster-style.json     ← per-feed poster preferences
+├── src/                         ← catalog, metadata, posters, episode logic
+├── scripts/                     ← sync, verification, authorization
+├── tests/                       ← automated tests
+├── .github/workflows/           ← deployment and refresh jobs
+├── public/                      ← generated Pages content (rebuilt by sync)
+│   └── account-2/               ← generated TV addon
+└── SECOND_ACCOUNT_SETUP.md      ← second-account guide
 ```
 
-Account 2 reads Simkl's `shows` library and `tv_shows` activity timestamps, not the anime library. It uses `SIMKL_ACCESS_TOKEN_2`, an optional `SIMKL_CLIENT_ID_2`, a unique TV addon/catalog identity, its own output folder, and a fresh TV-specific Actions cache. The existing root account retains its current URL, anime IDs, secret names, and cache path. See [`SECOND_ACCOUNT_SETUP.md`](SECOND_ACCOUNT_SETUP.md) for the upload and deployment steps.
+**Promo upload instructions:** Upload `README.md` to the **repository root** and the five media files to **`assets/promo/`**, preserving the filenames. You do **not** need to change the GitHub Actions workflow for the README preview: GitHub serves these files directly from the repository. Do **not** place promo files inside `public/`; the refresh process rebuilds that folder and would delete them.
 
-## Refresh behavior
-
-- The first run pulls your Anime library once and locally keeps Watching, Plan to Watch, and Completed so revived titles can be detected.
-- Later runs call `/sync/activities` first.
-- `/sync/all-items` is called only when Simkl reports changed anime activity.
-- Delta changes are merged into a private GitHub Actions cache.
-- The Simkl v2 rolling calendar plus the unversioned current/previous-month archives correct rescheduled air times and track the latest aired episode for all eligible statuses.
-- TMDB artwork and resolved IDs are cached in the private sync state for 30 days, keeping API usage low.
-- TheTVDB series translations, episodes, and grouping decisions are cached in the same private state. English is fetched through the explicit series translation endpoint rather than trusting the record's original-language name.
-- Watching, Plan to Watch, and Completed library entries are metadata-enriched so an active sequel can be joined to older completed seasons without publishing those older entries as separate cards.
-- If multiple TVDB records map to the same TMDB television show, they are merged using that shared show ID. Without TMDB, a conservative English-title/season-marker fallback can merge obvious sequel records.
-- Merged detail pages use a private parent ID but preserve the original IMDb/TVDB episode IDs. This is intentional: changing those episode IDs would break Nuvio watched markers.
-- For broader desktop-client compatibility, the manifest declares `meta` through the classic top-level resource list and publishes the supported ID prefixes at the manifest root. Unified episode lists and the default episode are also embedded in each catalog preview, in addition to the dedicated `/meta/series/{id}.json` response.
-- Simkl artwork remains the automatic fallback when TMDB has no match or no TMDB token is configured.
-- The workflow downloads each published poster from an allowlisted HTTPS image host, adds the status and episode badges, and serves the resulting WebP from your own Pages site.
-- Poster filenames are deterministic. If an image is unavailable or cannot be processed, that card keeps its original clean poster instead of failing the catalog deployment.
-- If a token is revoked, deployment fails and the existing Pages version remains online.
-
-GitHub schedules are best-effort and can occasionally run late. Use **Run workflow** for an immediate manual refresh.
-
-GitHub automatically disables scheduled workflows in a public repository after 60 days without repository activity. This project avoids that condition through its monthly keepalive commit. Keep the default branch unprotected so `github-actions[bot]` can write that marker. If you later add branch protection that blocks automated pushes, explicitly allow GitHub Actions to push or the keepalive will fail. A private repository is not subject to the public-repository inactivity rule, although private Actions usage counts against your plan's included minutes.
-
-## Updating from 1.4.0
-
-Version 1.5.0 fixes the monthly calendar archive URL and normalizes its raw-array response. It also advances the private state format to version 5, so the first workflow run after replacement automatically performs one clean Simkl library pull. Do not delete your GitHub secrets or Actions caches manually.
-
-After deployment, `status.json` reports both tracked and actually published counts for Watching, Plan to Watch, and revived Completed titles. This makes it possible to distinguish a healthy deployment from a row that silently omitted one of its sources.
-
-## Updating to 1.6.4
-
-Version 1.6 adds generated poster labels, 1.6.2 converts them into left-edge ribbons, and 1.6.3 maps Watching to green New Episode and revived Completed titles to purple New Season. Version 1.6.4 makes both ribbons substantially taller and heavier, with layered gradients and gloss for stronger small-card visibility. The poster style version changes so clients receive fresh image URLs instead of reusing cached artwork. Replace the repository files, commit `package-lock.json`, and run the personalized workflow. The workflow runs `npm ci` before testing and generation, so no new GitHub secret is required.
-
-`status.json` reports `posterBadgesGenerated` and `posterBadgeWarnings`. A warning means that title safely retained its original poster. Set the workflow environment variable `POSTER_BADGES` to `false` only if you intentionally want to disable the generated overlays.
-
-## Updating from 1.8.0 to 1.8.1
-
-Version 1.8.1 fixes two problems in the first TVDB build:
-
-- series names now prefer the requested English TVDB translation instead of the original Japanese record name;
-- separate TVDB sequel records can be merged into one parent page, while every episode keeps its original IMDb/TVDB tracking ID.
-
-The private state version advances to 7, so the first deployment after replacing the files performs a clean Simkl/metadata rebuild. That first run can take longer because completed sibling entries are enriched once for grouping. Keep `TVDB_LANGUAGE` blank or set it to `eng`, run the refresh workflow, and then clear Nuvio's metadata cache or remove/re-add the addon.
-
-## Updating from 1.8.1 to 1.8.2
-
-Version 1.8.2 targets Nuvio Desktop's less complete custom-metadata path and improves television readability:
-
-- the manifest now uses the classic top-level `catalog` and `meta` resource declaration with root-level ID prefixes;
-- a unified card carries its complete season/episode list and default episode directly in the catalog preview as a fallback, while the normal dedicated metadata file remains available;
-- Watching posters separately label the latest aired release as **NEW** and your next unwatched episode as **NEXT**;
-- all status and episode lettering has a thicker black outline and stronger shadow for TV displays.
-
-After replacing the repository files, run the refresh workflow, then fully remove and re-add the addon or clear metadata/image caches on Nuvio Desktop. The poster style version changed, so the generated image URLs will also change automatically. If grouping still works on Android but not Desktop after a clean re-import, the remaining issue is in the Desktop client's handling of custom parent metadata rather than the TVDB mapping generated by this addon.
-
-## Updating to 1.8.4 — TV logo layout
-
-Version 1.8.4 replaces the oversized stacked top ribbons with a television-first composition inspired by BetterPosters:
-
-- one compact status pill is centred at the very top;
-- episode numbers are anchored in a separate high-contrast panel at the bottom edge;
-- TMDB image metadata is requested with `images` appended so the generator can prefer a textless poster and place the English title logo in the reserved lower area;
-- when no TMDB logo is available, the show name is rendered as a high-contrast fallback in the same space;
-- the lower vignette keeps the logo readable without covering the artwork, and the poster style signature advances so clients receive fresh URLs.
-
-No new secret is required beyond the existing `TMDB_READ_ACCESS_TOKEN`. After replacing the files, run the refresh workflow and clear Nuvio's image cache or remove and re-add the addon if the previous posters remain.
-
-## Local development
+### Local development
 
 ```bash
+npm ci
 npm test
 npm run build:placeholder
-npm run keepalive
-SIMKL_CLIENT_ID=... SIMKL_ACCESS_TOKEN=... TMDB_READ_ACCESS_TOKEN=... npm run refresh
+# After configuring environment variables:
+npm run refresh
 npm run verify
 ```
 
-Node.js 20.9+ is required. Sharp is the only runtime package and performs the poster compositing locally inside GitHub Actions.
+## Status and privacy
 
-## Privacy
+- Check the generated [`status.json`](https://simkl-nextup.github.io/status.json) and [TV status](https://simkl-nextup.github.io/account-2/status.json) to inspect the current published catalogs.
+- Simkl tokens and metadata caches are managed through GitHub Secrets and private Actions caches, not committed to the public repository.
+- The resulting catalogs, poster images, and promo media are public, as required for client access and sharing.
 
-- All configured API credentials are read only from GitHub Secrets and are scanned against generated output before deployment.
-- Sync state is stored in the GitHub Actions cache, not committed to the repository or published by Pages.
-- The final catalog and generated poster images are public to anyone who knows the Pages URL. This is required so Nuvio/Stremio can request them without authentication.
+## Credits and license
 
-## Simkl attribution and API use
-
-Tracking and schedule data is provided by [Simkl](https://simkl.com). This project uses Simkl's documented two-phase sync model, v2 rolling calendar, and monthly calendar archives. It is intended for personal, non-commercial use.
-
-Artwork can be provided by [TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not endorsed or certified by TMDB.
-
-TOP Posters is intentionally not called directly because its API key would appear inside each poster URL. Version 1.6 creates the badges locally in GitHub Actions instead, without another API or credential.
-
-## v1.8.6 badge styling
-
-The TV-readable top/bottom composition now uses the exact v1.8.2 badge palette and treatment: green/gold/purple status gradients, green/blue/dark episode gradients, white highlights, dark lower edges, heavy Arial text, black text outlines, gloss, and the original shadow strength. The logo-safe lower composition remains unchanged.
-
-## Updating to 1.8.7 — two isolated Simkl accounts
-
-Version 1.8.7 added an optional second generation pass under `public/account-2`. The root addon keeps its original manifest URL, addon ID, catalog ID, Simkl secrets, state path, and cache prefix. Account 2 is enabled only when `SIMKL_ACCESS_TOKEN_2` exists. Both outputs are verified before the combined GitHub Pages artifact is deployed.
-
-## Updating to 1.8.8 — account 2 reads normal TV shows
-
-Version 1.8.8 fixes the empty account-2 catalog by making media type configurable per generation pass. The root remains `MEDIA_TYPE=anime`; account 2 now uses `MEDIA_TYPE=tv`, `/sync/all-items/shows`, `/tv/{id}`, and `tv_shows` activity timestamps. Its addon ID is `community.simkl.new-tv-episodes.account2` and its catalog ID is `simkl-new-tv-episodes-account2`. A new `simkl-account-2-tv-state-` cache prefix forces a clean TV bootstrap without clearing or rebuilding the root anime cache.
-
-
-## Updating to 1.14.0 — dub tag tells the truth about the dub
-
-- The dub tag's season and episode now always belong to the **dub**, never to your own progress. Before, a dub with no known episode borrowed your season ("DUB S23 AIRING" on One Piece).
-- **Newer seasons count:** if a later season of the same show is being dubbed, the tag shows that dub, e.g. Re:Zero watched at S2 while the S4 dub airs → `DUB ✓ S4 E5`. Seasons are recognised by AnimeSchedule page names (`…-2-part-2`, `…-4th-season`).
-- **Finished seasons aren't "airing":** a season's age is judged from that season's own episodes, not from the whole show's newest episode.
-- **No number known:** the tag says `DUB ONGOING` (Japanese run still going) or `DUB`, in grey.
-- **Typed dub numbers:** `/studio.html` has a *Dub episode numbers* list. Type the latest dubbed episode for batch dubs no schedule tracks. It's stored as `dubOverrides` (MAL ID → overall episode number) in `config/poster-style.json`, and the dub schedule takes over once it reports a higher episode. Shipped with One Piece = 1155 (end of the Egghead dub; weekly Elbaph dubs start at 1156 on 20 Oct 2026).
-
-## Updating to 1.13.1 — ★ score on the TV row
-
-With the tags look, TV posters show the TMDB rating beside the status tag. It comes from the TMDB lookup the addon already makes, so no new key or secret is needed. A show needs at least 20 TMDB votes to get a score. The anime row keeps its MyAnimeList score. Cached TMDB data is refreshed once on the first run after updating.
-
-## Updating to 1.13.0 — Studio covers both rows, tags or classic
-
-- `/studio.html` now has a tab per row: **Anime row** and **TV row · Account 2**.
-- Each row has a **Poster look** switch: *Tags* (BetterPosters style, 1.10+) or *Classic badge* (before 1.10). The classic preview is rendered by the build, so it matches Nuvio exactly.
-- The TV row gets every tag option except the dub tag (TV shows have no English-dub data). Its ★ score comes from TMDB (your existing TMDB key, no extra calls), shown only when a show has at least 20 TMDB votes.
-- `config/poster-style.json` now holds both rows: `{ "anime": {...}, "tv": {...} }`. A flat 1.12.0 file still works; it's read as the anime section. Defaults: anime = tags, TV = classic, so nothing changes until you choose.
-- One save in the studio updates both rows in one commit.
-
-## Updating to 1.12.0 — Poster Studio (anime row only)
-
-Open **https://simkl-nextup.github.io/studio.html** to mix any combination of the anime tag looks built since 1.10.8 (top-tab layout, size, outlines, coloured drop shadows, contrast, score shadow) and preview them live on cards from your own row.
-
-- The settings live in `config/poster-style.json`. Changing that file on `main` starts the refresh workflow, and the new posters are deployed in a few minutes.
-- **Save & deploy** commits the file for you. It needs a GitHub fine-grained token: Repository access → only this repository; Permissions → Contents: Read and write. The token stays in your browser (localStorage) and is never sent anywhere except api.github.com.
-- No token? Use **Copy settings**, then **Edit on GitHub** and paste.
-- The default is 1.11.1's look without the white outline on black text.
-- The TV row (account 2) is unchanged.
-
-## Updating to 1.10.0 — BetterPosters-style tags and English-dub info (anime row only)
-
-The anime row's posters are redesigned; the account-2 TV row keeps its classic badges.
-
-- **Top tab** — episode info in the same tinted-tab style as the Recently Dubbed addon: `E13 Aired · Next E2` (Watching), `S3 · Next E1` (New Season), `E12 Aired` (Plan to Watch). Its colour is taken from each poster.
-- **Left dub tag** — English-dub state from AnimeSchedule.net: blue `DUB ✓ E9` when the dub has reached your next episode, grey `DUB E9` when it is behind, `DUB ✓ ALL` when the season is fully dubbed. No tag when a show has no English dub.
-- **Bottom band** — BetterPosters-style blur with the status tag (green New Episode, orange Plan to Watch, purple New Season) and the MyAnimeList score from Jikan.
-- Text uses the bundled Inter ExtraBold font (`assets/fonts`, SIL Open Font License) with a soft outline and shadow, so posters render identically on GitHub's runners.
-
-Dub data: titles are matched to AnimeSchedule by MyAnimeList ID (then AniList / AniDB) — never by title search. The first run reads 26 weeks of the dub timetable; later runs read this week and last week. Older, finished dubs are recognised from the anime's dub premiere, episode count and batch-release overrides. Matches, the dub ledger and MAL scores are cached in the private state, so the state version does not change and no clean rebuild is triggered. Each card's details page gains a "View on AnimeSchedule" link, as AnimeSchedule's API terms request.
-
-Add the `ANIMESCHEDULE_TOKEN` secret, replace the files, and run the refresh workflow. Without the secret the posters still use the new design, just without dub tags. Set `POSTER_STYLE=classic` on the anime refresh step to return to the previous badges.
-
-## Updating to 1.9.3 — Completed titles no longer climb to "latest aired"
-
-Everything in 1.9.0–1.9.2 targeted the case where Simkl had already auto-promoted a title from Completed to Watching. X-Men '97 turned out to be a different bug entirely: it was still genuinely sitting as `"completed"` in Simkl. Simkl only computes `next_to_watch_info` for Watching/Plan to Watch titles, so for a Completed title the addon fell back to "whichever episode most recently aired" via the calendar. For a show airing weekly, that number climbs every week (E1, E2, ... E8) even if nothing has actually been watched — it was never pinned to the real next episode.
-
-1.9.3 fixes this using data the addon already fetches: when TVDB episode data is available, the true next-unwatched episode is found by matching `watched_episodes_count + 1` against TVDB's absolute episode numbering, and that stays fixed until watched progress actually changes — instead of drifting forward with every new release.
-
-## Updating to 1.9.2 — the watched-count fallback now requires episode 1 too
-
-1.9.1's primary season-premiere check already required the next episode to be literally #1 — that part was working (Ted Lasso showed S4E1 correctly). But the older 1.9.0 watched-count snapshot, kept as a fallback for titles without season data, never checked the episode number at all. It only compared watched-count totals, so a title several episodes into a revived season (Simkl's next-to-watch already at, say, episode 8) still got the purple badge with the wrong episode number, because the watched count alone hadn't moved yet.
-
-1.9.2 closes that gap: the fallback now also requires the next-to-watch episode to be exactly 1 before it'll override to Completed. One honest limitation this surfaces: for a title with no season field from Simkl and no TVDB match at all, there's no way to tell "episode 1" from "episode 1 of a new season" versus "the show just started" — in that specific no-data case, the addon conservatively shows the normal green badge rather than risk a wrong purple one.
-
-## Updating to 1.9.1 — direct season-premiere detection, no history required
-
-1.9.0's revival fix relied on having seen a title while it was still genuinely Completed, so it could remember a watched-count snapshot to compare against later. That means any title Simkl had *already* silently auto-promoted to Watching before 1.9.0 was deployed never got a snapshot, and stayed on the green badge.
-
-1.9.1 adds a second, primary check that needs no history at all: if the very next unwatched episode is literally episode 1 of a season after the first, and it aired less than 365 days ago, the title is treated as a revived Completed title — purple badge — regardless of what Simkl's own status field says or whether the addon ever saw it as Completed. The moment that episode is watched, the badge reverts to normal Watching behavior. The 365-day rolling window (measured from the episode's actual air date, not the calendar year) means a revival that airs in November doesn't silently flip to green on January 1st just because the year changed.
-
-The 1.9.0 watched-count snapshot method is kept as a fallback for the rare title Simkl hasn't matched to TVDB and that also has no season number on its next-to-watch info.
-
-## Updating to 1.9.0 — revived-title badge fix and a reliable deploy queue
-
-Version 1.9.0 fixes two problems found in production on a two-account deployment:
-
-- **Wrong badge on a just-revived title.** Simkl moves a title from Completed back into Watching itself the moment a new season is confirmed on TVDB/AniDB — before any episode is watched. Previously the addon trusted Simkl's `status` field directly, so a title like this rendered the green "NEW EPISODE" badge instead of purple "NEW SEASON", and revived Completed titles essentially never published (0 of 91 tracked Completed anime were making it into one real deployment's catalog). The addon now remembers the watched-episode count from the last time a title was genuinely completed and compares against it, so the purple "NEW SEASON" badge stays in place until watched progress actually moves — regardless of which list Simkl has silently filed the title under.
-- **Deployment stuck looping on `deployment_queued`.** The 1.8.9 workflow cancelled in-progress runs (`cancel-in-progress: true`) across both the build *and* deploy jobs. Cancelling a job after it has already registered a deployment with GitHub Pages doesn't retract that deployment — it orphans it, and the next run's deploy step then polls a queue that never clears. Concurrency is now split per job: the build job can still cancel a stale run freely, but the deploy job uses a fixed `pages` group with `cancel-in-progress: false`, matching GitHub's own Pages deployment template, so deployments queue instead of colliding.
-
-No new secret is required. After replacing the repository files, run the refresh workflow; titles whose badge status changes will automatically get a fresh poster URL.
-
-## Updating to 1.8.9 — reliable two-account Pages deployment
-
-Version 1.8.9 keeps account 1 as anime and account 2 as normal TV. It splits generation and deployment into separate jobs, cancels stale overlapping refreshes, extends the GitHub Pages deployment wait from 10 to 30 minutes, and explicitly asserts that account 2 generated `mediaType: tv` with the TV addon and catalog IDs before any deployment is attempted. Uploading this release creates a fresh commit/build version, which avoids re-running the already-canceled Pages deployment attached to the previous commit.
+Watchlist and schedule data: [Simkl](https://simkl.com). Artwork and supplementary metadata: [TMDB](https://www.themoviedb.org), [TheTVDB](https://thetvdb.com), and optional anime metadata services. This product uses the TMDB API but is **not endorsed or certified by TMDB**. See [`LICENSE`](LICENSE) for the project license.
