@@ -42,3 +42,37 @@ test('long Coming Soon date fits within the TV top tag', async () => {
   }, tvStyle: styles.tv, animeStyle: styles.anime });
   assert.equal((await sharp(rendered).metadata()).width, 500);
 });
+
+
+async function meanRed(buffer, region) {
+  const { data, info } = await sharp(buffer).extract(region).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  let red = 0;
+  for (let i = 0; i < data.length; i += info.channels) red += data[i];
+  return red / (data.length / info.channels);
+}
+
+test('short released-date tabs are slimmer than Coming Soon tabs', async () => {
+  const short = await composeMovieReleasePoster({ poster, tags: {
+    main: 'OCT 6', chip: 'DIGITAL', released: true,
+  }, tvStyle: styles.tv, animeStyle: styles.anime });
+  const future = await composeMovieReleasePoster({ poster, tags: {
+    main: 'COMING SOON · OCT 20', chip: 'DIGITAL', released: false,
+  }, tvStyle: styles.tv, animeStyle: styles.anime });
+  // Below the small 56px date tab only its subtle shadow remains, while
+  // the full-height (78px) Coming Soon tab still occupies the same area.
+  const region = { left: 245, top: 69, width: 10, height: 4 };
+  assert.ok((await meanRed(future, region)) - (await meanRed(short, region)) > 10,
+    'the short date should not use the old full-height rectangular tab');
+  assert.equal((await sharp(short).metadata()).height, 750);
+  assert.equal((await sharp(future).metadata()).height, 750);
+});
+
+test('a normal anime episode top tab retains its original height', async () => {
+  const { composeTaggedPoster } = await import('../src/poster-tags.mjs');
+  const badge = { status: 'plantowatch', tags: { aired: 3, airedSeason: 1 }, score: '8.0' };
+  const standard = await composeTaggedPoster({ poster, name: 'Test', badge, style: styles.anime });
+  assert.equal((await sharp(standard).metadata()).width, 500);
+  const region = { left: 245, top: 69, width: 10, height: 4 };
+  assert.ok((await meanRed(standard, region)) > 48,
+    'regular anime and TV tag geometry must remain unchanged');
+});

@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { DEFAULT_POSTER_STYLE, normalizePosterStyle } from "./poster-style.mjs";
 
-export const TAG_STYLE_VERSION = 13;
+export const TAG_STYLE_VERSION = 14;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
@@ -333,7 +333,7 @@ const rightChipShape = (w, h, r) => `M${w} 0 H${r} Q0 0 0 ${r} V${h - r} Q0 ${h}
 
 // Shared drawing primitives for TV/anime tags and Account 2 movie-release
 // tags. A movie renders ONLY these two tags onto BetterPosters' base artwork.
-async function appendTopTab({ base, layers, shadows, style, lines, single, tints, allowShrink = false }) {
+async function appendTopTab({ base, layers, shadows, style, lines, single, tints, allowShrink = false, compactReleaseDate = false }) {
   const L = layoutFor(style);
   const text = (value, color, px, extra = {}) => label(value, color, px, { style, ...extra });
   let tint = null;
@@ -351,13 +351,22 @@ async function appendTopTab({ base, layers, shadows, style, lines, single, tints
       }
     };
     const twoLines = (style.topTab === "boxed" || style.topTab === "band") && lines.sub;
+    // BetterPosters' short labels don't need the same tall, square-looking
+    // episode tab. Apply the slim, softly curved bottom-edge shape ONLY to
+    // released movie dates ("OCT 6", "JUL 23"). Long Coming Soon tabs,
+    // regular TV/anime tabs, and their existing presets remain unchanged.
+    const smallDate = compactReleaseDate && /^[A-Z]{3} \d{1,2}$/.test(String(single ?? ""));
+    const datePad = smallDate ? Math.round(L.tabPad * 0.80) : L.tabPad;
+    const dateHeight = smallDate ? Math.round(L.tabH * 0.72) : L.tabH;
+    const dateRadius = smallDate ? Math.round(dateHeight * 0.41) : L.tabRadius;
     if (style.topTab === "single") {
-      const main = await fit(single, L.tabFont - 6, W * 0.9 - L.tabPad * 2);
-      tabH = L.tabH;
-      const tabW = main.w + L.tabPad * 2;
+      const main = await fit(single, smallDate ? Math.round((L.tabFont - 6) * 0.85) : L.tabFont - 6, W * 0.9 - datePad * 2);
+      tabH = dateHeight;
+      const tabW = main.w + datePad * 2;
       const tabX = Math.round((W - tabW) / 2);
-      shadows.push({ x: tabX, y: 0, shape: topTabShape(tabW, tabH, L.tabRadius), fill: tint });
-      layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, L.tabRadius), tint, L.tabOpacity), left: tabX, top: 0 });
+      const shape = topTabShape(tabW, tabH, dateRadius);
+      shadows.push({ x: tabX, y: 0, shape, fill: tint });
+      layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, shape, tint, L.tabOpacity), left: tabX, top: 0 });
       layers.push(place(main, (W - main.w) / 2, (tabH - main.h) / 2));
     } else if (twoLines) {
       const full = style.topTab === "band";
@@ -374,12 +383,13 @@ async function appendTopTab({ base, layers, shadows, style, lines, single, tints
       layers.push(place(sub, (W - sub.w) / 2, y0 + main.h + gap));
     } else {
       // "chip" (and two-line layouts with nothing to put on line two).
-      const main = await fit(lines.main, L.tabFont, W * 0.9 - L.tabPad * 2);
-      tabH = L.tabH;
-      const tabW = main.w + L.tabPad * 2;
+      const main = await fit(lines.main, smallDate ? Math.round(L.tabFont * 0.74) : L.tabFont, W * 0.9 - datePad * 2);
+      tabH = dateHeight;
+      const tabW = main.w + datePad * 2;
       const tabX = Math.round((W - tabW) / 2);
-      shadows.push({ x: tabX, y: 0, shape: topTabShape(tabW, tabH, L.tabRadius), fill: tint });
-      layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, topTabShape(tabW, tabH, L.tabRadius), tint, L.tabOpacity), left: tabX, top: 0 });
+      const shape = topTabShape(tabW, tabH, dateRadius);
+      shadows.push({ x: tabX, y: 0, shape, fill: tint });
+      layers.push({ input: await frosted(base, tabX, 0, tabW, tabH, shape, tint, L.tabOpacity), left: tabX, top: 0 });
       layers.push(place(main, (W - main.w) / 2, (tabH - main.h) / 2));
     }
   }
@@ -418,6 +428,7 @@ export async function composeMovieReleasePoster({ poster, tags, tvStyle, animeSt
   const { tabH } = await appendTopTab({
     base, layers, shadows, style: topStyle,
     lines: { main: tags.main, sub: null }, single: tags.main, allowShrink: true,
+    compactReleaseDate: Boolean(tags.released),
   });
   await appendLeftChip({
     base, layers, shadows, style: leftStyle,

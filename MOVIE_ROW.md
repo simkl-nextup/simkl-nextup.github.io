@@ -24,7 +24,7 @@
 ## Posters
 
 1. Base artwork: `https://btttr.cc/poster/imdb/poster-default/{imdb_id}.jpg?tag=none`.
-2. Locally generated **TV-row top tab** (your selected Poster Studio design): **OCT 19** for released movies, **COMING SOON · NOV 7** for future home releases. It shares the TV row’s font, adaptive background, contrast, outline and shadow settings.
+2. Locally generated **TV-row top tab** (your selected Poster Studio design): **OCT 19** for released movies, **COMING SOON · NOV 7** for future home releases. It shares the TV row’s font, adaptive background, contrast, outline and shadow settings. Short released dates (e.g. **OCT 6**) use the slim rounded-bottom BetterPosters-like tab to avoid oversized, boxy labels; full **COMING SOON** labels keep the standard TV tab height.
 3. Locally generated **anime-dub-style left chip**, using the *same rendering functions* and live anime settings: **DIGITAL**, **PHYSICAL**, or **DIGITAL + PHYSICAL**. Released format chips use the dub-ready blue; Coming Soon uses the dub-behind gray.
 4. No extra **PLAN TO WATCH** lower tag. BetterPosters retains its base design, including its lower genre/rating details; the release tags are applied by the existing local poster renderer.
 5. TMDB artwork is the fallback if the BetterPosters image fails or an IMDb ID isn't available, still with locally rendered release tags.
