@@ -189,34 +189,53 @@ if (process.env.VERIFY_DISCOVERY === "true") {
   console.log(`Verified global upcoming rows: ${status.discovery.upcomingMovies} movies and ${status.discovery.upcomingTV} shows.`);
 }
 
-// Independent fifth Smart Shuffle row, with static Stremio skip pagination.
+// Independent fifth Smart Shuffle row. Nuvio gets the complete list at the
+// ordinary catalog URL; optional /skip=... JSON files are still generated for
+// clients that can use them, without advertising an incompatible `extra`.
 if (process.env.VERIFY_SMART_SHUFFLE === "true") {
   const id = "simkl-movies-smart-shuffle-account2";
   const fifth = manifest.catalogs?.[4];
   if (manifest.catalogs?.length !== 5 || fifth?.id !== id || fifth?.type !== "movie"
-    || !fifth.extra?.some(e => e.name === "skip") || !status.smartShuffle) {
-    throw new Error("Fifth independent Smart Shuffle row missing or invalid.");
+    || fifth.extra?.some(e => e.name === "skip") || !status.smartShuffle) {
+    throw new Error("Fifth independent Smart Shuffle row missing or invalid (expected a plain movie catalog).");
   }
-  const total = status.smartShuffle.published;
-  const size = status.smartShuffle.pageSize;
-  const base = JSON.parse(await readFile(path.join(publicDir,"catalog","movie",`${id}.json`),"utf8"));
+  const { published: total, pageSize: size, pages: expectedPages, featured, random } = status.smartShuffle;
+  if (!Number.isInteger(total) || total < 0 || !Number.isInteger(size) || size < 1
+    || !Number.isInteger(expectedPages) || expectedPages !== Math.max(1, Math.ceil(total / size))
+    || !Number.isInteger(featured) || !Number.isInteger(random) || featured + random !== total) {
+    throw new Error("Invalid Smart Shuffle status counts or pagination settings.");
+  }
+  const base = JSON.parse(await readFile(path.join(publicDir, "catalog", "movie", `${id}.json`), "utf8"));
+  if (!Array.isArray(base.metas) || base.metas.length !== total) {
+    throw new Error(`Smart Shuffle base catalog has ${base.metas?.length ?? 'no'} movies; expected ${total}.`);
+  }
   const seen = new Set();
-  for(let skip=0;skip<Math.max(1,total);skip+=size){
-    const page = JSON.parse(await readFile(path.join(publicDir,"catalog","movie",id,`skip=${skip}.json`),"utf8"));
-    if(skip===0 && JSON.stringify(base)!==JSON.stringify(page))throw new Error("Smart Shuffle first page mismatch");
-    for(const meta of page.metas){
-      if(meta.type!=="movie" || !/^(?:tt\d+|tmdb:\d+|simkl:\d+)$/.test(meta.id)
-        || !meta.poster?.startsWith("https://") || seen.has(meta.id)){
-        throw new Error(`Invalid/duplicate Smart Shuffle movie ${meta.id}`);
-      }
-      seen.add(meta.id);
-      const details=JSON.parse(await readFile(path.join(publicDir,"meta","movie",safeMetaFilename(meta.id)),"utf8"));
-      if(details.meta?.id!==meta.id)throw new Error(`Missing Smart Shuffle metadata ${meta.id}`);
+  for (const meta of base.metas) {
+    if (meta.type !== "movie" || !/^(?:tt\d+|tmdb:\d+|simkl:\d+)$/.test(meta.id)
+      || !meta.poster?.startsWith("https://") || seen.has(meta.id)) {
+      throw new Error(`Invalid/duplicate Smart Shuffle movie ${meta.id}`);
+    }
+    seen.add(meta.id);
+    const detail = JSON.parse(await readFile(path.join(publicDir, "meta", "movie", safeMetaFilename(meta.id)), "utf8"));
+    if (detail.meta?.id !== meta.id || detail.meta?.type !== "movie") {
+      throw new Error(`Missing Smart Shuffle movie metadata ${meta.id}`);
     }
   }
-  const empty=JSON.parse(await readFile(path.join(publicDir,"catalog","movie",id,`skip=${Math.ceil(total/size)*size}.json`),"utf8"));
-  if(empty.metas.length || seen.size!==total)throw new Error("Incomplete Smart Shuffle pagination");
-  console.log(`Verified Smart Shuffle: ${total} movies over ${status.smartShuffle.pages} pages`);
+  // These URLs are an optional compatibility feature, not the primary catalog.
+  // Verify each slice matches the regular full-list catalog in order.
+  for (let skip = 0; skip < Math.max(1, total); skip += size) {
+    const page = JSON.parse(await readFile(path.join(publicDir, "catalog", "movie", id, `skip=${skip}.json`), "utf8"));
+    if (!Array.isArray(page.metas)
+      || JSON.stringify(page.metas) !== JSON.stringify(base.metas.slice(skip, skip + size))) {
+      throw new Error(`Smart Shuffle optional page skip=${skip} differs from base catalog.`);
+    }
+  }
+  const lastPage = Math.ceil(total / size) * size;
+  const empty = JSON.parse(await readFile(path.join(publicDir, "catalog", "movie", id, `skip=${lastPage}.json`), "utf8"));
+  if (!Array.isArray(empty.metas) || empty.metas.length !== 0) {
+    throw new Error("Smart Shuffle optional pagination has no empty terminating page.");
+  }
+  console.log(`Verified Smart Shuffle: ${total} movies available in a standard catalog, plus ${expectedPages} optional page(s).`);
 }
 
 const secrets = [
