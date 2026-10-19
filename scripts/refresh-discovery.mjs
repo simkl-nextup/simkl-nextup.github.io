@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadPosterConfig } from '../src/poster-style.mjs';
 import { writeReleaseStudio } from '../src/release-studio.mjs';
-import { renderMoviePosters } from '../src/movie-posters.mjs';
+import { renderDiscoveryPosters } from '../src/discovery-posters.mjs';
 import { deriveBaseUrl, appendPublicPath } from '../src/site.mjs';
 import {
   DISCOVERY_MOVIES_ID, DISCOVERY_TV_ID, DISCOVERY_MOVIES_NAME, DISCOVERY_TV_NAME,
@@ -13,7 +13,7 @@ import {
   isTvmazePremiere, tvmazeMatch, day, futureEnd, scoreItem,
 } from '../src/discovery.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const VERSION=1;
+const VERSION=4;
 const CACHE_TTL_MS=22*3600*1000;
 const API='https://api.themoviedb.org/3';
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
@@ -63,7 +63,7 @@ async function getMovieCandidates({fetchImpl,token,now,warnings}) {
   const choices=[...selected.values()].sort((a,b)=>scoreItem(b)-scoreItem(a)).slice(0,110);
   return concurrent(choices,6,async movie=>{
     try {
-      const details=await tmdbGet(fetchImpl,token,`/movie/${movie.id}`,{append_to_response:'release_dates,external_ids',language:'en-US'});
+      const details=await tmdbGet(fetchImpl,token,`/movie/${movie.id}`,{append_to_response:'release_dates,external_ids,images',include_image_language:'en,null',language:'en-US'});
       return details;
     } catch(e) {if([401,403].includes(e.status))throw e;warnings.push(`Movie ${movie.id}: ${e.message}`);return null;}
   });
@@ -128,7 +128,37 @@ async function getTvCandidates({fetchImpl,token,now,warnings}) {
     const previous=newShows.get(r.tmdb.id);
     if(!previous || r.season>previous.season || (r.season===previous.season && r.date<previous.date))newShows.set(r.tmdb.id,r);
   }
-  return [...newShows.values()].sort((a,b)=>scoreItem(b.tmdb,{season:b.season})-scoreItem(a.tmdb,{season:a.season})).slice(0,180);
+  const shortlist=[...newShows.values()].sort((a,b)=>scoreItem(b.tmdb,{season:b.season})-scoreItem(a.tmdb,{season:a.season})).slice(0,85);
+  return concurrent(shortlist,5,async row=>{
+    try{
+      const details=await tmdbGet(fetchImpl,token,`/tv/${row.tmdb.id}`,{
+        append_to_response:'external_ids,images',include_image_language:'en,null',language:'en-US'});
+      return {...row,tmdb:{...row.tmdb,...details},imdb:row.imdb||details.external_ids?.imdb_id};
+    }catch(e){if([401,403].includes(e.status))throw e;
+      warnings.push(`TV ${row.tmdb.id} artwork metadata: ${e.message}`);
+      return row;}
+  });
+}
+function normalizeName(name){return String(name||'').normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();}
+export function addPersonalNextTags(entries,state){
+  const matches=new Set(),names=new Set();
+  for(const item of Object.values(state?.items||{})){
+    if(!['watching','plantowatch'].includes(item?.status))continue;
+    const media=item.show||item.anime||{};
+    for(const [kind,id] of Object.entries(media.ids||{})){
+      if(['imdb','tmdb','tvdb'].includes(kind)&&id)matches.add(`${kind}:${id}`);
+    }
+    if(media.title)names.add(normalizeName(media.title));
+  }
+  return entries.map(entry=>{
+    if(entry.tags?.statusKey!=='returning')return entry;
+    const id=entry.meta.id;
+    const tmdbUrl=entry.meta.links.find(l=>l.category==='tmdb')?.url;
+    const tmdbId=tmdbUrl?.match(/\/tv\/(\d+)$/)?.[1];
+    const match=matches.has(`imdb:${id}`)||!!(tmdbId&&matches.has(`tmdb:${tmdbId}`))
+      ||names.has(normalizeName(entry.meta.name));
+    return match?{...entry,tags:{...entry.tags,next:true}}:entry;
+  });
 }
 export async function refreshGlobalDiscovery({
   tmdbToken,fetchImpl=fetch,now=new Date(),outputDirectory=path.join(root,'public/account-2'),
@@ -147,10 +177,15 @@ export async function refreshGlobalDiscovery({
     cache={version:VERSION,fetchedAt:now.toISOString(),movies,shows};
   }
   const movieEntries=buildUpcomingMovies(cache.movies,now,maxMovies);
-  const tvEntries=buildUpcomingShows(cache.shows,now,maxTV);
+  const account2StatePath=path.join(root,'state/account-2/simkl-state.json');
+  const personalState=await readFile(account2StatePath,'utf8').then(JSON.parse).catch(e=>{
+    if(e.code!=='ENOENT')warnings.push(`Personal NEXT matching disabled: ${e.message}`);
+    return {items:{}};
+  });
+  const tvEntries=addPersonalNextTags(buildUpcomingShows(cache.shows,now,maxTV),personalState);
   const posterStyle=await loadPosterConfig(path.join(root,'config/poster-style.json'));
-  const movieImages=await renderMoviePosters(movieEntries,{outputDirectory,baseUrl,fetchImpl,tvStyle:posterStyle.upcomingMovies,animeStyle:posterStyle.upcomingMovies.side,posterFolder:'upcoming-movies',skipFailures:true,studioSamples:6});
-  const tvImages=await renderMoviePosters(tvEntries,{outputDirectory,baseUrl,fetchImpl,tvStyle:posterStyle.upcomingTV,animeStyle:posterStyle.upcomingTV.side,posterFolder:'upcoming-tv',skipFailures:true,studioSamples:6});
+  const movieImages=await renderDiscoveryPosters(movieEntries,{outputDirectory,baseUrl,fetchImpl,style:posterStyle.upcomingMovies,posterFolder:'upcoming-movies',skipFailures:true,studioSamples:6});
+  const tvImages=await renderDiscoveryPosters(tvEntries,{outputDirectory,baseUrl,fetchImpl,style:posterStyle.upcomingTV,posterFolder:'upcoming-tv',skipFailures:true,studioSamples:6});
   await writeReleaseStudio({outputDirectory,account:'upcomingMovies',samples:movieImages.studio,generatedAt:now});
   await writeReleaseStudio({outputDirectory,account:'upcomingTV',samples:tvImages.studio,generatedAt:now});
   const manifestPath=path.join(outputDirectory,'manifest.json');

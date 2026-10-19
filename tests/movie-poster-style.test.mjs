@@ -76,3 +76,22 @@ test('a normal anime episode top tab retains its original height', async () => {
   assert.ok((await meanRed(standard, region)) > 48,
     'regular anime and TV tag geometry must remain unchanged');
 });
+
+test('upcoming TV premieres show colored new-series / new-season chips and never a literal null chip', async () => {
+  const tvStyle = styles.upcomingTV;
+  const animeStyle = styles.upcomingTV.side;
+  const base = { main: 'S2 · OCT 25', released: false };
+  const render = (chip, chipTone) => composeMovieReleasePoster({
+    poster, tags: { ...base, chip, chipTone }, tvStyle, animeStyle,
+  });
+  const [series, season, none] = await Promise.all([
+    render('NEW SERIES', 'newSeries'), render('NEW SEASON', 'newSeason'), render(null, null),
+  ]);
+  const pixel = (buf) => sharp(buf).extract({ left: 4, top: 110, width: 1, height: 1 }).removeAlpha().raw().toBuffer();
+  const [sColor, pColor, missingColor] = await Promise.all([pixel(series), pixel(season), pixel(none)]);
+  assert.notDeepEqual(sColor, pColor, 'series and returning-season chips must be distinctly color coded');
+  assert.ok(sColor[1] > sColor[0] && sColor[1] > sColor[2], 'new series chip should be teal/green');
+  assert.ok(pColor[2] > pColor[1], 'new season chip should be purple');
+  assert.ok([...missingColor].every((x, i) => Math.abs(x - [42, 69, 92][i]) <= 3),
+    'absent chip must leave the poster background visible (no "null")');
+});

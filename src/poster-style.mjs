@@ -55,12 +55,26 @@ export const POSTER_LOOKS = {
   },
 };
 
+export const DISCOVERY_STATUS_COLOURS = Object.freeze({
+  newSeries: '#D39B25', returning: '#7050F5',
+  theatrical: '#BE3245', streaming: '#1673C4', limited: '#D18122', premiere: '#067A62',
+});
+export function normalizeDiscoveryColours(value, account) {
+  const allowed = account === 'upcomingTV' ? ['newSeries','returning'] : ['theatrical','streaming','limited','premiere'];
+  const colors = {};
+  for (const key of allowed) {
+    const raw = value?.[key];
+    colors[key] = typeof raw === 'string' && /^#[\da-fA-F]{6}$/.test(raw) ? raw.toUpperCase() : DISCOVERY_STATUS_COLOURS[key];
+  }
+  return colors;
+}
+
 export const POSTER_ACCOUNTS = {
   anime: { label: "Anime row", defaultLook: "tags" },
   tv: { label: "TV row · Account 2", defaultLook: "classic" },
   homeReleases: { label: "Home Releases · Account 2", defaultLook: "tags", movieTags: true },
-  upcomingMovies: { label: "Upcoming Movies · Account 2", defaultLook: "tags", movieTags: true },
-  upcomingTV: { label: "Upcoming TV Shows · Account 2", defaultLook: "tags", movieTags: true },
+  upcomingMovies: { label: "Upcoming Movies · Account 2", defaultLook: "tags", movieTags: true, discoveryPoster: true },
+  upcomingTV: { label: "Upcoming TV Shows · Account 2", defaultLook: "tags", movieTags: true, discoveryPoster: true },
 };
 
 // 1.11.1 without the white outline on black text.
@@ -114,6 +128,11 @@ export function normalizePosterConfig(raw) {
       config[account] = {
         ...normalizeAccountStyle({ ...initial, look: "tags" }, account),
         side: normalizePosterStyle(raw?.side ?? source.anime),
+        ...(POSTER_ACCOUNTS[account].discoveryPoster ? {
+          statusColours: normalizeDiscoveryColours(raw?.statusColours, account),
+          showNext: raw?.showNext !== false,
+          showRatings: raw?.showRatings !== false,
+        } : {}),
       };
     } else {
       config[account] = normalizeAccountStyle(raw, account);

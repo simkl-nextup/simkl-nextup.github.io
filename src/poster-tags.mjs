@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { DEFAULT_POSTER_STYLE, normalizePosterStyle } from "./poster-style.mjs";
 
-export const TAG_STYLE_VERSION = 14;
+export const TAG_STYLE_VERSION = 15;
 const W = 500;
 const H = 750;
 const FONT_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "fonts", "Inter-ExtraBold.otf");
@@ -46,9 +46,18 @@ export const STATUS_TAGS = {
   watching: { label: "NEW EPISODE", fill: "#0B7D52" },
   plantowatch: { label: "PLAN TO WATCH", fill: "#F0A23A" },
   completed: { label: "NEW SEASON", fill: "#7050F5" },
+  discoveryNewSeries: { label: 'NEW SERIES', fill: '#D39B25' },
+  discoveryReturning: { label: 'RETURNING', fill: '#7050F5' },
+  discoveryTheatrical: { label: 'THEATRICAL', fill: '#BE3245' },
+  discoveryStreaming: { label: 'STREAMING', fill: '#1673C4' },
+  discoveryLimited: { label: 'LIMITED', fill: '#D18122' },
+  discoveryPremiere: { label: 'PREMIERE', fill: '#067A62' },
 };
 // The dub tag has its own accent so it is never confused with a status.
 export const DUB_FILLS = { ready: "#1673C4", behind: "#4A5568" };
+// Semantic, high-contrast side-chip colours for upcoming TV premieres.
+// Never change the existing Anime DUB or movie release chip colours.
+export const UPCOMING_TV_FILLS = Object.freeze({ newSeries: "#067A62", newSeason: "#6749CE" });
 
 // ---------------------------------------------------------------- text ----
 function finite(value) {
@@ -397,7 +406,9 @@ async function appendTopTab({ base, layers, shadows, style, lines, single, tints
 }
 
 async function appendLeftChip({ base, layers, shadows, style, chip, chipY, fitWidth = false }) {
-  if (!chip) return 0;
+  // A chip object with a null/undefined/empty text is *not* a valid chip.
+  // Previously the caller passed {text:null}, producing the literal "null".
+  if (!chip || typeof chip.text !== "string" || !chip.text.trim()) return 0;
   const L = layoutFor(style);
   const ready = chip.state === "ready";
   let font = L.chipFont;
@@ -408,7 +419,7 @@ async function appendLeftChip({ base, layers, shadows, style, chip, chipY, fitWi
     font -= 2;
   } while (true);
   const w = Math.min(W, textLayer.w + L.chipPad * 2);
-  const fill = DUB_FILLS[chip.state];
+  const fill = chip.fill ?? DUB_FILLS[chip.state];
   const shape = leftTagShape(w, L.chipH, L.chipRadius);
   shadows.push({ x: 0, y: chipY, shape, fill });
   layers.push({ input: await frosted(base, 0, chipY, w, L.chipH, shape, fill, ready ? L.chipOpacity : 0.9), left: 0, top: chipY });
@@ -430,9 +441,16 @@ export async function composeMovieReleasePoster({ poster, tags, tvStyle, animeSt
     lines: { main: tags.main, sub: null }, single: tags.main, allowShrink: true,
     compactReleaseDate: Boolean(tags.compactDate ?? tags.released),
   });
-  await appendLeftChip({
+  const chipText = typeof tags?.chip === "string" ? tags.chip.trim() : "";
+  if (chipText) await appendLeftChip({
     base, layers, shadows, style: leftStyle,
-    chip: { text: tags.chip, state: tags.released ? "ready" : "behind" },
+    chip: {
+      text: chipText,
+      state: tags.released ? "ready" : "behind",
+      // Only the two known TV categories can select a semantic colour.
+      ...(Object.hasOwn(UPCOMING_TV_FILLS, tags.chipTone)
+        ? { fill: UPCOMING_TV_FILLS[tags.chipTone] } : {}),
+    },
     chipY: (tabH || layoutFor(topStyle).tabH) + layoutFor(leftStyle).chipGap,
     fitWidth: true,
   });
@@ -463,7 +481,9 @@ export async function composeTaggedPoster({ poster, logo, name, badge, style: ra
   if (title) layers.push(title);
 
   // Bottom row: [STATUS] ★ score.
-  const status = STATUS_TAGS[badge.status];
+  const originalStatus = STATUS_TAGS[badge.status];
+  const status = originalStatus && badge.statusFill && /^#[0-9A-Fa-f]{6}$/.test(badge.statusFill)
+    ? { ...originalStatus, fill: badge.statusFill } : originalStatus;
   if (!status) throw new Error(`Unsupported poster status: ${badge.status}`);
   const statusText = await text(status.label, inkFor(status.fill), L.pillFont);
   const pillW = statusText.w + L.pillPad * 2;
@@ -480,12 +500,16 @@ export async function composeTaggedPoster({ poster, logo, name, badge, style: ra
   if (rating) layers.push(place(rating, rowX + pillW + L.rowGap, L.rowY + (L.pillH - rating.h) / 2));
 
   // These are the same tag primitives consumed by the movie row.
-  const lines = topTabLines(badge);
-  const single = topTabText(badge);
-  const { tint, tabH } = await appendTopTab({ base, layers, shadows, style, lines, single, tints });
+  const lines = typeof badge?.topLabel === 'string' && badge.topLabel.trim()
+    ? { main: badge.topLabel.trim(), sub: null } : topTabLines(badge);
+  const single = typeof badge?.topLabel === 'string' && badge.topLabel.trim()
+    ? badge.topLabel.trim() : topTabText(badge);
+  const { tint, tabH } = await appendTopTab({ base, layers, shadows, style, lines, single, tints,
+    compactReleaseDate: Boolean(badge.compactDate) });
   const chipY = (tabH || L.tabH) + L.chipGap;
-  const dub = dubTag(badge);
-  const leftW = await appendLeftChip({ base, layers, shadows, style, chip: dub, chipY });
+  const dub = typeof badge?.nextLabel === 'string' && badge.nextLabel.trim()
+    ? { text: badge.nextLabel.trim(), state: 'ready', fill: '#087F6D' } : dubTag(badge);
+  const leftW = await appendLeftChip({ base, layers, shadows, style, chip: dub, chipY, fitWidth: true });
   if (style.topTab === "chip" && lines?.sub) {
     const label_ = await text(lines.sub, inkFor(tint), L.chipFont);
     const w = label_.w + L.chipPad * 2;

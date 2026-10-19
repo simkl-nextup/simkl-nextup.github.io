@@ -1,0 +1,25 @@
+# Upcoming poster rebuild + Smart Shuffle visibility compatibility
+
+The existing Account 2 manifest URL remains unchanged:
+`https://simkl-nextup.github.io/account-2/manifest.json`
+
+## Upcoming posters
+- Both Upcoming catalogs are independent of Simkl for **discovery**.
+- Upcoming Movie statuses: THEATRICAL, STREAMING, LIMITED, PREMIERE; labels are drawn as the Up Next-style **bottom pills**, with a compact date tab at the top.
+- Upcoming TV statuses: NEW SERIES, RETURNING; the top tab is **only the premiere date**. A NEXT chip is added exclusively for returning series on Account 2's Watching or Plan to Watch lists. This additional personal badge does not filter the global catalog.
+- Both use TMDB poster artwork, textless assets/title logos when available, the same Up Next poster renderer, adaptive date tabs, optional star ratings and user-editable per-status colors in `studio.html`. They no longer fetch BetterPosters.
+- Existing anime, TV, Home Releases and Smart Shuffle poster recipes are preserved.
+
+## Smart Shuffle and Nuvio
+A client-compatibility risk was found: Smart Shuffle was the only Account 2 catalog advertising an optional `skip` extra. Some static catalog clients may not show such catalogs. It is now advertised as a plain movie catalog, containing the **full** list at `catalog/movie/simkl-movies-smart-shuffle-account2.json`, without mandatory pagination. The optional static skip files remain for other clients. Account 2's manifest is versioned `1.15.0` to help clients pick up changes.
+
+This is a preventive compatibility fix, **not proof** that the live Nuvio problem was caused by `skip`; live GitHub Pages responses were not accessible from the test environment. After deployment check the manifest has 5 catalogs and `status.json` has `smartShuffle.published > 0`. If the row is still absent despite a nonempty JSON catalog, remove and re-add the *same* Account 2 addon link to refresh Nuvio's cached manifest.
+
+## Deployment and checks
+1. Extract the replacement ZIP on top of your existing repository and commit to `main`, preserving history for the required Inter ExtraBold font. The font itself is deliberately not bundled in this ZIP.
+2. Run GitHub Actions workflow `Refresh Simkl and global upcoming releases`.
+3. Verify `/account-2/manifest.json` includes five catalog IDs and `/account-2/status.json` has `movieRow`, `discovery`, and `smartShuffle` data.
+4. Verify `/account-2/catalog/movie/simkl-movies-smart-shuffle-account2.json` contains nonempty `metas` whenever the Simkl movie Plan to Watch list is nonempty and the items have IDs.
+5. Open `/studio.html` to edit Upcoming Movies and Upcoming TV independently. Changes affect only their own generated artwork.
+
+Tests run with `npm ci && npm test` when the build font is available.

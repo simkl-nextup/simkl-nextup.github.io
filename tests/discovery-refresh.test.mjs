@@ -38,6 +38,8 @@ function fakeFetch(image, log){
       {season:4,number:1,airdate:'2027-11-11',show:tvmaze},
     ]);
     if(u.pathname==='/3/find/tt7654321')return asJson({tv_results:[returning]});
+    if(u.pathname==='/3/tv/50')return asJson({...newShow,external_ids:{imdb_id:'tt5555555'}});
+    if(u.pathname==='/3/tv/60')return asJson({...returning,external_ids:{imdb_id:'tt7654321'}});
     throw new Error(`Unexpected URL: ${url}`);
   };
 }
@@ -60,6 +62,7 @@ test('full global refresh appends two rows, publishes tagged artwork and metadat
     const tvCat=JSON.parse(await readFile(path.join(output,'catalog/series/global-upcoming-tv.json'),'utf8'));
     assert.equal(movieCat.metas[0].id,'tt1234567');
     assert.ok(movieCat.metas[0].poster.includes('upcoming-movies/'));
+    assert.ok(!calls.some(x=>x.includes('btttr.cc')),'discovery must not call BetterPosters');
     assert.equal(tvCat.metas.length,2);
     assert.ok(tvCat.metas.find(x=>x.id==='tt7654321'));
     assert.ok(tvCat.metas.find(x=>x.id==='tt7654321').links.some(x=>x.url.includes('tvmaze.com')));
@@ -68,8 +71,9 @@ test('full global refresh appends two rows, publishes tagged artwork and metadat
     const tvStudio=JSON.parse(await readFile(path.join(output,'studio/upcomingTV.json'),'utf8'));
     assert.equal(movieStudio.samples.length,1);
     assert.equal(tvStudio.samples.length,2);
-    assert.ok(tvStudio.samples.every(s=>s.tags.chip===null));
-    assert.ok(tvStudio.samples.some(s=>s.tags.main==='S3 · NOV 11'));
+    assert.deepEqual(new Set(tvStudio.samples.map(s=>s.tags.statusKey)),new Set(['newSeries','returning']));
+    assert.ok(tvStudio.samples.some(s=>s.tags.main==='NOV 11' && s.tags.statusKey==='returning'));
+    assert.ok(tvStudio.samples.some(s=>s.tags.main==='NOV 7' && s.tags.statusKey==='newSeries'));
     assert.ok((await stat(path.join(output,'meta/series/tt7654321.json'))).isFile());
     assert.deepEqual(JSON.parse(await readFile(path.join(output,'meta/series/tt7654321.json'),'utf8')),existing);
     const published=JSON.stringify(movieCat)+JSON.stringify(tvCat)+JSON.stringify(manifest);

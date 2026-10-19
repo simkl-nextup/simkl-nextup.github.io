@@ -15,13 +15,13 @@ The installed manifest remains **`https://simkl-nextup.github.io/account-2/manif
 
 **Curation:** The result is a high-signal, Netflix-style preview rather than a comprehensive TV calendar. Requires usable artwork, a meaningful description, a valid date and stable metadata ID. Shows are ranked first by proximity (within 7 days, 8–30 days, then later) and then by TMDB popularity/metadata quality. Up to 50 of each type are published. There may be fewer than 50 entries, which is preferable to padding with low-quality titles.
 
-**Posters:** BetterPosters is used solely for the base artwork when an IMDb ID exists (`?tag=none`). The existing local renderer injects the adaptive-color **date tab** and an anime dub-style **left chip** for movies (`THEATRICAL` or `STREAMING`). Upcoming TV has **no redundant grey side chip**: the top tag reads `NEW SERIES · NOV 7` or `S3 · NOV 11`. Poster Studio now has separately editable Upcoming Movies and Upcoming TV tabs; they preserve the selected look on initial migration without changing Anime or TV. TMDB artwork is the fallback. No extra watchlist/status badge is added at the bottom.
+**Posters:** Both Upcoming rows now use the **exact Up Next poster engine**: TMDB textless artwork when available, an optional TMDB title logo, local fallback title, adaptive rounded date tab, color-coded bottom status pill, and an optional star rating. BetterPosters is **never called for Upcoming Movies or Upcoming TV**. Movie statuses are THEATRICAL (red), STREAMING (blue), LIMITED (amber), and PREMIERE (teal). TV statuses are NEW SERIES (gold) and RETURNING (purple). For an upcoming *returning* series in the Account 2 Watching/Plan to Watch list, a green NEXT chip appears under the date. No `null` chip or duplicate SEASON tag appears. Every control is independent in Poster Studio. Home Releases and Smart Shuffle continue using their original BetterPosters poster logic.
 
 ## Data and attribution
 
 - TMDB: worldwide upcoming movie/TV discovery, dates, popularity, IDs, and posters. Existing `TMDB_READ_ACCESS_TOKEN` secret is required; no new secret is needed.
 - TVmaze: future first-episode/returning-season schedules. Their public `/schedule/full` endpoint can be large and is cached upstream for 24 hours. TVmaze data is CC BY-SA; credit appears on the Account 2 page and individual TVmaze-derived catalog entries link back to source listings.
-- BetterPosters: optional poster base service. If it fails, TMDB artwork is used and **local top and side tags still render**.
+- Upcoming posters do not depend on BetterPosters. Home Releases/Smart Shuffle retain their existing separate BetterPosters handling.
 
 External providers cannot guarantee a complete premiere calendar; missing or altered release dates may omit or reorder titles. TVmaze's primary airing date might not exactly match local streaming release time in every region. The refresh's `status.json` contains publication counts and warnings.
 
@@ -30,7 +30,7 @@ External providers cannot guarantee a complete premiere calendar; missing or alt
 1. Replace files in your **existing** GitHub repository without deleting commit history. The existing workflow restores the original poster font from repository history.
 2. Keep `SIMKL_CLIENT_ID`, `SIMKL_ACCESS_TOKEN`, `SIMKL_ACCESS_TOKEN_2`, and `TMDB_READ_ACCESS_TOKEN` configured as before.
 3. Run Actions -> **Refresh Simkl and global upcoming releases**, or push to `main`.
-4. Open `https://simkl-nextup.github.io/account-2/manifest.json` and confirm it declares **four catalogs**: TV Up Next, Home Releases, Upcoming Movies, Upcoming TV Shows.
+4. Open `https://simkl-nextup.github.io/account-2/manifest.json` and confirm it declares **five catalogs**: TV Up Next, Home Releases, Upcoming Movies, Upcoming TV Shows, Smart Shuffle.
 5. Open `https://simkl-nextup.github.io/account-2/status.json` and check `discovery.upcomingMovies`, `discovery.upcomingTV`, `discovery.dataFetchedAt`, and `discovery.warnings`.
 6. Restart/refresh Nuvio or Stremio. If it still shows only two rows, remove and reinstall the **same Account 2 manifest** to refresh its cached catalog declarations.
 

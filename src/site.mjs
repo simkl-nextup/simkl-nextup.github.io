@@ -2,7 +2,7 @@ import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultPosterConfig, normalizePosterConfig, POSTER_ACCOUNTS, POSTER_LOOKS, POSTER_STYLE_OPTIONS } from "./poster-style.mjs";
-import { DUB_FILLS, SIZE_PRESETS, dubTag } from "./poster-tags.mjs";
+import { DUB_FILLS, UPCOMING_TV_FILLS, SIZE_PRESETS, dubTag } from "./poster-tags.mjs";
 import { ADDON_ID, APP_VERSION, CATALOG_ID, CATALOG_NAME } from "./constants.mjs";
 import { buildManifest } from "./catalog.mjs";
 import { decorateCatalogPosters } from "./poster-badges.mjs";
@@ -212,7 +212,7 @@ export async function writeSite({
       looks: POSTER_LOOKS,
       options: POSTER_STYLE_OPTIONS,
       layouts: SIZE_PRESETS,
-      colours: { dubReady: DUB_FILLS.ready, dubBehind: DUB_FILLS.behind },
+      colours: { dubReady: DUB_FILLS.ready, dubBehind: DUB_FILLS.behind, newSeries: UPCOMING_TV_FILLS.newSeries, newSeason: UPCOMING_TV_FILLS.newSeason },
       samples: posterResult.studio ?? [],
       // Anime titles the studio can attach a typed dub episode number to.
       dubTitles: account === "anime" ? studioDubTitles(posterBadges, catalog) : [],

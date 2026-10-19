@@ -236,14 +236,40 @@
     if (accounts[account].movieTags) {
       const note = document.createElement("p");
       note.className = "note";
-      note.textContent = "BetterPosters supplies the base artwork. These settings control only the local release-date/season tab and, where present, the side format chip. Smart Shuffle inherits the finished Home Releases poster.";
+      note.textContent = accounts[account].discoveryPoster
+        ? "Upcoming posters use the exact Up Next renderer: TMDB artwork/logo, adaptive date tab, coloured bottom status and optional NEXT chip. BetterPosters is not used."
+        : "BetterPosters supplies the base artwork. Settings control only the local release-date tab and side format chip. Smart Shuffle inherits finished Home Releases posters.";
       box.append(note);
       const topTitle = document.createElement("h3"); topTitle.textContent = "Top tab";
       box.append(topTitle);
       for (const key of ["size", "contrast", "outlineOnWhiteText", "outlineOnDarkText", "outlineWeight", "tagShadow"]) {
         box.append(optionBlock(key, options[key], style[key], live[account][key]));
       }
-      if (account !== "upcomingTV") {
+      if (accounts[account].discoveryPoster) {
+        const header = document.createElement("h3"); header.textContent = "Up Next-style status colours";
+        box.append(header);
+        const labels = account === "upcomingTV" ? {newSeries:"NEW SERIES",returning:"RETURNING"} :
+          {theatrical:"THEATRICAL",streaming:"STREAMING",limited:"LIMITED",premiere:"PREMIERE"};
+        for(const [key,title] of Object.entries(labels)) {
+          const wrap=document.createElement("div"); wrap.className="opt";
+          const label=document.createElement("label"); label.textContent=title + " status colour";
+          label.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px";
+          const input=document.createElement("input");input.type="color";
+          input.value=style.statusColours[key];input.setAttribute("aria-label",title+" status colour");
+          input.oninput=()=>{style.statusColours[key]=input.value.toUpperCase();saveDraft();renderCards();renderState();};
+          label.append(input);wrap.append(label);box.append(wrap);
+        }
+        for(const [key,label] of Object.entries({showRatings:"Show available ★ ratings",
+          ...(account==="upcomingTV"?{showNext:"Show NEXT on returning shows tracked in Account 2"}:{})})){
+          const wrap=document.createElement("label");wrap.className="opt";
+          wrap.style.cssText="display:flex;align-items:center;gap:10px;font-size:13px";
+          const input=document.createElement("input");input.type="checkbox";input.checked=style[key]!==false;
+          input.onchange=()=>{style[key]=input.checked;saveDraft();renderAll();};
+          wrap.append(input,document.createTextNode(label));box.append(wrap);
+        }
+        return;
+      }
+      {
         const sideTitle = document.createElement("h3"); sideTitle.textContent = "Side tag · anime dub-chip styling";
         box.append(sideTitle);
         for (const key of ["size", "outlineOnWhiteText", "outlineWeight", "tagShadow"]) {
@@ -297,6 +323,55 @@
     return d;
   }
 
+  function renderDiscoveryCard(sample) {
+    const L = layouts[style.size] || layouts.large, scale=zoom/500;
+    const outer=document.createElement("div"),card=document.createElement("div");
+    card.className="card";card.style.width=zoom+"px";card.style.height=Math.round(zoom*1.5)+"px";
+    const stage=document.createElement("div");stage.className="stage";stage.style.transform=`scale(${scale})`;
+    const poster=document.createElement("img");poster.className="poster";poster.src=sample.poster;
+    poster.alt="";poster.loading="lazy";stage.append(poster);
+    const band=document.createElement("div");band.style.cssText="position:absolute;left:0;right:0;top:520px;height:230px;background:linear-gradient(transparent,rgba(0,0,0,.78))";
+    stage.append(band);
+    if(sample.logo){
+      const logo=document.createElement("img");logo.src=sample.logo;logo.alt="";
+      logo.style.cssText="position:absolute;left:40px;top:450px;width:420px;height:150px;object-fit:contain;pointer-events:none";
+      stage.append(logo);
+    } else if(sample.textless){
+      const title=document.createElement("div");title.style.cssText="position:absolute;left:35px;top:500px;width:430px;color:white;font-weight:900;text-align:center;font-size:32px;text-shadow:0 3px 4px #000";
+      title.textContent=sample.name;stage.append(title);
+    }
+    const tint=style.contrast==="standard"?sample.tints?.standard:sample.tints?.max;
+    const fill=/^#[0-9A-Fa-f]{6}$/.test(tint||"")?tint:"#344359";
+    const main=sample.tags?.main||"";
+    const isSmallDate=/^[A-Z]{3} \d{1,2}$/.test(main);
+    const dateHeight=isSmallDate?Math.round(L.tabH*.72):L.tabH;
+    const dateRadius=isSmallDate?Math.round(dateHeight*.41):L.tabRadius;
+    const top=tagEl({x:0,y:0,h:dateHeight,fill,opacity:L.tabOpacity,radius:dateRadius,shape:"top"});
+    top.style.padding=`0 ${isSmallDate?Math.round(L.tabPad*.8):L.tabPad}px`;
+    top.style.left="50%";top.style.transform="translateX(-50%)";
+    top.append(textEl(main,isSmallDate?Math.round((L.tabFont-6)*.85):L.tabFont-(style.topTab==='single'?6:0),inkFor(fill)));
+    stage.append(top);
+    if(sample.tags?.next && style.showNext!==false){
+      const next=tagEl({x:0,y:dateHeight+L.chipGap,h:L.chipH,fill:"#087F6D",opacity:L.chipOpacity,radius:L.chipRadius,shape:"left"});
+      next.style.padding=`0 ${L.chipPad}px`;next.append(textEl("NEXT",L.chipFont,"#FFFFFF"));stage.append(next);
+    }
+    const labels={newSeries:"NEW SERIES",returning:"RETURNING",theatrical:"THEATRICAL",streaming:"STREAMING",limited:"LIMITED",premiere:"PREMIERE"};
+    const key=sample.tags?.statusKey;
+    const colour=style.statusColours?.[key]||"#7050F5";
+    const status=tagEl({x:0,y:L.rowY,h:L.pillH,fill:colour,opacity:0.92,radius:L.pillRadius,shape:"pill"});
+    const width=labels[key]?.length>10?215:185;
+    status.style.cssText+=`;left:${(500-width)/2}px;width:${width}px;padding:0 ${L.pillPad}px`;
+    status.append(textEl(labels[key]||"RETURNING",L.pillFont,inkFor(colour)));
+    stage.append(status);
+    if(sample.tags?.score && style.showRatings!==false){
+      const rating=document.createElement("div");rating.style.cssText=`position:absolute;top:${L.rowY+9}px;left:${(500-width)/2+width+12}px;color:#fff;font-size:35px;font-weight:900;text-shadow:0 3px 7px #000`;
+      rating.textContent=`★ ${sample.tags.score}`;stage.append(rating);
+    }
+    card.append(stage);
+    const caption=document.createElement("div");caption.className="name";caption.style.width=zoom+"px";caption.textContent=sample.name;
+    outer.append(card,caption);return outer;
+  }
+
   function renderMovieCard(sample) {
     const L = layouts[style.size] || layouts.large;
     const outer = document.createElement("div");
@@ -324,8 +399,11 @@
     if (sample.tags?.chip) {
       const sideStyle = style.side || style;
       const S = layouts[sideStyle.size] || layouts.large;
-      const chipFill = sample.tags.released ? (data.colours?.dubReady || "#146DD5") : (data.colours?.dubBehind || "#505B70");
-      const chip = tagEl({x:0,y:tabHeight+S.chipGap,h:S.chipH,fill:chipFill,opacity:sample.tags.released ? S.chipOpacity : 0.9,radius:S.chipRadius,shape:"left",tagStyle:sideStyle});
+      const semantic = { newSeries: data.colours?.newSeries || "#07876B", newSeason: data.colours?.newSeason || "#6749CE" };
+      const chipFill = Object.hasOwn(semantic, sample.tags.chipTone)
+        ? semantic[sample.tags.chipTone]
+        : (sample.tags.released ? (data.colours?.dubReady || "#146DD5") : (data.colours?.dubBehind || "#505B70"));
+      const chip = tagEl({x:0,y:tabHeight+S.chipGap,h:S.chipH,fill:chipFill,opacity:sample.tags.chipTone ? S.chipOpacity : (sample.tags.released ? S.chipOpacity : 0.9),radius:S.chipRadius,shape:"left",tagStyle:sideStyle});
       chip.style.padding = `0 ${S.chipPad}px`;
       const label = textEl(sample.tags.chip,S.chipFont,"#FFFFFF",{tagStyle:sideStyle});
       chip.append(label);
@@ -339,6 +417,7 @@
   }
 
   function renderCard(sample) {
+    if (accounts[account].discoveryPoster) return renderDiscoveryCard(sample);
     if (accounts[account].movieTags) return renderMovieCard(sample);
     const L = layouts[style.size] || layouts.large;
     const W = 500;

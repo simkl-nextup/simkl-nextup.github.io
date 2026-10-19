@@ -73,7 +73,7 @@ test('movies sort by near-term window and then anticipation, duplicates removed'
   const entries=buildUpcomingMovies(candidates,now);
   assert.deepEqual(entries.map(x=>x.meta.id),['tmdb:3','tmdb:1','tmdb:2']);
   assert.equal(entries[0].tags.main,'OCT 23');
-  assert.equal(entries[0].tags.chip,'THEATRICAL');
+  assert.equal(entries[0].tags.statusKey,'theatrical');
 });
 test('series and returning seasons expose stable metadata and correct tags',()=>{
   const entries=buildUpcomingShows([
@@ -82,8 +82,11 @@ test('series and returning seasons expose stable metadata and correct tags',()=>
     {tmdb:show(3,'Weekly Episode'),season:2,date:'2026-10-11'},
   ],now);
   assert.equal(entries.length,2);
-  assert.deepEqual(entries.map(x=>x.tags.chip),[null,null]);
-  assert.deepEqual(entries.map(x=>x.tags.main).sort(), ['NEW SERIES · NOV 19','S2 · NOV 20'].sort());
+  const bySeason = Object.fromEntries(entries.map(x => [x.tags.statusKey, x.tags]));
+  assert.equal(bySeason.newSeries.main,'NOV 19');
+  assert.equal(bySeason.newSeries.season,1);
+  assert.equal(bySeason.returning.main,'NOV 20');
+  assert.equal(bySeason.returning.season,2);
   assert.ok(entries.some(x=>x.meta.id==='tt1234567' && x.meta.type==='series'));
   assert.ok(entries.every(x=>x.meta.poster.startsWith('https://')));
 });
@@ -101,4 +104,14 @@ test('recent overseas theatrical opening does not hide a confirmed upcoming US d
   const candidate=pickMoviePremiere(releaseDates,now);
   assert.equal(candidate.country,'US');
   assert.equal(candidate.date,'2026-11-10');
+});
+
+test('movie statuses distinguish limited, streaming and festival-only premieres',()=>{
+  const entries=buildUpcomingMovies([
+    film(11,'2026-11-07',{release_dates:{results:[release('US',[event(2,'2026-11-07')])]}}),
+    film(12,'2026-11-08',{release_dates:{results:[release('US',[event(4,'2026-11-08')])]}}),
+    film(13,'2026-11-09',{release_dates:{results:[release('US',[event(1,'2026-11-09')])]}}),
+  ],now);
+  assert.deepEqual(new Set(entries.map(e=>e.tags.statusKey)),new Set(['limited','streaming','premiere']));
+  assert.ok(entries.every(e=>e.meta.poster.startsWith('https://image.tmdb.org/')));
 });

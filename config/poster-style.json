@@ -21,9 +21,6 @@
     "contrast": "max",
     "ratingShadow": true
   },
-  "dubOverrides": {
-    "21": 1155
-  },
   "homeReleases": {
     "look": "tags",
     "topTab": "single",
@@ -64,7 +61,15 @@
       "tagShadow": "coloured",
       "contrast": "max",
       "ratingShadow": true
-    }
+    },
+    "statusColours": {
+      "theatrical": "#BE3245",
+      "streaming": "#1673C4",
+      "limited": "#D18122",
+      "premiere": "#067A62"
+    },
+    "showNext": true,
+    "showRatings": true
   },
   "upcomingTV": {
     "look": "tags",
@@ -85,6 +90,15 @@
       "tagShadow": "coloured",
       "contrast": "max",
       "ratingShadow": true
-    }
+    },
+    "statusColours": {
+      "newSeries": "#D39B25",
+      "returning": "#7050F5"
+    },
+    "showNext": true,
+    "showRatings": true
+  },
+  "dubOverrides": {
+    "21": 1155
   }
 }

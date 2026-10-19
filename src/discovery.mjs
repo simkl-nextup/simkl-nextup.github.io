@@ -8,7 +8,7 @@ export const DISCOVERY_TV_NAME = 'Upcoming TV Shows';
 export const DAY = 86400000;
 const UNDESIRED_TV = /\b(?:news|talk|reality|game show|sports?|soap|variety|weather|shopping|late night|awards?)\b/i;
 const UNDESIRED_NAME = /\b(?:tonight|live news|morning show|daily news|evening news|lottery|highlights|weather forecast)\b/i;
-const FILM_FORMATS = new Map([[2,'THEATRICAL'],[3,'THEATRICAL'],[4,'STREAMING'],[6,'STREAMING']]);
+const FILM_FORMATS = new Map([[1,'PREMIERE'],[2,'LIMITED'],[3,'THEATRICAL'],[4,'STREAMING'],[6,'STREAMING']]);
 export const day = (date) => new Date(date).toISOString().slice(0,10);
 export function futureEnd(now, days) { return day(new Date(Date.parse(`${day(now)}T00:00:00Z`) + days * DAY)); }
 export function daysUntil(date, today) { return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / DAY); }
@@ -42,10 +42,12 @@ export function pickMoviePremiere(details, now, windowDays=90) {
   }
   if (!events.length) return null;
   // An older movie receiving its digital release is NOT a new premiere.
-  const earliest=events.reduce((min,e)=>e.date<min?e.date:min,events[0].date);
-  const inWindow=events.filter(e=>e.date>=today && e.date<=end);
+  const commercial=events.filter(e=>e.kind!=='PREMIERE');
+  const source=commercial.length?commercial:events;
+  const earliest=source.reduce((min,e)=>e.date<min?e.date:min,source[0].date);
+  const inWindow=source.filter(e=>e.date>=today && e.date<=end);
   inWindow.sort((a,b)=>a.date.localeCompare(b.date));
-  const usPremiere=inWindow.find(e=>e.country==='US' && e.kind==='THEATRICAL');
+  const usPremiere=inWindow.find(e=>e.country==='US' && ['THEATRICAL','LIMITED'].includes(e.kind));
   // Some international films open overseas slightly earlier but are still
   // genuinely upcoming in the US. Include a scheduled US theatrical debut
   // when the foreign first release was recent (<=90 days), not for old
@@ -100,22 +102,35 @@ function rank(a,b,now) {
   // listing obscure daily entries solely because they debut tomorrow.
   return tier(a.date,now)-tier(b.date,now) || b.score-a.score || a.date.localeCompare(b.date) || a.meta.name.localeCompare(b.meta.name);
 }
-function posterFor(tmdb, id, type) {
-  const imdb=/^tt\d+$/.test(String(id||''))?id:null;
-  return imdb ? `https://btttr.cc/poster/imdb/poster-default/${imdb}.jpg?tag=none` : `https://image.tmdb.org/t/p/w500${tmdb.poster_path}`;
+function posterFor(tmdb) {
+  // Upcoming rows use our Up Next renderer, never BetterPosters.
+  const images=tmdb.images?.posters || [];
+  const textless=images.filter(p=>p.file_path && p.iso_639_1==null)
+    .sort((a,b)=>(Number(b.vote_count)||0)-(Number(a.vote_count)||0))[0];
+  const logos=(tmdb.images?.logos||[]).filter(l=>l.file_path)
+    .sort((a,b)=>(a.iso_639_1==='en'?0:a.iso_639_1==null?1:2)-(b.iso_639_1==='en'?0:b.iso_639_1==null?1:2));
+  const posterPath=textless?.file_path || tmdb.poster_path;
+  return { poster: `https://image.tmdb.org/t/p/w500${posterPath}`,
+    logo: logos[0]?.file_path ? `https://image.tmdb.org/t/p/w500${logos[0].file_path}` : null,
+    textless: !!textless };
 }
 function releaseEntry(tmdb, date, chip, mediaType, imdb, now, score, note) {
   const id= /^tt\d+$/.test(String(imdb||''))?imdb:`tmdb:${tmdb.id}`;
   const title=String(tmdb.title||tmdb.name||'');
+  const art=posterFor(tmdb);
   const backup=`https://image.tmdb.org/t/p/w500${tmdb.poster_path}`;
-  const meta={id,type:mediaType,name:title,poster:posterFor(tmdb, id, mediaType),
+  const meta={id,type:mediaType,name:title,poster:art.poster,
     ...(tmdb.backdrop_path?{background:`https://image.tmdb.org/t/p/w1280${tmdb.backdrop_path}`} : {}),
     ...(tmdb.genre_ids?.length?{genres:[]} : {}),
     releaseInfo: `${chip} · ${dateLabel(date)}`,
     description: `${note} ${dateLabel(date)}. ${tmdb.overview || ''}`.trim(),
     links:[{name:'View on TMDB',category:'tmdb',url:`https://www.themoviedb.org/${mediaType==='movie'?'movie':'tv'}/${tmdb.id}`}],
   };
-  return {meta, date,score,tmdbPoster:backup,tags:{main:dateLabel(date),chip,released:false,compactDate:true}};
+  const statusKey = mediaType==='series' ? (chip==='NEW SERIES'?'newSeries':'returning')
+    : ({THEATRICAL:'theatrical',STREAMING:'streaming',LIMITED:'limited',PREMIERE:'premiere'}[chip]);
+  const rating = Number(tmdb.vote_average)>=1 && Number(tmdb.vote_count)>=20 ? Number(tmdb.vote_average).toFixed(1) : null;
+  return {meta,date,score,tmdbPoster:backup,artwork:art,
+    tags:{main:dateLabel(date),statusKey,score:rating,compactDate:true}};
 }
 export function buildUpcomingMovies(candidates, now=new Date(), maxItems=50) {
   const rows=[];
@@ -123,7 +138,7 @@ export function buildUpcomingMovies(candidates, now=new Date(), maxItems=50) {
     const tmdb=row.details||row, premiere=pickMoviePremiere(tmdb,now,90);
     if (!premiere || !isQualityTitle(tmdb)) continue;
     const imdb=tmdb.imdb_id || tmdb.external_ids?.imdb_id;
-    rows.push(releaseEntry(tmdb,premiere.date,premiere.kind,'movie',imdb,now,scoreItem(tmdb),`${premiere.kind==='STREAMING'?'Streaming':'Theatrical'} premiere${premiere.country?` (${premiere.country})`:''} on`));
+    rows.push(releaseEntry(tmdb,premiere.date,premiere.kind,'movie',imdb,now,scoreItem(tmdb),`${premiere.kind.charAt(0)+premiere.kind.slice(1).toLowerCase()} premiere${premiere.country?` (${premiere.country})`:''} on`));
   }
   return uniqueTop(rows,now,maxItems);
 }
@@ -136,11 +151,14 @@ export function buildUpcomingShows(candidates, now=new Date(), maxItems=50) {
     const imdb=r.imdb || tmdb.external_ids?.imdb_id || tmdb.imdb_id;
     const chip=season===1?'NEW SERIES':`SEASON ${season}`;
     const entry=releaseEntry(tmdb,date,chip,'series',imdb,now,scoreItem(tmdb,{tv:true,season}),season===1?'Series premiere on':`Season ${season} premiere on`);
-    // Up Next-like, adaptive top tab: the season and its premiere date belong
-    // together. No grey/redundant left-side season chip for this row.
-    entry.tags.main = season===1 ? `NEW SERIES · ${dateLabel(date)}` : `S${season} · ${dateLabel(date)}`;
-    entry.tags.chip = null;
-    entry.tags.compactDate = false;
+    // Keep the readable Up Next-style season/date in the top tab. The side
+    // chip states WHAT is premiering, in distinct NEW SERIES / NEW SEASON
+    // colours; it is never the plain-grey fallback used for upcoming movies.
+    entry.tags.main = dateLabel(date);
+    entry.tags.statusKey = season===1?'newSeries':'returning';
+    entry.tags.season = season;
+    entry.tags.next = Boolean(r.next);
+    entry.tags.compactDate = true;
     if(r.tvmazeUrl)entry.meta.links.push({name:'Schedule on TVmaze',category:'tvmaze',url:r.tvmazeUrl});
     rows.push(entry);
   }

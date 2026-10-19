@@ -143,11 +143,12 @@ test('end-to-end fifth catalog preserves four rows, existing metadata, paginatio
   const updated = JSON.parse(await readFile(join(f.outputDirectory, 'manifest.json')));
   assert.deepEqual(updated.catalogs.slice(0, 4), f.manifest.catalogs);
   assert.equal(updated.catalogs[4].id, SMART_SHUFFLE_ID);
-  assert.equal(updated.catalogs[4].extra[0].name, 'skip');
+  assert.equal(updated.catalogs[4].extra, undefined,'plain Nuvio-compatible catalog');
   const base = JSON.parse(await readFile(join(f.outputDirectory, `catalog/movie/${SMART_SHUFFLE_ID}.json`)));
   const pages = await Promise.all([0, 50, 100, 150].map(async (skip) => JSON.parse(await readFile(
     join(f.outputDirectory, `catalog/movie/${SMART_SHUFFLE_ID}/skip=${skip}.json`)))));
-  assert.deepEqual(base, pages[0]);
+  assert.equal(base.metas.length,107,'all movies are in the base catalog so Nuvio can render without skip');
+  assert.deepEqual(base.metas.slice(0,50),pages[0].metas);
   assert.deepEqual(pages.map(p => p.metas.length), [50, 50, 7, 0]);
   assert.equal(new Set(pages.flatMap(p => p.metas.map(x => x.id))).size, 107);
   assert.deepEqual(JSON.parse(await readFile(join(f.outputDirectory, 'meta/movie/tt1000003.json'))), originalMetadata);

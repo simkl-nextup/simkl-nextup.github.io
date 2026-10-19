@@ -57,11 +57,12 @@ export async function refreshSmartShuffle({
     || expected.some((id,index)=>manifest.catalogs?.[index]?.id!==id)){
     throw new Error('Original four Account 2 catalogs must exist and be in their previous order. No changes made.');
   }
-  // Declare as a fifth, independent catalog. Pagination uses the Stremio
-  // `skip` extra, published as literal GitHub Pages JSON files.
+  // Nuvio may hide static catalogs that advertise optional `skip` extras.
+  // Publish a plain fifth catalog first; retain static skip pages as optional
+  // direct URLs. This is compatible with clients that only fetch base JSON.
   manifest.catalogs=manifest.catalogs.filter(c=>c.id!==SMART_SHUFFLE_ID);
-  manifest.catalogs.push({type:'movie',id:SMART_SHUFFLE_ID,name:SMART_SHUFFLE_NAME,
-    extra:[{name:'skip',isRequired:false}]});
+  manifest.catalogs.push({type:'movie',id:SMART_SHUFFLE_ID,name:SMART_SHUFFLE_NAME});
+  manifest.version = '1.15.0';
   if (!manifest.idPrefixes.includes('simkl:')) manifest.idPrefixes.push('simkl:');
 
   const catalogDir=path.join(outputDirectory,'catalog','movie');
@@ -70,7 +71,9 @@ export async function refreshSmartShuffle({
   await mkdir(pageDir,{recursive:true});
   await mkdir(metaDir,{recursive:true});
   const pages=paginateSmartCatalog(metas,pageSize);
-  await writeFile(path.join(catalogDir,`${SMART_SHUFFLE_ID}.json`),toJson({metas:pages[0].metas}));
+  // Include the full list in the basic catalog because some Nuvio versions
+  // do not request extra skip pages. The optional page files remain available.
+  await writeFile(path.join(catalogDir,`${SMART_SHUFFLE_ID}.json`),toJson({metas}));
   for(const page of pages){
     await writeFile(path.join(pageDir,`skip=${page.skip}.json`),toJson({metas:page.metas}));
   }

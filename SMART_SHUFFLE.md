@@ -9,7 +9,7 @@
 - A **featured** item is an exact match to a movie *actually published* in the existing Home Releases row. That row alone controls the six-month release window, the 30-day Coming Soon rule, US priority, theatrical exclusions, and its maximum item count. No extra release eligibility is invented for Smart Shuffle.
 - Featured titles keep precisely the same order as the published Home Releases row (released newest first, then Coming Soon nearest first). **One featured movie, then two random older/other watchlist movies**, repeated.
 - Once the featured titles run out, all remaining watchlist movies are included in randomized order. If no movie qualifies for the featured category, the entire row is shuffled.
-- Each title is included at most once. The whole catalog is paginated into 50-item `skip` pages instead of silently discarding movies after 50.
+- Each title is included at most once. The base catalog now includes **every** Plan to Watch movie without a `skip` manifest requirement. Optional 50-item static pagination files are still generated for direct access; they are not needed for Nuvio to discover the row.
 - **Only** titles present in the existing Home Releases row receive release-date/status tags. They reuse that row's **exact final rendered poster**, so style and eligibility cannot drift. Every other randomized watchlist title always uses its **plain BetterPosters** base (TMDB/Simkl fallback) and does **not** display release tags, even if a historical or unfeatured release date is known.
 - All random-slot movies outside the actual Home Releases row keep their unmodified base poster. Movies without IMDb/TMDB IDs can use their Simkl title and poster as a fallback, though third-party scraper compatibility with `simkl:` IDs is not guaranteed.
 
@@ -21,7 +21,7 @@
 - New status only: `/account-2/status.json` → `smartShuffle`.
 - Tagged posters: reused directly from the published Home Releases row; Smart Shuffle does not generate a second copy.
 
-The static files support Stremio's `skip` catalog-extra convention. Individual Nuvio/Stremio clients may cache catalog results or may not request later pages. **Refresh-by-refresh, request-level shuffling is not possible with GitHub Pages**: the order changes only when the scheduled build completes and the client fetches the new JSON. Installing a second addon is not required; refresh/reinstall the same manifest if the client caches catalog declarations.
+Nuvio compatibility: the manifest advertises an ordinary movie catalog without optional `skip` extras, because some clients do not show catalogs declaring unsupported extras. All movies are included in the base `.json`; individual Nuvio/Stremio clients can still impose their own display limits. Optional static skip files remain available. **Refresh-by-refresh, request-level shuffling is not possible with GitHub Pages**: the order changes only when the scheduled build completes and the client fetches the new JSON. Installing a second addon is not required; refresh/reinstall the same manifest if the client caches catalog declarations.
 
 ## Integration sequence
 
@@ -35,7 +35,7 @@ The only changes outside new modules are plumbing in package scripts, GitHub Act
 
 ## Security and limits
 
-The generated movie list is public, just as with the existing personal rows; tokens and the private release cache are not published. This design relies on the current Home Releases refresh completing successfully before the Smart Shuffle job. Titles missing third-party metadata may have fewer details. The Smart Shuffle job reuses completed Home Releases posters rather than making redundant poster downloads. Pagination support depends on the client requesting Stremio `skip` extras.
+The generated movie list is public, just as with the existing personal rows; tokens and the private release cache are not published. This design relies on the current Home Releases refresh completing successfully before the Smart Shuffle job. Titles missing third-party metadata may have fewer details. The Smart Shuffle job reuses completed Home Releases posters rather than making redundant poster downloads. The client must refresh its cached manifest to pick up the fifth catalog; its own UI may limit how many tiles it displays.
 
 ## Poster Studio
 
