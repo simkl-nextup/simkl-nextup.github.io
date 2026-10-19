@@ -13,7 +13,7 @@ import {
   isTvmazePremiere, tvmazeMatch, day, futureEnd, scoreItem,
 } from '../src/discovery.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const VERSION=4;
+const VERSION=5; // new movie sequel relationship metadata
 const CACHE_TTL_MS=22*3600*1000;
 const API='https://api.themoviedb.org/3';
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
@@ -61,11 +61,30 @@ async function getMovieCandidates({fetchImpl,token,now,warnings}) {
     }
   }
   const choices=[...selected.values()].sort((a,b)=>scoreItem(b)-scoreItem(a)).slice(0,110);
-  return concurrent(choices,6,async movie=>{
+  const detailed=await concurrent(choices,6,async movie=>{
     try {
-      const details=await tmdbGet(fetchImpl,token,`/movie/${movie.id}`,{append_to_response:'release_dates,external_ids,images',include_image_language:'en,null',language:'en-US'});
-      return details;
+      return await tmdbGet(fetchImpl,token,`/movie/${movie.id}`,{append_to_response:'release_dates,external_ids,images',include_image_language:'en,null',language:'en-US'});
     } catch(e) {if([401,403].includes(e.status))throw e;warnings.push(`Movie ${movie.id}: ${e.message}`);return null;}
+  });
+  // TMDB's `belongs_to_collection` alone is NOT proof of being a sequel:
+  // confirm an earlier-released installment to avoid tagging originals.
+  const collectionIds=[...new Set(detailed.map(d=>d.belongs_to_collection?.id).filter(id=>Number.isInteger(id)&&id>0))];
+  const collections=new Map();
+  await concurrent(collectionIds,5,async id=>{
+    try {
+      const data=await tmdbGet(fetchImpl,token,`/collection/${id}`,{language:'en-US'});
+      collections.set(id,data?.parts||[]);
+    }catch(e){if([401,403].includes(e.status))throw e;
+      warnings.push(`Sequel information for collection ${id}: ${e.message}`);}
+  });
+  return detailed.map(movie=>{
+    const parts=collections.get(movie.belongs_to_collection?.id);
+    if(!parts?.length)return movie;
+    const firstDate=movie.release_date?.slice(0,10);
+    const previous=Boolean(firstDate && parts.some(part=>Number(part.id)!==Number(movie.id)
+      && /^\d{4}-\d\d-\d\d$/.test(String(part.release_date))
+      && part.release_date<firstDate));
+    return {...movie,_addonPriorCollectionMovie:previous};
   });
 }
 function cleanName(s) {return String(s||'').normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();}
@@ -141,23 +160,33 @@ async function getTvCandidates({fetchImpl,token,now,warnings}) {
 }
 function normalizeName(name){return String(name||'').normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();}
 export function addPersonalNextTags(entries,state){
-  const matches=new Set(),names=new Set();
+  const matches=new Map(),names=new Map();
   for(const item of Object.values(state?.items||{})){
     if(!['watching','plantowatch'].includes(item?.status))continue;
     const media=item.show||item.anime||{};
     for(const [kind,id] of Object.entries(media.ids||{})){
-      if(['imdb','tmdb','tvdb'].includes(kind)&&id)matches.add(`${kind}:${id}`);
+      if(['imdb','tmdb','tvdb'].includes(kind)&&id)matches.set(`${kind}:${id}`,item);
     }
-    if(media.title)names.add(normalizeName(media.title));
+    if(media.title)names.set(normalizeName(media.title),item);
   }
   return entries.map(entry=>{
     if(entry.tags?.statusKey!=='returning')return entry;
     const id=entry.meta.id;
     const tmdbUrl=entry.meta.links.find(l=>l.category==='tmdb')?.url;
     const tmdbId=tmdbUrl?.match(/\/tv\/(\d+)$/)?.[1];
-    const match=matches.has(`imdb:${id}`)||!!(tmdbId&&matches.has(`tmdb:${tmdbId}`))
-      ||names.has(normalizeName(entry.meta.name));
-    return match?{...entry,tags:{...entry.tags,next:true}}:entry;
+    const tracked=matches.get(`imdb:${id}`)
+      ||(tmdbId?matches.get(`tmdb:${tmdbId}`):null)
+      ||names.get(normalizeName(entry.meta.name));
+    if(!tracked)return entry;
+    // Same source used by TV Up Next. Never fabricate a NEXT episode based
+    // merely on the scheduled season number; show generic NEXT if unknown.
+    const nextInfo=tracked.next_to_watch_info;
+    const episode=Number(nextInfo?.episode),season=Number(nextInfo?.season);
+    const nextEpisode=Number.isInteger(episode)&&episode>0?episode:null;
+    const nextSeason=Number.isInteger(season)&&season>0?season:null;
+    return {...entry,tags:{...entry.tags,next:true,
+      personalStatus:tracked.status,
+      ...(nextEpisode?{nextEpisode}:{}),...(nextSeason?{nextSeason}:{})}};
   });
 }
 export async function refreshGlobalDiscovery({

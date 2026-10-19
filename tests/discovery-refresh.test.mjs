@@ -72,7 +72,7 @@ test('full global refresh appends two rows, publishes tagged artwork and metadat
     assert.equal(movieStudio.samples.length,1);
     assert.equal(tvStudio.samples.length,2);
     assert.deepEqual(new Set(tvStudio.samples.map(s=>s.tags.statusKey)),new Set(['newSeries','returning']));
-    assert.ok(tvStudio.samples.some(s=>s.tags.main==='NOV 11' && s.tags.statusKey==='returning'));
+    assert.ok(tvStudio.samples.some(s=>s.tags.main==='S3 · NOV 11' && s.tags.statusKey==='returning'));
     assert.ok(tvStudio.samples.some(s=>s.tags.main==='NOV 7' && s.tags.statusKey==='newSeries'));
     assert.ok((await stat(path.join(output,'meta/series/tt7654321.json'))).isFile());
     assert.deepEqual(JSON.parse(await readFile(path.join(output,'meta/series/tt7654321.json'),'utf8')),existing);
@@ -104,4 +104,30 @@ test('TVmaze outage still produces new TV and upcoming movies from TMDB',async()
     assert.equal(result.movies.length,1);assert.equal(result.tv.length,1);
     assert.ok(result.status.warnings.some(w=>String(w).includes('TVmaze schedule unavailable')));
   }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('TMDB collection relationship is checked against earlier installments before showing SEQUEL',async()=>{
+  const {root,output}=await workspace();
+  try {
+    const image=await sharp({create:{width:500,height:750,channels:3,background:'#456781'}}).jpeg().toBuffer();
+    const calls=[];
+    const fetchImpl=async(url)=>{
+      const u=new URL(String(url));calls.push(String(url));
+      if(u.pathname==='/3/movie/40')return asJson({...movie,
+        genres:[{id:18,name:'Drama'}],
+        belongs_to_collection:{id:77,name:'A Movie Collection'},
+        release_date:'2026-11-06'});
+      if(u.pathname==='/3/collection/77')return asJson({parts:[
+        {id:10,release_date:'2024-01-01'}, {id:40,release_date:'2026-11-06'},
+      ]});
+      return fakeFetch(image,[])(url);
+    };
+    const result=await refreshGlobalDiscovery({tmdbToken:'token',fetchImpl,now:time,
+      outputDirectory:output,stateFile:path.join(root,'collection.json'),
+      baseUrl:'https://test.github.io/account-2'});
+    assert.equal(result.movies[0].releaseInfo,'SEQUEL · THEATRICAL · NOV 6');
+    assert.ok(calls.some(u=>u.includes('/collection/77')));
+    const studio=JSON.parse(await readFile(path.join(output,'studio/upcomingMovies.json')));
+    assert.equal(studio.samples[0].tags.main,'SEQUEL · NOV 6');
+  } finally {await rm(root,{recursive:true,force:true});}
 });

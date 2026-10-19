@@ -25,13 +25,31 @@ async function fetchImage(url, fetchImpl) {
     return bytes;
   } finally {clearTimeout(timeout);}
 }
+// Reuse the Up Next single-line top-tab convention. For matching returning
+// shows, put NEXT alongside the season/premiere date, never in a side chip.
+// Episode numbers come only from Simkl's actual next_to_watch_info.
+export function upcomingTvTopLabel(tags,showNext=true) {
+  const base=String(tags?.main||'').trim();
+  if(!base || !showNext || tags?.statusKey!=='returning' || !tags?.next)return base;
+  const episode=Number(tags.nextEpisode),nextSeason=Number(tags.nextSeason);
+  if(Number.isInteger(episode) && episode>0){
+    return Number.isInteger(nextSeason) && nextSeason>0 && nextSeason!==Number(tags.season)
+      ? `${base} · Next S${nextSeason}E${episode}`
+      : `${base} · Next E${episode}`;
+  }
+  // A tracked title with unavailable next-episode data remains highlighted,
+  // but is never assigned an invented episode number.
+  return `${base} · NEXT`;
+}
 export function discoveryBadge(entry, config={}) {
   const tag=entry.tags || {};
   const status=STATUS[tag.statusKey];
   if(!status)throw new Error(`Unknown discovery status: ${tag.statusKey}`);
   const colors=normalizeDiscoveryColours(config.statusColours,entry.meta.type==='series'?'upcomingTV':'upcomingMovies');
-  return { status, topLabel:tag.main, statusFill:colors[tag.statusKey], compactDate:true,
-    nextLabel:config.showNext!==false && tag.statusKey==='returning' && tag.next?'NEXT':null,
+  return { status, topLabel:entry.meta.type==='series'
+      ? upcomingTvTopLabel(tag,config.showNext!==false) : tag.main,
+    statusFill:colors[tag.statusKey], compactDate:true,
+    nextLabel:null,
     score:config.showRatings===false?null:tag.score, textless:Boolean(entry.artwork?.textless),
   };
 }

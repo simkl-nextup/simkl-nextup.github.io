@@ -23,3 +23,20 @@ This is a preventive compatibility fix, **not proof** that the live Nuvio proble
 5. Open `/studio.html` to edit Upcoming Movies and Upcoming TV independently. Changes affect only their own generated artwork.
 
 Tests run with `npm ci && npm test` when the build font is available.
+
+## Returning-season top tab correction (Oct 19, 2026)
+
+Upcoming TV posters and Poster Studio now show `S3 · OCT 23` (or another verified
+season/date) for returning-season premieres; new series continue to show the
+date alone with their `NEW SERIES` status pill. Only `src/discovery.mjs` and its
+corresponding regression tests were updated. Home Releases, Smart Shuffle,
+Upcoming Movies, and the existing Up Next rows are unchanged.
+
+### Returning shows tracked in Account 2
+
+The `NEXT` indicator now belongs to the **single top tab**, just like the TV
+Up Next row, rather than a redundant side chip. The top tab shows the season,
+premiere date and, where Simkl exposes it, the actual next unwatched episode:
+`S3 · NOV 2 · Next E1` or `S3 · NOV 2 · Next S1E4`. If the show is tracked
+but Simkl supplies no next-episode number, it says `NEXT` without inventing
+an episode. The dedicated Upcoming TV Studio toggle controls this inline cue.

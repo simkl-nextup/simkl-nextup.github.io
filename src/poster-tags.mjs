@@ -448,8 +448,10 @@ export async function composeMovieReleasePoster({ poster, tags, tvStyle, animeSt
       text: chipText,
       state: tags.released ? "ready" : "behind",
       // Only the two known TV categories can select a semantic colour.
-      ...(Object.hasOwn(UPCOMING_TV_FILLS, tags.chipTone)
-        ? { fill: UPCOMING_TV_FILLS[tags.chipTone] } : {}),
+      ...(typeof tags.chipFill === "string" && /^#[0-9a-fA-F]{6}$/.test(tags.chipFill)
+        ? { fill: tags.chipFill }
+        : Object.hasOwn(UPCOMING_TV_FILLS, tags.chipTone)
+          ? { fill: UPCOMING_TV_FILLS[tags.chipTone] } : {}),
     },
     chipY: (tabH || layoutFor(topStyle).tabH) + layoutFor(leftStyle).chipGap,
     fitWidth: true,

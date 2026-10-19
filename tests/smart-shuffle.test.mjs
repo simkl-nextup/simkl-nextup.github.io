@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
-import { buildSmartEntries, interleaveSmartMovies, paginateSmartCatalog, SMART_SHUFFLE_ID } from '../src/smart-shuffle.mjs';
+import { buildSmartEntries, interleaveSmartMovies, paginateSmartCatalog, recentTheatricalPremiere, SMART_SHUFFLE_ID } from '../src/smart-shuffle.mjs';
 import { refreshSmartShuffle } from '../scripts/refresh-smart-shuffle.mjs';
 
 const seededRandom = (limit) => limit - 1;

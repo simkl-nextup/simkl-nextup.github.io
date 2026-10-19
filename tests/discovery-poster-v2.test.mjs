@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { buildUpcomingShows,buildUpcomingMovies } from '../src/discovery.mjs';
 import { addPersonalNextTags } from '../scripts/refresh-discovery.mjs';
-import { discoveryBadge } from '../src/discovery-posters.mjs';
+import { discoveryBadge, upcomingTvTopLabel } from '../src/discovery-posters.mjs';
 import { composeTaggedPoster, STATUS_TAGS, contrast,inkFor } from '../src/poster-tags.mjs';
 import { normalizePosterConfig } from '../src/poster-style.mjs';
 const now=new Date('2026-10-19T12:00:00Z');
@@ -20,8 +20,9 @@ test('only eligible returning shows in Account 2 Watching or Plan to Watch recei
  const matched=addPersonalNextTags(entries,tracked);
  assert.ok(matched.find(e=>e.meta.id==='tt5432123').tags.next);
  assert.ok(!matched.find(e=>e.tags.statusKey==='newSeries').tags.next);
- assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),normalizePosterConfig({}).upcomingTV).nextLabel,'NEXT');
- assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),{showNext:false}).nextLabel,null);
+ assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),normalizePosterConfig({}).upcomingTV).topLabel,'S2 · OCT 24 · NEXT');
+ assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),normalizePosterConfig({}).upcomingTV).nextLabel,null);
+ assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),{showNext:false}).topLabel,'S2 · OCT 24');
  const wrongStatus={items:{x:{status:'completed',show:{title:'The Sample',ids:{imdb:'tt5432123'}}}}};
  assert.ok(!addPersonalNextTags(entries,wrongStatus).find(e=>e.meta.id==='tt5432123').tags.next);
 });
@@ -33,8 +34,8 @@ test('custom upcoming poster status colours and date tabs render with Up Next po
  const badge=discoveryBadge(entry,style);
  assert.equal(badge.status,'discoveryReturning');
  assert.equal(badge.statusFill,'#3923A0');
- assert.equal(badge.topLabel,'OCT 25');
- assert.equal(badge.nextLabel,'NEXT');
+ assert.equal(badge.topLabel,'S3 · OCT 25 · NEXT');
+ assert.equal(badge.nextLabel,null);
  const image=await composeTaggedPoster({poster,name:'The Sample',badge,style});
  const metadata=await sharp(image).metadata();
  assert.equal(metadata.width,500);assert.equal(metadata.height,750);
@@ -54,4 +55,20 @@ test('Studio script parses and exposes upcoming-color and NEXT controls without 
  const js=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
  assert.ok(js);new vm.Script(js);
  for(const token of ['upcomingTV','upcomingMovies','statusColours','showNext','renderDiscoveryCard','homeReleases'])assert.ok(js.includes(token));
+});
+
+test('NEXT is placed inside the top tab using real Simkl episode numbers, including earlier seasons',()=>{
+ const entries=buildUpcomingShows([{tmdb:tv,season:3,date:'2026-11-02',imdb:'tt5432123'}],now);
+ const tracked={items:{a:{status:'watching',show:{title:'The Sample',ids:{imdb:'tt5432123'}},
+   next_to_watch_info:{season:3,episode:2}}}};
+ const own=addPersonalNextTags(entries,tracked)[0];
+ assert.equal(own.tags.nextEpisode,2);
+ assert.equal(discoveryBadge(own,{showNext:true}).topLabel,'S3 · NOV 2 · Next E2');
+ assert.equal(discoveryBadge(own,{showNext:false}).topLabel,'S3 · NOV 2');
+ assert.equal(discoveryBadge(own,{showNext:true}).nextLabel,null);
+ const behind=addPersonalNextTags(entries,{items:{a:{status:'watching',show:{title:'The Sample',ids:{imdb:'tt5432123'}},
+    next_to_watch_info:{season:1,episode:4}}}})[0];
+ assert.equal(discoveryBadge(behind).topLabel,'S3 · NOV 2 · Next S1E4');
+ assert.equal(upcomingTvTopLabel({...own.tags,next:false}),'S3 · NOV 2');
+ assert.equal(own.tags.main,'S3 · NOV 2','source discovery date label stays stable');
 });

@@ -132,13 +132,36 @@ function releaseEntry(tmdb, date, chip, mediaType, imdb, now, score, note) {
   return {meta,date,score,tmdbPoster:backup,artwork:art,
     tags:{main:dateLabel(date),statusKey,score:rating,compactDate:true}};
 }
+// Enrich an upcoming film's DATE tab with one truthful context cue.
+// Verified earlier installments beat genre; genre beats the release year.
+// Collection membership alone is NOT sequel evidence: the first movie in a
+// franchise belongs to its collection, too.
+export function hasExplicitSequelNumber(title) {
+  const value=String(title||'').trim();
+  return /\b(?:part|chapter|episode|volume|vol\.?|film)\s*(?:[2-9]\d*|II|III|IV|V|VI|VII|VIII|IX|X)\b/i.test(value)
+    || /(?:^|[\s:–-])(?:[2-9]\d*|II|III|IV|V|VI|VII|VIII|IX|X)$/i.test(value);
+}
+export function upcomingMovieContext(movie, date) {
+  if (movie?._addonPriorCollectionMovie===true || hasExplicitSequelNumber(movie?.title || movie?.original_title)) return 'SEQUEL';
+  const firstGenre=Array.isArray(movie?.genres) ? movie.genres.find(g=>typeof g?.name==='string' && g.name.trim())?.name : null;
+  const compact={ 'Science Fiction':'SCI-FI', 'Documentary':'DOC', 'Animation':'ANIMATION',
+    'Adventure':'ADVENTURE', 'Romance':'ROMANCE' };
+  const genre=firstGenre && (compact[firstGenre] || firstGenre.toUpperCase());
+  if (genre && genre.length<=14 && /^[A-Z][A-Z\s-]*$/.test(genre)) return genre;
+  const year=validDay(movie?.release_date)?.slice(0,4) || validDay(date)?.slice(0,4);
+  return year || 'MOVIE';
+}
 export function buildUpcomingMovies(candidates, now=new Date(), maxItems=50) {
   const rows=[];
   for (const row of candidates||[]) {
     const tmdb=row.details||row, premiere=pickMoviePremiere(tmdb,now,90);
     if (!premiere || !isQualityTitle(tmdb)) continue;
     const imdb=tmdb.imdb_id || tmdb.external_ids?.imdb_id;
-    rows.push(releaseEntry(tmdb,premiere.date,premiere.kind,'movie',imdb,now,scoreItem(tmdb),`${premiere.kind.charAt(0)+premiere.kind.slice(1).toLowerCase()} premiere${premiere.country?` (${premiere.country})`:''} on`));
+    const entry=releaseEntry(tmdb,premiere.date,premiere.kind,'movie',imdb,now,scoreItem(tmdb),`${premiere.kind.charAt(0)+premiere.kind.slice(1).toLowerCase()} premiere${premiere.country?` (${premiere.country})`:''} on`);
+    entry.tags.context=upcomingMovieContext(tmdb,premiere.date);
+    entry.tags.main=`${entry.tags.context} · ${dateLabel(premiere.date)}`;
+    entry.meta.releaseInfo=`${entry.tags.context} · ${premiere.kind} · ${dateLabel(premiere.date)}`;
+    rows.push(entry);
   }
   return uniqueTop(rows,now,maxItems);
 }
@@ -151,10 +174,10 @@ export function buildUpcomingShows(candidates, now=new Date(), maxItems=50) {
     const imdb=r.imdb || tmdb.external_ids?.imdb_id || tmdb.imdb_id;
     const chip=season===1?'NEW SERIES':`SEASON ${season}`;
     const entry=releaseEntry(tmdb,date,chip,'series',imdb,now,scoreItem(tmdb,{tv:true,season}),season===1?'Series premiere on':`Season ${season} premiere on`);
-    // Keep the readable Up Next-style season/date in the top tab. The side
-    // chip states WHAT is premiering, in distinct NEW SERIES / NEW SEASON
-    // colours; it is never the plain-grey fallback used for upcoming movies.
-    entry.tags.main = dateLabel(date);
+    // Returning premieres show the season + air date in the same top tab.
+    // New series show the date alone: NEW SERIES already appears in the
+    // status pill below. This also drives Poster Studio previews.
+    entry.tags.main = season > 1 ? `S${season} · ${dateLabel(date)}` : dateLabel(date);
     entry.tags.statusKey = season===1?'newSeries':'returning';
     entry.tags.season = season;
     entry.tags.next = Boolean(r.next);

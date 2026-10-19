@@ -41,3 +41,16 @@ GitHub Actions still refreshes the personal rows hourly. The discovery build run
 ## Tests
 
 `npm ci && npm test` (requires original poster font to be present/restored from history) checks existing behavior plus release classification, upcoming-season-only logic, international and US priority, curation, full addon manifest integration, local poster rendering, image fallback, private API cache reuse, metadata collision protection, and TVmaze outages.
+
+### Upcoming Movies — contextual date tab (October 2026)
+
+The existing top date tab now includes **one** contextual cue, then the confirmed
+premiere date, e.g. `SEQUEL · OCT 23`, `HORROR · OCT 23`, or `2026 · OCT 23`.
+The priority is **confirmed sequel → first available TMDB genre → release year**.
+For a collection movie, the build queries the TMDB collection once per daily
+snapshot and only calls the movie a sequel when another installment has an
+earlier release date. Recognizable numerical sequel titles also qualify. Mere
+franchise membership is not evidence of a sequel; ambiguous movies remain
+classified by genre/year. The bottom THEATRICAL/STREAMING/LIMITED/PREMIERE pill
+and the Upcoming TV top tab are unchanged. The first refresh after this change
+invalidates the old discovery snapshot so context data can be populated.

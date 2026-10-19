@@ -72,7 +72,7 @@ test('movies sort by near-term window and then anticipation, duplicates removed'
   ];
   const entries=buildUpcomingMovies(candidates,now);
   assert.deepEqual(entries.map(x=>x.meta.id),['tmdb:3','tmdb:1','tmdb:2']);
-  assert.equal(entries[0].tags.main,'OCT 23');
+  assert.ok(entries[0].tags.main.endsWith('OCT 23'));
   assert.equal(entries[0].tags.statusKey,'theatrical');
 });
 test('series and returning seasons expose stable metadata and correct tags',()=>{
@@ -85,11 +85,26 @@ test('series and returning seasons expose stable metadata and correct tags',()=>
   const bySeason = Object.fromEntries(entries.map(x => [x.tags.statusKey, x.tags]));
   assert.equal(bySeason.newSeries.main,'NOV 19');
   assert.equal(bySeason.newSeries.season,1);
-  assert.equal(bySeason.returning.main,'NOV 20');
+  assert.equal(bySeason.returning.main,'S2 · NOV 20');
   assert.equal(bySeason.returning.season,2);
   assert.ok(entries.some(x=>x.meta.id==='tt1234567' && x.meta.type==='series'));
   assert.ok(entries.every(x=>x.meta.poster.startsWith('https://')));
 });
+test('upcoming TV returning seasons keep S-number in poster top label across small and large seasons',()=>{
+  const candidates=[
+    {tmdb:show(401,'Returning Season Three'),season:3,date:'2026-10-23'},
+    {tmdb:show(402,'Returning Season Eighteen'),season:18,date:'2026-10-22'},
+    {tmdb:show(403,'Brand New Series'),season:1,date:'2026-10-21'},
+  ];
+  const results=buildUpcomingShows(candidates,now);
+  const bySeason=new Map(results.map(item=>[item.tags.season,item]));
+  assert.equal(bySeason.get(3).tags.main,'S3 · OCT 23');
+  assert.equal(bySeason.get(18).tags.main,'S18 · OCT 22');
+  assert.equal(bySeason.get(1).tags.main,'OCT 21');
+  assert.equal(bySeason.get(3).tags.statusKey,'returning');
+  assert.equal(bySeason.get(1).tags.statusKey,'newSeries');
+});
+
 test('dates are labeled in UTC and near-term tier boundaries are stable',()=>{
   assert.equal(dateLabel('2026-11-05'),'NOV 5');
   assert.equal(tier('2026-10-26',now),0);

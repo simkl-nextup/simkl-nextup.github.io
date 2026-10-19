@@ -40,3 +40,30 @@ The generated movie list is public, just as with the existing personal rows; tok
 ## Poster Studio
 
 Smart Shuffle intentionally has no separate poster renderer. Home Releases-featured titles reuse the *exact finished* Home Releases posters and therefore follow its Poster Studio settings. Random titles retain plain BetterPosters art, even when older release information exists. The two Upcoming discovery rows have their own separate Studio tabs and never affect Smart Shuffle.
+
+### Theatrical-only watchlist movies (October 2026)
+
+Randomized Smart Shuffle slots may also receive the existing Home Releases-style
+**date tab + red `IN THEATERS` side chip**, but only when TMDB records a confirmed
+commercial theatrical release within the past 60 days **and** no digital or
+physical release has happened anywhere. The displayed date prefers a recent US
+cinema premiere, otherwise a recent worldwide one. It is a *recent-release
+signal*, not proof the film is playing at a particular local cinema.
+
+The theatrical movie **does not become a Home Releases featured slot**. It
+remains part of the shuffled 2-random sequence. Home Releases remains strictly
+digital/physical and unchanged; its qualifying movies still reuse its exact
+finished posters. Older random movies stay untagged. On a failed image fetch,
+the movie stays in Smart Shuffle with its ordinary base poster rather than
+vanishing or being labeled as successfully rendered. Cinematic tabs share the
+current Home Releases Studio tag-size, shadow and top/side appearance settings.
+
+### Scheduled cinema premieres (Smart Shuffle only)
+
+Plan to Watch movies with verified TMDB theatrical/limited/premiere dates within
+90 days receive a top tab such as `THEATRICAL · OCT 23` and a `COMING SOON`
+side chip. Movies premiered within the last 60 days but not yet available
+digitally or physically can show `IN THEATERS`. This never changes the
+release → random → random ordering, never inserts the movie into Home Releases,
+and never labels an older theatrical reissue as a new release. Missing dates
+leave ordinary randomized posters untagged. US dates take priority.

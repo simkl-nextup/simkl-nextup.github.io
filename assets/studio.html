@@ -237,7 +237,7 @@
       const note = document.createElement("p");
       note.className = "note";
       note.textContent = accounts[account].discoveryPoster
-        ? "Upcoming posters use the exact Up Next renderer: TMDB artwork/logo, adaptive date tab, coloured bottom status and optional NEXT chip. BetterPosters is not used."
+        ? "Upcoming posters use the exact Up Next renderer: TMDB artwork/logo, adaptive date tab (including NEXT for tracked returning shows), and coloured bottom status. BetterPosters is not used."
         : "BetterPosters supplies the base artwork. Settings control only the local release-date tab and side format chip. Smart Shuffle inherits finished Home Releases posters.";
       box.append(note);
       const topTitle = document.createElement("h3"); topTitle.textContent = "Top tab";
@@ -260,7 +260,7 @@
           label.append(input);wrap.append(label);box.append(wrap);
         }
         for(const [key,label] of Object.entries({showRatings:"Show available ★ ratings",
-          ...(account==="upcomingTV"?{showNext:"Show NEXT on returning shows tracked in Account 2"}:{})})){
+          ...(account==="upcomingTV"?{showNext:"Show NEXT in top tab for tracked returning shows"}:{})})){
           const wrap=document.createElement("label");wrap.className="opt";
           wrap.style.cssText="display:flex;align-items:center;gap:10px;font-size:13px";
           const input=document.createElement("input");input.type="checkbox";input.checked=style[key]!==false;
@@ -342,19 +342,28 @@
     }
     const tint=style.contrast==="standard"?sample.tints?.standard:sample.tints?.max;
     const fill=/^#[0-9A-Fa-f]{6}$/.test(tint||"")?tint:"#344359";
-    const main=sample.tags?.main||"";
+    let main=sample.tags?.main||"";
+    if (account === "upcomingTV" && sample.tags?.statusKey === "returning"
+        && sample.tags?.next && style.showNext !== false) {
+      const ep=Number(sample.tags.nextEpisode),season=Number(sample.tags.nextSeason);
+      const actual=Number.isInteger(ep) && ep>0;
+      main += actual
+        ? (Number.isInteger(season) && season>0 && season!==Number(sample.tags.season)
+            ? ` · Next S${season}E${ep}` : ` · Next E${ep}`)
+        : " · NEXT";
+    }
     const isSmallDate=/^[A-Z]{3} \d{1,2}$/.test(main);
     const dateHeight=isSmallDate?Math.round(L.tabH*.72):L.tabH;
     const dateRadius=isSmallDate?Math.round(dateHeight*.41):L.tabRadius;
     const top=tagEl({x:0,y:0,h:dateHeight,fill,opacity:L.tabOpacity,radius:dateRadius,shape:"top"});
     top.style.padding=`0 ${isSmallDate?Math.round(L.tabPad*.8):L.tabPad}px`;
     top.style.left="50%";top.style.transform="translateX(-50%)";
-    top.append(textEl(main,isSmallDate?Math.round((L.tabFont-6)*.85):L.tabFont-(style.topTab==='single'?6:0),inkFor(fill)));
+    // Match the renderer's font-downsizing for longer Up Next-style NEXT
+    // labels so previews never overflow the 500px poster stage.
+    const idealFont=isSmallDate?Math.round((L.tabFont-6)*.85):L.tabFont-(style.topTab==='single'?6:0);
+    const fittedFont=Math.max(20,Math.min(idealFont,Math.floor((500-2*L.tabPad)*0.9/(Math.max(1,main.length)*0.61))));
+    top.append(textEl(main,fittedFont,inkFor(fill)));
     stage.append(top);
-    if(sample.tags?.next && style.showNext!==false){
-      const next=tagEl({x:0,y:dateHeight+L.chipGap,h:L.chipH,fill:"#087F6D",opacity:L.chipOpacity,radius:L.chipRadius,shape:"left"});
-      next.style.padding=`0 ${L.chipPad}px`;next.append(textEl("NEXT",L.chipFont,"#FFFFFF"));stage.append(next);
-    }
     const labels={newSeries:"NEW SERIES",returning:"RETURNING",theatrical:"THEATRICAL",streaming:"STREAMING",limited:"LIMITED",premiere:"PREMIERE"};
     const key=sample.tags?.statusKey;
     const colour=style.statusColours?.[key]||"#7050F5";

@@ -8,6 +8,9 @@ import {
   buildSmartEntries, interleaveSmartMovies, paginateSmartCatalog,
 } from '../src/smart-shuffle.mjs';
 import { appendPublicPath, deriveBaseUrl } from '../src/site.mjs';
+import { renderMoviePosters } from '../src/movie-posters.mjs';
+import { formatMovieDate } from '../src/movie-releases.mjs';
+import { loadPosterConfig } from '../src/poster-style.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const toJson = value => `${JSON.stringify(value,null,2)}\n`;
@@ -43,7 +46,33 @@ export async function refreshSmartShuffle({
     'simkl-plan-to-watch-home-releases-account2.json');
   const homeCatalog=JSON.parse(await readFile(homeCatalogPath,'utf8'));
   if(!Array.isArray(homeCatalog?.metas)) throw new Error('Home Releases catalog missing metas array');
-  const { entries, skipped }=buildSmartEntries(data.movies,cache.movies,{homeCatalog:homeCatalog.metas});
+  const { entries, skipped }=buildSmartEntries(data.movies,cache.movies,{homeCatalog:homeCatalog.metas,now});
+  const theatricalCandidates=entries.filter(e=>e.theatrical && e.homeRank==null);
+  const posterConfig=await loadPosterConfig(path.join(root,'config/poster-style.json'));
+  const theatricalRendered=theatricalCandidates.length ? await renderMoviePosters(
+    theatricalCandidates.map(e=>({ meta:e.meta,tmdbPoster:e.tmdbPoster,tags:{
+      main:e.theatrical.upcoming
+        ? `${e.theatrical.kind} · ${formatMovieDate(e.theatrical.date)}`
+        : formatMovieDate(e.theatrical.date),
+      chip:e.theatrical.upcoming?'COMING SOON':'IN THEATERS',
+      released:!e.theatrical.upcoming,compactDate:!e.theatrical.upcoming,
+      chipFill:e.theatrical.upcoming?'#B86D12':(e.theatrical.kind==='LIMITED'?'#D18122':'#BE3245'),
+    }})),{
+      outputDirectory,baseUrl,fetchImpl,posterFolder:'smart-theatrical',
+      tvStyle:posterConfig.homeReleases,animeStyle:posterConfig.homeReleases.side,
+      skipFailures:true,
+    }) : {metas:[],warnings:[]};
+  const theaterPosterById=new Map(theatricalRendered.metas.map(meta=>[meta.id,meta.poster]));
+  // A missing remote poster never removes a user's movie from Smart Shuffle.
+  // It falls back to plain BetterPosters without suggesting verified screening.
+  for(const entry of entries){
+    if(!entry.theatrical)continue;
+    const poster=theaterPosterById.get(entry.meta.id);
+    if(poster)entry.meta.poster=poster;
+    else {
+      delete entry.meta.releaseInfo;
+    }
+  }
   const result=interleaveSmartMovies(entries,{randomBetween,rng});
   // Featured movies reuse the exact rendered poster already published by
   // Home Releases. Random movies stay plain — no extra poster renders.
@@ -92,10 +121,14 @@ export async function refreshSmartShuffle({
   status.smartShuffle={catalogId:SMART_SHUFFLE_ID,totalWatchlist:data.movies.length,
     published:metas.length,featured:result.featured,random:result.shuffled,
     taggedFromHomeReleases:result.featured,
+    theatricalTagged:theatricalRendered.metas.length,
+    upcomingCinemaTagged:theatricalCandidates.filter(e=>e.theatrical.upcoming && theaterPosterById.has(e.meta.id)).length,
+    recentTheatricalCandidates:theatricalCandidates.length,
     randomBetween,pageSize,pages:pages.length,
     generatedAt:now.toISOString(),shuffleMode:'reshuffle each scheduled build',
     releaseCacheSource:'existing Account 2 movie-release-state.json',
-    warnings:skipped.map(s=>`${s.id}: ${s.reason}`).slice(0,30)};
+    warnings:[...skipped.map(s=>`${s.id}: ${s.reason}`),
+      ...theatricalRendered.warnings.map(w=>`${w.id}: ${w.warning}`)].slice(0,30)};
   await writeFile(statusPath,toJson(status));
   await writeFile(manifestPath,toJson(manifest));
   return {metas,status:status.smartShuffle};
