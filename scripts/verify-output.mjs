@@ -132,6 +132,35 @@ for (const preview of catalog.metas) {
   fullMetadataEpisodes += meta.videos.length;
 }
 
+// The second row is a movie catalog INSIDE the already installed account-2
+// manifest. An empty row is valid if no release dates match yet.
+if (process.env.VERIFY_MOVIE_ROW === "true") {
+  const movieId = "simkl-plan-to-watch-home-releases-account2";
+  const declaration = manifest.catalogs?.find((item) => item.type === "movie" && item.id === movieId);
+  if (!declaration || !manifest.types?.includes("movie")) {
+    throw new Error("Account-2 manifest is missing the movie row or movie type.");
+  }
+  if (!status.movieRow || status.movieRow.catalogId !== movieId) {
+    throw new Error("Account-2 movie row status is missing.");
+  }
+  const movieCatalog = JSON.parse(await readFile(path.join(publicDir, "catalog", "movie", `${movieId}.json`), "utf8"));
+  if (!Array.isArray(movieCatalog.metas) || status.movieRow.published !== movieCatalog.metas.length) {
+    throw new Error("Published movie catalog count is inconsistent.");
+  }
+  const seen = new Set();
+  for (const movie of movieCatalog.metas) {
+    if (movie.type !== "movie" || !/^(?:tt\d+|tmdb:\d+)$/.test(movie.id)
+        || !movie.poster?.startsWith("https://")) throw new Error(`Invalid movie catalog entry: ${movie.id}`);
+    if (seen.has(movie.id)) throw new Error(`Duplicate movie in catalog: ${movie.id}`);
+    seen.add(movie.id);
+    const detail = JSON.parse(await readFile(path.join(publicDir, "meta", "movie", safeMetaFilename(movie.id)), "utf8"));
+    if (detail.meta?.id !== movie.id || detail.meta?.type !== "movie") {
+      throw new Error(`Incorrect movie detail metadata for ${movie.id}`);
+    }
+  }
+  console.log(`Verified ${movieCatalog.metas.length} additional home-release movies under the same Account 2 addon.`);
+}
+
 const secrets = [
   process.env.SIMKL_ACCESS_TOKEN,
   process.env.TMDB_READ_ACCESS_TOKEN,

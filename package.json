@@ -3,12 +3,13 @@
   "version": "1.14.0",
   "private": true,
   "type": "module",
-  "description": "Two isolated personal Stremio/Nuvio catalogs: anime at root and TV shows under account-2, with new-episode and revived Completed-title support.",
+  "description": "Personal Simkl anime at root and TV plus movie home-release catalogs under account-2.",
   "scripts": {
     "authorize": "node scripts/authorize.mjs",
     "build:placeholder": "node scripts/build-placeholder.mjs",
     "keepalive": "node scripts/update-keepalive.mjs",
     "refresh": "node scripts/update.mjs",
+    "refresh:movies": "node scripts/refresh-movies.mjs",
     "test": "node --test",
     "verify": "node scripts/verify-output.mjs"
   },

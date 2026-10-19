@@ -1,4 +1,4 @@
-name: Refresh two Simkl catalogs and deploy Pages
+name: Refresh Simkl anime, TV and home-release movies
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build and verify both addons
+    name: Build and verify anime and Account 2 TV + movies
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -106,6 +106,15 @@ jobs:
           key: simkl-account-2-tv-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             simkl-account-2-tv-state-
+
+      - name: Restore account 2 private movie release cache
+        if: steps.account2.outputs.enabled == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: state/account-2/movie-release-state.json
+          key: simkl-account-2-movie-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            simkl-account-2-movie-state-
 
       - name: Run tests
         run: npm test
@@ -194,6 +203,18 @@ jobs:
           fi
           npm run refresh
 
+      - name: Refresh Account 2 movie home-release row in the SAME addon
+        if: steps.account2.outputs.enabled == 'true'
+        env:
+          SIMKL_CLIENT_ID_2: ${{ secrets.SIMKL_CLIENT_ID_2 }}
+          SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+          SIMKL_ACCESS_TOKEN_2: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          MOVIE_COMING_SOON_DAYS: 30
+          MAX_MOVIE_ITEMS: 50
+        run: npm run refresh:movies
+
       - name: Verify account 2 TV addon
         if: steps.account2.outputs.enabled == 'true'
         env:
@@ -206,6 +227,7 @@ jobs:
           TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
           TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
           MEDIA_TYPE: tv
+          VERIFY_MOVIE_ROW: "true"
         run: npm run verify
 
       - name: Assert account 2 output is TV, not anime
@@ -221,6 +243,12 @@ jobs:
           if (manifest.catalogs?.[0]?.id !== "simkl-new-tv-episodes-account2") {
             throw new Error(`Wrong account-2 catalog ID: ${manifest.catalogs?.[0]?.id}`);
           }
+          if (manifest.catalogs?.[1]?.id !== "simkl-plan-to-watch-home-releases-account2" || manifest.catalogs?.[1]?.type !== "movie") {
+            throw new Error("Second movie catalog is missing from the same account-2 manifest.");
+          }
+          if (!manifest.types?.includes("movie") || !status.movieRow) {
+            throw new Error("Account-2 movie row was not correctly published.");
+          }
           if (status.mediaType !== "tv") {
             throw new Error(`Wrong account-2 mediaType: ${status.mediaType}`);
           }
@@ -233,6 +261,13 @@ jobs:
         with:
           path: state/account-2/simkl-state.json
           key: simkl-account-2-tv-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Save account 2 private movie release cache
+        if: steps.account2.outputs.enabled == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: state/account-2/movie-release-state.json
+          key: simkl-account-2-movie-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

@@ -1,6 +1,6 @@
-# Set up account 2 for normal TV shows
+# Set up account 2 for TV shows and movie home releases
 
-This repository keeps the existing anime addon at the root and publishes the second account's normal TV shows in an isolated subfolder.
+This repository keeps the existing anime addon at the root and publishes the second account's normal TV shows **and Plan to Watch movie home releases** in the same isolated subfolder.
 
 ## Final URLs
 
@@ -26,7 +26,7 @@ The current root addon keeps all of these unchanged:
 
 Open:
 
-`GitHub repository → Actions → Refresh two Simkl catalogs and deploy Pages → Run workflow`
+`GitHub repository → Actions → Refresh Simkl anime, TV and home-release movies → Run workflow`
 
 When `SIMKL_ACCESS_TOKEN_2` is absent, the workflow:
 
@@ -76,11 +76,11 @@ Do not change these existing secrets:
 - `TVDB_API_KEY`
 - `TVDB_SUBSCRIBER_PIN`
 
-TMDB, MDBList, and TVDB credentials are shared safely by both generation runs. The two Simkl access tokens are never shared.
+TMDB, MDBList, and TVDB credentials are shared safely by both generation runs. **The movie row requires TMDB_READ_ACCESS_TOKEN** to check digital/physical release dates. The two Simkl access tokens are never shared.
 
 ## 5. Generate and deploy both accounts
 
-Run **Refresh two Simkl catalogs and deploy Pages** again.
+Run **Refresh Simkl anime, TV and home-release movies** again.
 
 The workflow now performs this sequence:
 
@@ -88,8 +88,8 @@ The workflow now performs this sequence:
 2. Restore account 2 from `state/account-2/simkl-state.json` using the TV-specific cache prefix `simkl-account-2-tv-state-`.
 3. Run all tests.
 4. Generate and verify the root addon.
-5. Generate and verify account 2 under `public/account-2`.
-6. Save separate private state caches.
+5. Generate Account 2 TV under `public/account-2`, then append the movie row to its same manifest, and verify both rows. The movies use a separate private cache.
+6. Save three separate private state caches (root anime, Account 2 TV, and Account 2 movie dates).
 7. Upload one combined Pages artifact.
 8. Deploy only after both enabled accounts pass verification.
 
@@ -107,6 +107,8 @@ The second report should show:
 - `"catalogId": "simkl-new-tv-episodes-account2"`
 - `"mediaType": "tv"`
 - A non-zero tracked or catalog count when that Simkl account has eligible TV shows
+- `"movieRow"` reporting `trackedPlanToWatch`, `published`, `released`, `comingSoon`, and `warnings`
+- A second catalog entry in `/account-2/manifest.json`: `simkl-plan-to-watch-home-releases-account2` (type `movie`)
 
 Then install or import:
 
@@ -128,3 +130,7 @@ The existing installation continues using:
 - Root: `MEDIA_TYPE=anime`, addon ID `community.simkl.new-anime-episodes`, catalog ID `simkl-new-anime-episodes`.
 - Account 2: `MEDIA_TYPE=tv`, addon ID `community.simkl.new-tv-episodes.account2`, catalog ID `simkl-new-tv-episodes-account2`.
 - The account-2 workflow deliberately uses a new cache prefix, so the empty anime-only account-2 state from v1.8.7 is not restored. No GitHub secret needs to be regenerated.
+
+## Account 2 movie row details
+
+See [`MOVIE_ROW.md`](MOVIE_ROW.md). The existing addon ID and manifest URL do not change, so the second catalog row should appear under your current Account 2 addon after the player refreshes its manifest. The original TV row is preserved. If `TMDB_READ_ACCESS_TOKEN` has not already been configured, create it under GitHub repository Secrets before running the new workflow.
