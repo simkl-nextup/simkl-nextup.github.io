@@ -34,8 +34,8 @@ async function fetchPoster(url, fetchImpl) {
   } finally { clearTimeout(timer); }
 }
 
-export async function renderMoviePosters(entries, { outputDirectory, baseUrl, fetchImpl = fetch, tvStyle, animeStyle } = {}) {
-  const directory = path.join(outputDirectory, 'posters', 'movie-releases');
+export async function renderMoviePosters(entries, { outputDirectory, baseUrl, fetchImpl = fetch, tvStyle, animeStyle, posterFolder = "movie-releases", skipFailures = false } = {}) {
+  const directory = path.join(outputDirectory, 'posters', posterFolder);
   await mkdir(directory, { recursive: true });
   const warnings = [];
   const result = Array(entries.length);
@@ -44,6 +44,7 @@ export async function renderMoviePosters(entries, { outputDirectory, baseUrl, fe
     while (cursor < entries.length) {
       const index = cursor++;
       const entry = entries[index];
+      try {
       const meta = structuredClone(entry.meta);
     let bytes;
     try {
@@ -71,13 +72,17 @@ export async function renderMoviePosters(entries, { outputDirectory, baseUrl, fe
         poster: bytes, tags: entry.tags, tvStyle, animeStyle,
       });
       await writeFile(path.join(directory, name), rendered);
-      meta.poster = `${baseUrl.replace(/\/$/, '')}/posters/movie-releases/${name}`;
+      meta.poster = `${baseUrl.replace(/\/$/, '')}/posters/${posterFolder}/${name}`;
     } catch (error) {
       throw new Error(`Cannot publish ${meta.id} without the required release tags: ${error.message}`);
     }
       result[index] = meta;
+      } catch (error) {
+        if (!skipFailures) throw error;
+        warnings.push({ id: entry.meta?.id, warning: error.message });
+      }
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, entries.length) }, () => worker()));
-  return { metas: result, warnings };
+  return { metas: result.filter(Boolean), warnings };
 }

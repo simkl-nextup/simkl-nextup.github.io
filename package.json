@@ -3,7 +3,7 @@
   "version": "1.14.0",
   "private": true,
   "type": "module",
-  "description": "Personal Simkl anime at root and TV plus movie home-release catalogs under account-2.",
+  "description": "Personal Simkl anime + TV and home-release movies; independent global upcoming movie and TV discovery in Account 2.",
   "scripts": {
     "authorize": "node scripts/authorize.mjs",
     "build:placeholder": "node scripts/build-placeholder.mjs",
@@ -11,7 +11,8 @@
     "refresh": "node scripts/update.mjs",
     "refresh:movies": "node scripts/refresh-movies.mjs",
     "test": "node --test",
-    "verify": "node scripts/verify-output.mjs"
+    "verify": "node scripts/verify-output.mjs",
+    "refresh:discovery": "node scripts/refresh-discovery.mjs"
   },
   "engines": {
     "node": ">=20.9.0"

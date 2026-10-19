@@ -428,7 +428,7 @@ export async function composeMovieReleasePoster({ poster, tags, tvStyle, animeSt
   const { tabH } = await appendTopTab({
     base, layers, shadows, style: topStyle,
     lines: { main: tags.main, sub: null }, single: tags.main, allowShrink: true,
-    compactReleaseDate: Boolean(tags.released),
+    compactReleaseDate: Boolean(tags.compactDate ?? tags.released),
   });
   await appendLeftChip({
     base, layers, shadows, style: leftStyle,

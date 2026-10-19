@@ -1,4 +1,4 @@
-name: Refresh Simkl anime, TV and home-release movies
+name: Refresh Simkl and global upcoming releases
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build and verify anime and Account 2 TV + movies
+    name: Build and verify Simkl plus global discovery
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -115,6 +115,15 @@ jobs:
           key: simkl-account-2-movie-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             simkl-account-2-movie-state-
+
+      - name: Restore global discovery snapshot
+        if: steps.account2.outputs.enabled == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: state/account-2/discovery-state.json
+          key: global-discovery-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            global-discovery-v1-
 
       - name: Run tests
         run: npm test
@@ -215,6 +224,15 @@ jobs:
           MAX_MOVIE_ITEMS: 50
         run: npm run refresh:movies
 
+      - name: Refresh globally upcoming movies and TV premieres
+        if: steps.account2.outputs.enabled == 'true'
+        env:
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          MAX_DISCOVERY_MOVIES: 50
+          MAX_DISCOVERY_TV: 50
+        run: npm run refresh:discovery
+
       - name: Verify account 2 TV addon
         if: steps.account2.outputs.enabled == 'true'
         env:
@@ -228,6 +246,7 @@ jobs:
           TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
           MEDIA_TYPE: tv
           VERIFY_MOVIE_ROW: "true"
+          VERIFY_DISCOVERY: "true"
         run: npm run verify
 
       - name: Assert account 2 output is TV, not anime
@@ -249,6 +268,11 @@ jobs:
           if (!manifest.types?.includes("movie") || !status.movieRow) {
             throw new Error("Account-2 movie row was not correctly published.");
           }
+          if (manifest.catalogs?.[2]?.id !== "global-upcoming-movies" || manifest.catalogs?.[2]?.type !== "movie"
+            || manifest.catalogs?.[3]?.id !== "global-upcoming-tv" || manifest.catalogs?.[3]?.type !== "series"
+            || !status.discovery) {
+            throw new Error("The two public discovery rows are missing.");
+          }
           if (status.mediaType !== "tv") {
             throw new Error(`Wrong account-2 mediaType: ${status.mediaType}`);
           }
@@ -268,6 +292,13 @@ jobs:
         with:
           path: state/account-2/movie-release-state.json
           key: simkl-account-2-movie-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Save private global discovery snapshot
+        if: steps.account2.outputs.enabled == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: state/account-2/discovery-state.json
+          key: global-discovery-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

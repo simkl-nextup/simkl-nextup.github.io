@@ -2,7 +2,12 @@
 
 # Simkl Next Up
 
-### Your watchlists. Your release calendar.
+#
+## Public Upcoming Movies + Upcoming TV Shows
+
+Account 2 now includes two **Simkl-independent** discovery rows alongside its personal TV and Home Releases catalogs. They curate public upcoming movies (90 days) and new series **plus returning season premieres** (60 days), with existing BetterPosters/custom tag styling. The source APIs are TMDB and TVmaze; no extra addon or credential is needed beyond the existing TMDB token. See [GLOBAL_DISCOVERY.md](GLOBAL_DISCOVERY.md) for rules, attribution, deployment and diagnostics.
+
+## Your watchlists. Your release calendar.
 
 **Anime and TV Up Next, plus Account 2 movie digital/physical home-release tracking for Stremio and Nuvio.**  
 Powered by [Simkl](https://simkl.com) · Hosted on GitHub Pages · Open source

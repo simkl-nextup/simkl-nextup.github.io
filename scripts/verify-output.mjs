@@ -161,6 +161,34 @@ if (process.env.VERIFY_MOVIE_ROW === "true") {
   console.log(`Verified ${movieCatalog.metas.length} additional home-release movies under the same Account 2 addon.`);
 }
 
+// Public Netflix-style discovery rows share the same Account 2 manifest.
+if (process.env.VERIFY_DISCOVERY === "true") {
+  const declared = [
+    { id: "global-upcoming-movies", type: "movie", status: "upcomingMovies" },
+    { id: "global-upcoming-tv", type: "series", status: "upcomingTV" },
+  ];
+  if (!status.discovery) throw new Error("Global discovery status missing.");
+  for (const target of declared) {
+    if (!manifest.catalogs?.some(c => c.type === target.type && c.id === target.id)) {
+      throw new Error(`Discovery catalog ${target.id} missing from manifest.`);
+    }
+    const data = JSON.parse(await readFile(path.join(publicDir, "catalog", target.type, `${target.id}.json`), "utf8"));
+    if (!Array.isArray(data.metas) || data.metas.length !== status.discovery[target.status]) {
+      throw new Error(`Global discovery catalog ${target.id} count mismatch.`);
+    }
+    const seen = new Set();
+    for (const entry of data.metas) {
+      if (entry.type !== target.type || !/^(?:tt\d+|tmdb:\d+)$/.test(entry.id)
+        || !entry.poster?.startsWith("https://")) throw new Error(`Invalid ${target.id} item ${entry.id}`);
+      if (seen.has(entry.id)) throw new Error(`Duplicate ${target.id} item ${entry.id}`);
+      seen.add(entry.id);
+      const details = JSON.parse(await readFile(path.join(publicDir, "meta", target.type, safeMetaFilename(entry.id)), "utf8"));
+      if (details.meta?.id !== entry.id || details.meta?.type !== target.type) throw new Error(`Wrong discovery metadata ${entry.id}`);
+    }
+  }
+  console.log(`Verified global upcoming rows: ${status.discovery.upcomingMovies} movies and ${status.discovery.upcomingTV} shows.`);
+}
+
 const secrets = [
   process.env.SIMKL_ACCESS_TOKEN,
   process.env.TMDB_READ_ACCESS_TOKEN,
