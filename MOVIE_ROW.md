@@ -10,23 +10,23 @@
 6. Check `/account-2/status.json` → `movieRow` for counts and warnings. An empty movie row can be correct if no movie has qualifying release dates.
 7. Refresh/reload your existing Account 2 addon in Stremio/Nuvio if the new movie catalog is not yet visible. You do not need to add another addon URL.
 
-## Release rules (30-day window)
+## Release rules (last 6 calendar months + 30-day Coming Soon)
 
 - **Source:** only movies in Account 2's Simkl `plantowatch` list.
 - **Theatrical releases:** ignored. TMDB release types `1` (premiere), `2` (limited theatrical), `3` (theatrical), and `6` (TV) cannot qualify a movie.
 - **Home release:** TMDB type `4` is Digital; type `5` is Physical.
 - **Anywhere, US priority:** any country can qualify. If already available somewhere, label it Released even when a later US release is announced. For a format with a past US release date, prefer the US date; otherwise use its worldwide date. For future releases within 30 days, prefer known US dates inside the window, then the earliest worldwide date.
-- **Coming Soon:** only when a type-4 or type-5 event has a confirmed date within the next 30 calendar days. No known home date means the movie stays hidden, even if it opened in theaters yesterday.
-- **Released:** when today reaches a known type-4 or type-5 event anywhere. Label Digital, Physical, or Both as applicable; an upcoming second format can be mentioned underneath.
+- **Coming Soon:** only when the movie has never had a known home release and its first confirmed type-4 or type-5 date is within the next 30 calendar days. No known home date means the movie stays hidden, even if it opened in theaters yesterday.
+- **Released:** when today reaches a known type-4 or type-5 event anywhere, provided its **first known home release worldwide** happened during the last **six calendar months**. Label Digital, Physical, or Both as applicable.
 - **Sort:** available movies first, newest actual home-release event first; then Coming Soon, nearest date first. An old movie added to your list does not become #1 simply because it was added today. A later physical release can bump an already-digital title.
-- **Lifetime:** stays in the movie row while still on Plan to Watch (subject to `MAX_MOVIE_ITEMS=50`), even if the release was years ago; removed or watched movies disappear on the next refresh.
+- **Lifetime:** exits automatically once the first known worldwide home-release date becomes older than six calendar months, or earlier if it leaves Simkl Plan to Watch. A later disc reissue cannot resurrect a title originally available years earlier. The six months are *calendar months*, not an approximation of 180 days.
 
 ## Posters
 
 1. Base artwork: `https://btttr.cc/poster/imdb/poster-default/{imdb_id}.jpg?tag=none`.
-2. Locally generated top tab: **OUT OCT 19** or **NOV 7** with the type/date context underneath.
-3. Locally generated left format chip (anime dub-tag-like placement): **DIGITAL**, **PHYSICAL**, or **DIGITAL + PHYSICAL**. For Coming Soon it says which format is approaching.
-4. No extra **PLAN TO WATCH** lower tag. BetterPosters supplies its usual base image design underneath the top overlays.
+2. Locally generated **TV-row top tab** (your selected Poster Studio design): **OCT 19** for released movies, **COMING SOON · NOV 7** for future home releases. It shares the TV row’s font, adaptive background, contrast, outline and shadow settings.
+3. Locally generated **anime-dub-style left chip**, using the *same rendering functions* and live anime settings: **DIGITAL**, **PHYSICAL**, or **DIGITAL + PHYSICAL**. Released format chips use the dub-ready blue; Coming Soon uses the dub-behind gray.
+4. No extra **PLAN TO WATCH** lower tag. BetterPosters retains its base design, including its lower genre/rating details; the release tags are applied by the existing local poster renderer.
 5. TMDB artwork is the fallback if the BetterPosters image fails or an IMDb ID isn't available, still with locally rendered release tags.
 
 Posters are generated on GitHub Actions and hosted under `/account-2/posters/movie-releases/`. The manifest and movie metadata point at the locally tagged poster URLs. Artwork fetch or overlay failure stops the new deployment rather than publishing incorrect untagged posters.
@@ -34,11 +34,11 @@ Posters are generated on GitHub Actions and hosted under `/account-2/posters/mov
 ## Repo changes
 
 - `src/movie-releases.mjs`: home-release selection, US/worldwide fallback, date window, output shape and sorting.
-- `src/movie-posters.mjs`: BetterPosters image download and Sharp top-chip overlay.
+- `src/movie-posters.mjs`: BetterPosters image download, then shared TV/anime renderer for the top tab and side chip.
 - `scripts/refresh-movies.mjs`: Simkl Plan to Watch movies sync, TMDB release-date enrichment, private cache and append to the existing Account 2 manifest.
 - `.github/workflows/deploy.yml`: the movie build, state cache, and checks after Account 2 TV generation.
 - `scripts/verify-output.mjs`: verifies the existing TV row plus the new movie row before deploying.
-- `tests/movie-releases.test.mjs` and `tests/movie-refresh.test.mjs`: release rules and mock end-to-end publishing tests.
+- `tests/movie-releases.test.mjs`, `tests/movie-refresh.test.mjs`, and `tests/movie-poster-style.test.mjs`: date cutoffs, live-style poster rendering and mock end-to-end publishing tests.
 
 ## Known boundaries
 

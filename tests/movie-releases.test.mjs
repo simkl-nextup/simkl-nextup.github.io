@@ -25,7 +25,7 @@ test('30 days before a known digital home release is Coming Soon', () => {
   assert.equal(result.released, false);
   assert.equal(result.digital.date, '2026-11-18');
   assert.equal(movieTags(result).label, 'COMING SOON');
-  assert.match(movieTags(result).sub, /COMING SOON/);
+  assert.equal(movieTags(result).main, 'COMING SOON · NOV 18');
   assert.equal(COMING_SOON_DAYS, 30);
 });
 test('31 days before remains hidden', () => {
@@ -56,15 +56,16 @@ test('release date of today is considered released', () => {
 test('digital release followed by physical Coming Soon stays released', () => {
   const result = classifyHomeReleases(data(release('US', [[4, '2026-10-01'], [5, '2026-11-01']])), { now: TODAY });
   assert.equal(result.released, true);
-  assert.match(movieTags(result).sub, /PHYSICAL NOV 1/);
+  assert.equal(movieTags(result).main, 'OCT 1');
+  assert.equal(movieTags(result).chip, 'DIGITAL');
 });
 test('physical release later bumps the same movie with both-format tag', () => {
   const result = classifyHomeReleases(data(release('US', [[4, '2026-09-15'], [5, '2026-10-19']])), { now: TODAY });
   assert.equal(result.released, true);
   assert.equal(result.sortDate, '2026-10-19');
   assert.equal(movieTags(result).label, 'DIGITAL + PHYSICAL');
-  assert.match(movieTags(result).sub, /DIG SEP 15/);
-  assert.match(movieTags(result).sub, /PHY OCT 19/);
+  assert.equal(movieTags(result).main, 'OCT 19');
+  assert.equal(movieTags(result).chip, 'DIGITAL + PHYSICAL');
 });
 test('date is formatted independent of machine timezone', () => {
   assert.equal(formatMovieDate('2026-01-01'), 'JAN 1');
@@ -86,6 +87,7 @@ test('adding an already released movie does not give it a new sort date', () => 
     movie('1002', data(release('US', [[5, '2026-10-18']]))),
   ], { now: TODAY });
   assert.equal(catalog[0].meta.name, 'Movie 1002');
+  assert.equal(catalog.length, 1, 'old releases must disappear, not merely sort behind newer ones');
 });
 test('Completed/watched movies are excluded', () => {
   const catalog = buildMovieCatalog([movie('1001', data(release('US', [[4, '2026-10-18']])), { status: 'completed' })], { now: TODAY });
@@ -100,4 +102,50 @@ test('movie without IMDb uses tmdb id and fallback poster', () => {
   const catalog = buildMovieCatalog([record], { now: TODAY });
   assert.equal(catalog[0].meta.id, 'tmdb:1001');
   assert.match(catalog[0].meta.poster, /image\.tmdb\.org/);
+});
+
+
+test('movie initially released before six-calendar-month cutoff is excluded', () => {
+  assert.equal(classifyHomeReleases(data(release('US', [[4, '2026-04-18']])), { now: TODAY }), null);
+  assert.equal(classifyHomeReleases(data(release('US', [[4, '2026-04-19']])), { now: TODAY })?.released, true);
+});
+
+test('physical reissues do not resurrect old digital films', () => {
+  const result = classifyHomeReleases(data(
+    release('FR', [[4, '2002-11-01']]),
+    release('US', [[4, '2003-03-01'], [5, '2026-10-18']]),
+  ), { now: TODAY });
+  assert.equal(result, null);
+});
+
+test('US priority does not override the worldwide first-availability cutoff', () => {
+  assert.equal(classifyHomeReleases(data(
+    release('JP', [[4, '2026-03-01']]),
+    release('US', [[4, '2026-10-01']]),
+  ), { now: TODAY }), null);
+});
+
+test('six months are calendar months, including end-of-month dates', () => {
+  const now = new Date('2026-08-31T12:00:00Z');
+  assert.equal(classifyHomeReleases(data(release('US', [[4, '2026-02-27']])), { now }), null);
+  assert.equal(classifyHomeReleases(data(release('US', [[4, '2026-02-28']])), { now })?.released, true);
+});
+
+test('Coming Soon does not resurrect an old film with a new upcoming physical release', () => {
+  assert.equal(classifyHomeReleases(data(release('US', [[4, '2025-10-01'], [5, '2026-11-01']])), { now: TODAY }), null);
+});
+
+test('newly available film is bumped when its second format releases', () => {
+  const before = classifyHomeReleases(data(release('US', [[4, '2026-10-01'], [5, '2026-10-20']])), { now: TODAY });
+  assert.equal(before.sortDate, '2026-10-01');
+  const after = classifyHomeReleases(data(release('US', [[4, '2026-10-01'], [5, '2026-10-20']])), { now: new Date('2026-10-20T00:00:00Z') });
+  assert.equal(after.sortDate, '2026-10-20');
+  assert.equal(movieTags(after).chip, 'DIGITAL + PHYSICAL');
+});
+
+
+test('simultaneous upcoming digital and physical dates produce a combined dub-style chip', () => {
+  const result = classifyHomeReleases(data(release('US', [[4, '2026-10-25'], [5, '2026-10-25']])), { now: TODAY });
+  assert.equal(movieTags(result).chip, 'DIGITAL + PHYSICAL');
+  assert.equal(movieTags(result).main, 'COMING SOON · OCT 25');
 });

@@ -331,47 +331,14 @@ export async function posterTints(poster) {
 
 const rightChipShape = (w, h, r) => `M${w} 0 H${r} Q0 0 0 ${r} V${h - r} Q0 ${h} ${r} ${h} H${w} Z`;
 
-// poster: image buffer (any size; covered to 500x750). logo: optional buffer.
-// style: see poster-style.mjs (defaults to 1.11.1 without the white outline).
-export async function composeTaggedPoster({ poster, logo, name, badge, style: rawStyle, tints }) {
-  const style = normalizePosterStyle(rawStyle ?? DEFAULT_POSTER_STYLE);
+// Shared drawing primitives for TV/anime tags and Account 2 movie-release
+// tags. A movie renders ONLY these two tags onto BetterPosters' base artwork.
+async function appendTopTab({ base, layers, shadows, style, lines, single, tints, allowShrink = false }) {
   const L = layoutFor(style);
-  const base = await sharp(poster, { failOn: "error" }).resize(W, H, { fit: "cover", position: "centre" }).png().toBuffer();
-  const layers = [await bottomBand(base, L)];
-  const shadows = [];
   const text = (value, color, px, extra = {}) => label(value, color, px, { style, ...extra });
-
-  // Title logo (above the band row) or, on textless artwork only, the name.
-  let title = null;
-  if (logo) {
-    try { title = await prepareTaggedLogo(logo, L); } catch { title = null; }
-  }
-  if (!title && badge.textless) title = await fallbackTitle(name, L, style);
-  if (title) layers.push(title);
-
-  // Bottom row: [STATUS] ★ score.
-  const status = STATUS_TAGS[badge.status];
-  if (!status) throw new Error(`Unsupported poster status: ${badge.status}`);
-  const statusText = await text(status.label, inkFor(status.fill), L.pillFont);
-  const pillW = statusText.w + L.pillPad * 2;
-  const score = badge.score ?? badge.malScore;
-  const rating = score
-    ? await text(`★ ${score}`, "#FFFFFF", L.ratingFont, { shadow: style.ratingShadow, shadowAlpha: "85%" })
-    : null;
-  const rowW = pillW + (rating ? L.rowGap + rating.w : 0);
-  const rowX = Math.round((W - rowW) / 2);
-  const tagsStart = layers.length;
-  shadows.push({ x: rowX, y: L.rowY, shape: roundRect(pillW, L.pillH, L.pillRadius), fill: status.fill });
-  layers.push({ input: await frosted(base, rowX, L.rowY, pillW, L.pillH, roundRect(pillW, L.pillH, L.pillRadius), status.fill, 0.92), left: rowX, top: L.rowY });
-  layers.push(place(statusText, rowX + L.pillPad, L.rowY + (L.pillH - statusText.h) / 2));
-  if (rating) layers.push(place(rating, rowX + pillW + L.rowGap, L.rowY + (L.pillH - rating.h) / 2));
-
-  // Top tab, in one of four layouts.
-  const lines = topTabLines(badge);
-  const single = topTabText(badge);
   let tint = null;
   let tabH = 0;
-  if (lines) {
+  if (lines?.main) {
     if (tints) tint = style.contrast === "standard" ? tints.standard : tints.max;
     else tint = adaptiveTabFill(await analyzePoster(base), style.contrast === "standard" ? 4.5 : 7);
     const ink = inkFor(tint);
@@ -379,7 +346,7 @@ export async function composeTaggedPoster({ poster, logo, name, badge, style: ra
       let px = startPx, layer;
       for (;;) {
         layer = await text(value, ink, px);
-        if (layer.w <= maxW || px <= L.tabMinFont) return layer;
+        if (layer.w <= maxW || px <= (allowShrink ? 20 : L.tabMinFont)) return layer;
         px -= 2;
       }
     };
@@ -416,19 +383,98 @@ export async function composeTaggedPoster({ poster, logo, name, badge, style: ra
       layers.push(place(main, (W - main.w) / 2, (tabH - main.h) / 2));
     }
   }
+  return { tint, tabH };
+}
 
-  // Chips under the tab: dub on the left; in "chip" mode the aired info on the right.
+async function appendLeftChip({ base, layers, shadows, style, chip, chipY, fitWidth = false }) {
+  if (!chip) return 0;
+  const L = layoutFor(style);
+  const ready = chip.state === "ready";
+  let font = L.chipFont;
+  let textLayer;
+  do {
+    textLayer = await label(chip.text, "#FFFFFF", font, { style });
+    if (!fitWidth || textLayer.w + L.chipPad * 2 <= W - 10 || font <= 17) break;
+    font -= 2;
+  } while (true);
+  const w = Math.min(W, textLayer.w + L.chipPad * 2);
+  const fill = DUB_FILLS[chip.state];
+  const shape = leftTagShape(w, L.chipH, L.chipRadius);
+  shadows.push({ x: 0, y: chipY, shape, fill });
+  layers.push({ input: await frosted(base, 0, chipY, w, L.chipH, shape, fill, ready ? L.chipOpacity : 0.9), left: 0, top: chipY });
+  layers.push(place(textLayer, (w - textLayer.w) / 2, chipY + (L.chipH - textLayer.h) / 2));
+  return w;
+}
+
+// Uses the TV row's *current* top-tab settings and the anime row's current
+// dub-chip settings. Never adds another PLAN TO WATCH tag, title, or bottom
+// band: BetterPosters supplies the artwork, logo, rating and genre styling.
+export async function composeMovieReleasePoster({ poster, tags, tvStyle, animeStyle }) {
+  const topStyle = normalizePosterStyle(tvStyle ?? DEFAULT_POSTER_STYLE);
+  const leftStyle = normalizePosterStyle(animeStyle ?? DEFAULT_POSTER_STYLE);
+  const base = await sharp(poster, { failOn: "error" }).resize(W, H, { fit: "cover", position: "centre" }).png().toBuffer();
+  const layers = [];
+  const shadows = [];
+  const { tabH } = await appendTopTab({
+    base, layers, shadows, style: topStyle,
+    lines: { main: tags.main, sub: null }, single: tags.main, allowShrink: true,
+  });
+  await appendLeftChip({
+    base, layers, shadows, style: leftStyle,
+    chip: { text: tags.chip, state: tags.released ? "ready" : "behind" },
+    chipY: (tabH || layoutFor(topStyle).tabH) + layoutFor(leftStyle).chipGap,
+    fitWidth: true,
+  });
+  // Same coloured shadows and silhouettes as existing live tag renderer.
+  // If the rows differ, respect each row's individual shadow setting.
+  const activeShadows = shadows.filter((_, i) => i === 0 ? topStyle.tagShadow === "coloured" : leftStyle.tagShadow === "coloured");
+  const shadow = tagShadowLayer(activeShadows);
+  if (shadow) layers.unshift({ input: shadow, left: 0, top: 0 });
+  return sharp(base).composite(layers).webp({ quality: 91, effort: 5 }).toBuffer();
+}
+
+// poster: image buffer (any size; covered to 500x750). logo: optional buffer.
+// style: see poster-style.mjs (defaults to 1.11.1 without the white outline).
+export async function composeTaggedPoster({ poster, logo, name, badge, style: rawStyle, tints }) {
+  const style = normalizePosterStyle(rawStyle ?? DEFAULT_POSTER_STYLE);
+  const L = layoutFor(style);
+  const base = await sharp(poster, { failOn: "error" }).resize(W, H, { fit: "cover", position: "centre" }).png().toBuffer();
+  const layers = [await bottomBand(base, L)];
+  const shadows = [];
+  const text = (value, color, px, extra = {}) => label(value, color, px, { style, ...extra });
+
+  // Title logo (above the band row) or, on textless artwork only, the name.
+  let title = null;
+  if (logo) {
+    try { title = await prepareTaggedLogo(logo, L); } catch { title = null; }
+  }
+  if (!title && badge.textless) title = await fallbackTitle(name, L, style);
+  if (title) layers.push(title);
+
+  // Bottom row: [STATUS] ★ score.
+  const status = STATUS_TAGS[badge.status];
+  if (!status) throw new Error(`Unsupported poster status: ${badge.status}`);
+  const statusText = await text(status.label, inkFor(status.fill), L.pillFont);
+  const pillW = statusText.w + L.pillPad * 2;
+  const score = badge.score ?? badge.malScore;
+  const rating = score
+    ? await text(`★ ${score}`, "#FFFFFF", L.ratingFont, { shadow: style.ratingShadow, shadowAlpha: "85%" })
+    : null;
+  const rowW = pillW + (rating ? L.rowGap + rating.w : 0);
+  const rowX = Math.round((W - rowW) / 2);
+  const tagsStart = layers.length;
+  shadows.push({ x: rowX, y: L.rowY, shape: roundRect(pillW, L.pillH, L.pillRadius), fill: status.fill });
+  layers.push({ input: await frosted(base, rowX, L.rowY, pillW, L.pillH, roundRect(pillW, L.pillH, L.pillRadius), status.fill, 0.92), left: rowX, top: L.rowY });
+  layers.push(place(statusText, rowX + L.pillPad, L.rowY + (L.pillH - statusText.h) / 2));
+  if (rating) layers.push(place(rating, rowX + pillW + L.rowGap, L.rowY + (L.pillH - rating.h) / 2));
+
+  // These are the same tag primitives consumed by the movie row.
+  const lines = topTabLines(badge);
+  const single = topTabText(badge);
+  const { tint, tabH } = await appendTopTab({ base, layers, shadows, style, lines, single, tints });
   const chipY = (tabH || L.tabH) + L.chipGap;
   const dub = dubTag(badge);
-  let leftW = 0;
-  if (dub) {
-    const ready = dub.state === "ready";
-    const label_ = await text(dub.text, "#FFFFFF", L.chipFont);
-    leftW = label_.w + L.chipPad * 2;
-    shadows.push({ x: 0, y: chipY, shape: leftTagShape(leftW, L.chipH, L.chipRadius), fill: DUB_FILLS[dub.state] });
-    layers.push({ input: await frosted(base, 0, chipY, leftW, L.chipH, leftTagShape(leftW, L.chipH, L.chipRadius), DUB_FILLS[dub.state], ready ? L.chipOpacity : 0.9), left: 0, top: chipY });
-    layers.push(place(label_, L.chipPad, chipY + (L.chipH - label_.h) / 2));
-  }
+  const leftW = await appendLeftChip({ base, layers, shadows, style, chip: dub, chipY });
   if (style.topTab === "chip" && lines?.sub) {
     const label_ = await text(lines.sub, inkFor(tint), L.chipFont);
     const w = label_.w + L.chipPad * 2;

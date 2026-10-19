@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MOVIE_CATALOG_ID, MOVIE_CATALOG_NAME, COMING_SOON_DAYS, buildMovieCatalog } from '../src/movie-releases.mjs';
 import { renderMoviePosters } from '../src/movie-posters.mjs';
+import { loadPosterConfig } from '../src/poster-style.mjs';
 import { appendPublicPath, deriveBaseUrl } from '../src/site.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -134,7 +135,13 @@ export async function refreshMovieRow({
     resolved.push(...results);
   }
   const entries = buildMovieCatalog(resolved, { now, comingSoonDays, maxItems });
-  const rendered = await renderMoviePosters(entries, { outputDirectory, baseUrl, fetchImpl });
+  // Read live Studio settings every refresh; the TV tab and anime dub chip
+  // may be configured independently by the user.
+  const posterConfig = await loadPosterConfig(path.join(root, 'config/poster-style.json'));
+  const rendered = await renderMoviePosters(entries, {
+    outputDirectory, baseUrl, fetchImpl,
+    tvStyle: posterConfig.tv, animeStyle: posterConfig.anime,
+  });
   const manifestPath = path.join(outputDirectory, 'manifest.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   if (manifest.id !== 'community.simkl.new-tv-episodes.account2'
@@ -167,8 +174,9 @@ export async function refreshMovieRow({
     released: entries.filter((e) => e.release.released).length,
     comingSoon: entries.filter((e) => !e.release.released).length,
     comingSoonDays,
+    releaseHistoryMonths: 6,
     releaseProvider: 'TMDB (type 4 digital / type 5 physical, all countries, US preferred)',
-    skippedWithoutKnownHomeRelease: resolved.length - buildMovieCatalog(resolved, { now, comingSoonDays, maxItems: Infinity }).length,
+    skippedByReleaseRules: resolved.length - buildMovieCatalog(resolved, { now, comingSoonDays, maxItems: Infinity }).length,
     warnings: [...warnings, ...rendered.warnings.map((w) => `${w.id}: ${w.warning}`)].slice(0, 25),
   };
   await writeFile(statusPath, json(status));

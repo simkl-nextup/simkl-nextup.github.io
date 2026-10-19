@@ -89,14 +89,14 @@ test('a failed BetterPosters request falls back to TMDB image and still overlays
     const result = await renderMoviePosters([{
       meta: { id: 'tt1234567', type: 'movie', name: 'Example Film', poster },
       tmdbPoster,
-      tags: { main: 'OUT OCT 19', sub: 'DIGITAL OUT', chip: 'DIGITAL', label: 'DIGITAL OUT' },
+      tags: { main: 'OCT 19', chip: 'DIGITAL', label: 'DIGITAL OUT', released: true },
     }], { outputDirectory: output, baseUrl: 'https://test.github.io/account-2', fetchImpl });
     assert.equal(result.metas.length, 1);
     assert.equal(result.warnings.length, 1);
     const filename = result.metas[0].poster.split('/').pop();
     const file = path.join(output, 'posters/movie-releases', filename);
     const img = await sharp(file).extract({ left: 50, top: 20, width: 10, height: 10 }).stats();
-    assert.ok(img.channels[0].mean < 200, 'the dark top tab must overlay the bright fallback poster');
+    assert.ok(Math.abs(img.channels[0].mean - 231) > 3, 'the adaptive-contrast TV tab must overlay the bright fallback poster');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -111,5 +111,37 @@ test('empty Simkl Plan to Watch produces an empty second row without deleting TV
     const manifest = JSON.parse(await readFile(path.join(output, 'manifest.json'), 'utf8'));
     assert.equal(manifest.catalogs.length, 2);
     assert.equal(manifest.catalogs[0].id, 'simkl-new-tv-episodes-account2');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('old Plan to Watch movies never enter the deployed movie catalog, even when fetched from Simkl', async () => {
+  const { root, output } = await fixture();
+  try {
+    const art = await sharp({ create: { width: 500, height: 750, channels: 3, background: '#252d33' } }).jpeg().toBuffer();
+    const fetchImpl = async (url) => {
+      const value = String(url);
+      if (value.includes('/sync/all-items/movies/plantowatch')) return response({ movies: [
+        { status: 'plantowatch', movie: { title: 'New Film', ids: { simkl: 11, tmdb: 101, imdb: 'tt1000001' } } },
+        { status: 'plantowatch', movie: { title: 'Old Film', ids: { simkl: 22, tmdb: 202, imdb: 'tt1000002' } } },
+      ] });
+      if (value.includes('/3/movie/101')) return response({ id: 101, title: 'New Film', imdb_id: 'tt1000001', poster_path: '/art.jpg', release_dates: { results: [
+        { iso_3166_1: 'US', release_dates: [rel(4, '2026-10-19')] },
+      ] } });
+      if (value.includes('/3/movie/202')) return response({ id: 202, title: 'Old Film', imdb_id: 'tt1000002', poster_path: '/art.jpg', release_dates: { results: [
+        { iso_3166_1: 'US', release_dates: [rel(4, '2025-11-01'), rel(5, '2026-10-19')] },
+      ] } });
+      if (value.includes('btttr.cc/poster/')) return response(art, 'image/jpeg');
+      throw new Error(`Unexpected request: ${value}`);
+    };
+    const actual = await refreshMovieRow({
+      clientId: 'client', accessToken: 'secret', tmdbToken: 'key',
+      now: new Date('2026-10-19T12:00:00Z'),
+      outputDirectory: output, stateFile: path.join(root, 'movie-cache.json'),
+      baseUrl: 'https://test.github.io/account-2', fetchImpl,
+    });
+    assert.equal(actual.status.trackedPlanToWatch, 2);
+    assert.equal(actual.status.published, 1);
+    assert.equal(actual.status.skippedByReleaseRules, 1);
+    assert.equal(actual.movies[0].name, 'New Film');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
