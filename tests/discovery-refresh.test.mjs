@@ -73,7 +73,7 @@ test('full global refresh appends two rows, publishes tagged artwork and metadat
     assert.equal(tvStudio.samples.length,2);
     assert.deepEqual(new Set(tvStudio.samples.map(s=>s.tags.statusKey)),new Set(['newSeries','returning']));
     assert.ok(tvStudio.samples.some(s=>s.tags.main==='S3 · NOV 11' && s.tags.statusKey==='returning'));
-    assert.ok(tvStudio.samples.some(s=>s.tags.main==='NOV 7' && s.tags.statusKey==='newSeries'));
+    assert.ok(tvStudio.samples.some(s=>s.tags.main==='DRAMA · NOV 7' && s.tags.statusKey==='newSeries'));
     assert.ok((await stat(path.join(output,'meta/series/tt7654321.json'))).isFile());
     assert.deepEqual(JSON.parse(await readFile(path.join(output,'meta/series/tt7654321.json'),'utf8')),existing);
     const published=JSON.stringify(movieCat)+JSON.stringify(tvCat)+JSON.stringify(manifest);
@@ -130,4 +130,29 @@ test('TMDB collection relationship is checked against earlier installments befor
     const studio=JSON.parse(await readFile(path.join(output,'studio/upcomingMovies.json')));
     assert.equal(studio.samples[0].tags.main,'SEQUEL · NOV 6');
   } finally {await rm(root,{recursive:true,force:true});}
+});
+
+
+test('published Upcoming TV uses own TV Up Next canonical next episode, genre for new series and preserves existing metadata',async()=>{
+ const {root,output}=await workspace();
+ try{
+   const img=await sharp({create:{width:500,height:750,channels:3,background:'#2d5869'}}).jpeg().toBuffer();
+   const accountState=path.join(root,'personal-state.json');
+   // A real tracked title exists, but its Simkl NEXT field is missing.
+   await writeFile(accountState,str({items:{a:{status:'watching',show:{title:'Returning Drama',ids:{imdb:'tt7654321'}}}}}));
+   await mkdir(path.join(output,'catalog/series'),{recursive:true});
+   await writeFile(path.join(output,'catalog/series/simkl-new-tv-episodes-account2.json'),str({metas:[
+     {id:'tt7654321',name:'Returning Drama',behaviorHints:{defaultVideoId:'tt7654321:2:9'}}
+   ]}));
+   const opts={tmdbToken:'token',fetchImpl:fakeFetch(img,[]),now:time,outputDirectory:output,
+     personalStatePath:accountState,stateFile:path.join(root,'cache.json'),baseUrl:'https://example.github.io/account-2'};
+   await refreshGlobalDiscovery(opts);
+   const studio=JSON.parse(await readFile(path.join(output,'studio/upcomingTV.json'),'utf8'));
+   const byTitle=Object.fromEntries(studio.samples.map(s=>[s.name,s.tags]));
+   assert.equal(byTitle['Returning Drama'].main,'S3 · NOV 11');
+   assert.equal(byTitle['Returning Drama'].nextEpisode,9);
+   assert.equal(byTitle['Returning Drama'].nextSeason,2);
+   assert.equal(byTitle['Fresh Drama'].main,'DRAMA · NOV 7');
+   assert.equal(byTitle['Fresh Drama'].statusKey,'newSeries');
+ }finally{await rm(root,{recursive:true,force:true});}
 });

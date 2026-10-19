@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  SMART_SHUFFLE_ID, SMART_SHUFFLE_NAME, SMART_PAGE_SIZE,
+  SMART_SHUFFLE_ID, SMART_SHUFFLE_NAME, SMART_PAGE_SIZE, SMART_FEATURE_DAYS,
   buildSmartEntries, interleaveSmartMovies, paginateSmartCatalog,
 } from '../src/smart-shuffle.mjs';
 import { appendPublicPath, deriveBaseUrl } from '../src/site.mjs';
@@ -40,8 +40,8 @@ export async function refreshSmartShuffle({
   if(!Array.isArray(data?.movies))throw new Error('Simkl movie list has no movies array');
   const cache=JSON.parse(await readFile(releaseStateFile,'utf8'));
   if(!cache?.movies || typeof cache.movies!=='object')throw new Error('Home Releases movie cache missing or invalid: run refresh:movies first');
-  // Match the EXACT published Home Releases row, not independently computed
-  // old release dates. This preserves its cutoff and any max-items limit.
+  // Use the published Home Releases row as the eligible set, then apply
+  // Smart Shuffle's independent 60-day featured cutoff.
   const homeCatalogPath=path.join(outputDirectory,'catalog','movie',
     'simkl-plan-to-watch-home-releases-account2.json');
   const homeCatalog=JSON.parse(await readFile(homeCatalogPath,'utf8'));
@@ -121,6 +121,7 @@ export async function refreshSmartShuffle({
   status.smartShuffle={catalogId:SMART_SHUFFLE_ID,totalWatchlist:data.movies.length,
     published:metas.length,featured:result.featured,random:result.shuffled,
     taggedFromHomeReleases:result.featured,
+    featuredHomeReleaseDays:SMART_FEATURE_DAYS,
     theatricalTagged:theatricalRendered.metas.length,
     upcomingCinemaTagged:theatricalCandidates.filter(e=>e.theatrical.upcoming && theaterPosterById.has(e.meta.id)).length,
     recentTheatricalCandidates:theatricalCandidates.length,

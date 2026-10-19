@@ -172,7 +172,7 @@ Watchlist and schedule data: [Simkl](https://simkl.com). Artwork and supplementa
 
 ## Additional Account 2 Smart Shuffle movie row
 
-The fifth Account 2 catalog mixes **one recently home-released movie + two randomized Plan to Watch movies**, preserving the full watchlist with Stremio `skip` pagination. It does not change the other four Account 2 rows or the root anime addon. See [SMART_SHUFFLE.md](SMART_SHUFFLE.md) for exact behavior and refresh limitations.
+The fifth Account 2 catalog mixes **one featured Home Releases movie + two randomized Plan to Watch movies**, with **a separate 60-day feature window** for movies already released at home and the existing 30-day window for upcoming home releases. After 60 days, a movie becomes ordinary randomized Plan to Watch content without home-release tags, while **Home Releases still keeps six months**. The entire watchlist stays in the normal catalog; optional Stremio `skip` pages are also available. It does not change the other four Account 2 rows or the root anime addon. See [SMART_SHUFFLE.md](SMART_SHUFFLE.md) for exact behavior and refresh limitations.
 
 **October 2026 movie-context update:** Upcoming Movies now shows sequel/genre/year
 before the premiere date on the existing top tab. Smart Shuffle adds a red

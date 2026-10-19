@@ -4,11 +4,15 @@
 // Home Releases movies inherit their finished posters. Theatrical-only new
 // films may get a cinema chip without becoming featured/release-slot items.
 import { randomInt } from 'node:crypto';
+import { classifyHomeReleases, COMING_SOON_DAYS } from './movie-releases.mjs';
 
 export const SMART_SHUFFLE_ID = 'simkl-movies-smart-shuffle-account2';
 export const SMART_SHUFFLE_NAME = 'Movies · Smart Shuffle · Simkl';
 export const SMART_PAGE_SIZE = 50;
 export const RANDOM_BETWEEN_RELEASES = 2;
+// The Home Releases catalog keeps six months of movies. Only the first 60
+// days of home availability earn a FEATURED slot in Smart Shuffle.
+export const SMART_FEATURE_DAYS = 60;
 
 // Live builds use crypto randomInt, not a fixed seed. A new sequence is
 // generated on every successful scheduled build, not every client request.
@@ -117,10 +121,25 @@ export function recentTheatricalPremiere(tmdb,{now=new Date(),days=THEATRICAL_RE
   return event && [2,3].includes(event.type)?event:null;
 }
 
-// The Home Releases JSON has already applied ALL of the original rules,
-// including six months, 30-day Coming Soon, US priority and max row size.
-// Matching against that output ensures exactly the same tagged titles and
-// allows us to reuse its final rendered posters, rather than recomposing.
+// Both rows use the SAME release-date cache and the same published Home
+// Releases catalog, but intentionally have DIFFERENT featured windows.
+// Smart Shuffle: 60 days after first home release, or the existing 30-day
+// Coming Soon window. Home Releases itself stays at six calendar months.
+// The first worldwide release (not a later US rollout or physical reissue)
+// starts the 60-day clock. Days are calendar dates in UTC, as in Home Releases.
+export function eligibleSmartHomeRelease(tmdb, now = new Date()) {
+  const classified = classifyHomeReleases(tmdb?.release_dates, { now });
+  if (!classified) return false;
+  const today = new Date(now).toISOString().slice(0, 10);
+  const daysSinceFirstRelease = (Date.parse(`${today}T00:00:00Z`) -
+    Date.parse(`${classified.firstHomeDate}T00:00:00Z`)) / 86400000;
+  return daysSinceFirstRelease >= -COMING_SOON_DAYS && daysSinceFirstRelease <= SMART_FEATURE_DAYS;
+}
+
+// A featured movie must BOTH be present in the actually published Home
+// Releases catalog AND satisfy this narrower 60-day/Coming Soon window.
+// Non-featured titles remain in Plan to Watch, randomly shuffled, untagged.
+// A recent cinema-only movie can still get its independent theatrical chip.
 export function buildSmartEntries(movies, cacheMovies = {}, { homeCatalog = [], now = new Date() } = {}) {
   const homeById = new Map();
   for (const [index, meta] of homeCatalog.entries()) {
@@ -142,8 +161,9 @@ export function buildSmartEntries(movies, cacheMovies = {}, { homeCatalog = [], 
     if (!id || (!cached?.title && !movie.title)) {
       skipped.push({ id: simklId, reason: 'missing ID or title' }); continue;
     }
-    const home = homeById.get(id);
-    const theatrical = home ? null : theatricalPremiere(cached,{now});
+    const publishedHome = homeById.get(id);
+    const home = publishedHome && eligibleSmartHomeRelease(cached, now) ? publishedHome : null;
+    const theatrical = publishedHome ? null : theatricalPremiere(cached,{now});
     const meta = {
       id, type: 'movie', name: cached?.title || movie.title,
       // Home Releases titles get precisely the SAME final rendered poster.

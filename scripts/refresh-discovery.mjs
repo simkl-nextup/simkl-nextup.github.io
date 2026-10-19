@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadPosterConfig } from '../src/poster-style.mjs';
 import { writeReleaseStudio } from '../src/release-studio.mjs';
+import { resolveTvdbEpisode } from '../src/tvdb.mjs';
 import { renderDiscoveryPosters } from '../src/discovery-posters.mjs';
 import { deriveBaseUrl, appendPublicPath } from '../src/site.mjs';
 import {
@@ -159,8 +160,56 @@ async function getTvCandidates({fetchImpl,token,now,warnings}) {
   });
 }
 function normalizeName(name){return String(name||'').normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();}
-export function addPersonalNextTags(entries,state){
-  const matches=new Map(),names=new Map();
+function validPosition(info){
+  const episode=Number(info?.episode),season=Number(info?.season);
+  if(!Number.isInteger(episode)||episode<=0)return null;
+  return {episode,season:Number.isInteger(season)&&season>0?season:null};
+}
+function tvdbFallback(item){
+  const videos=(item?._addonTvdbMeta?.videos||[])
+    .filter(v=>Number.isInteger(Number(v.season))&&Number(v.season)>0
+      &&Number.isInteger(Number(v.episode))&&Number(v.episode)>0);
+  if(!videos.length)return null;
+  const countValue=item?.watched_episodes_count;
+  const watched=countValue==null?null:Number(countValue);
+  if(watched!==null && (!Number.isInteger(watched)||watched<0))return null;
+  // An exact absolute number is a reliable index for the next unwatched
+  // episode, including episodes of seasons not yet aired. Never just assume
+  // the upcoming premiere is next: the user might be behind several seasons.
+  if(watched!==null){
+    const indexed=videos.filter(v=>Number(v.absoluteNumber)===watched+1);
+    if(indexed.length===1)return validPosition(indexed[0]);
+  }
+  // Planned-but-unstarted shows can start at the first documented episode.
+  // This avoids generic NEXT for a Plan to Watch title with no Simkl info.
+  if(item.status==='plantowatch' && (watched===null||watched===0)){
+    const first=videos.filter(v=>Number(v.season)===1 && Number(v.episode)===1);
+    if(first.length===1)return validPosition(first[0]);
+  }
+  return null;
+}
+function indexTvUpNext(catalog){
+  const byId=new Map(),byName=new Map();
+  const entries=Array.isArray(catalog?.metas)?catalog.metas:[];
+  for(const meta of entries){
+    const id=String(meta?.id||'');
+    // Use the same canonical video chosen by the TV Up Next poster/detail.
+    // Do not infer its default from catalog releaseInfo (latest aired != next).
+    const match=String(meta?.behaviorHints?.defaultVideoId||'').match(/:(\d+):(\d+)$/);
+    if(!match)continue;
+    const position=validPosition({season:match[1],episode:match[2]});
+    if(!position)continue;
+    if(id)byId.set(id,position);
+    const name=normalizeName(meta?.name);
+    if(name){
+      if(byName.has(name))byName.set(name,null); // ambiguous; no fallback
+      else byName.set(name,position);
+    }
+  }
+  return {byId,byName};
+}
+export function addPersonalNextTags(entries,state,upNextCatalog=null){
+  const matches=new Map(),names=new Map(),upNext=indexTvUpNext(upNextCatalog);
   for(const item of Object.values(state?.items||{})){
     if(!['watching','plantowatch'].includes(item?.status))continue;
     const media=item.show||item.anime||{};
@@ -178,20 +227,27 @@ export function addPersonalNextTags(entries,state){
       ||(tmdbId?matches.get(`tmdb:${tmdbId}`):null)
       ||names.get(normalizeName(entry.meta.name));
     if(!tracked)return entry;
-    // Same source used by TV Up Next. Never fabricate a NEXT episode based
-    // merely on the scheduled season number; show generic NEXT if unknown.
     const nextInfo=tracked.next_to_watch_info;
-    const episode=Number(nextInfo?.episode),season=Number(nextInfo?.season);
-    const nextEpisode=Number.isInteger(episode)&&episode>0?episode:null;
-    const nextSeason=Number.isInteger(season)&&season>0?season:null;
+    // First use Simkl's actual position; when Simkl omitted it, resolve
+    // it from its TVDB-enriched episode records or the existing TV Up Next
+    // catalog's canonical default-video ID. No generic/guessed NEXT label.
+    const raw=validPosition(nextInfo);
+    const mapped=raw && resolveTvdbEpisode(tracked._addonTvdbMeta,nextInfo);
+    const current=validPosition(mapped)||raw;
+    const position=current || tvdbFallback(tracked)
+      || upNext.byId.get(id) || (tmdbId?upNext.byId.get(`tmdb:${tmdbId}`):null)
+      || upNext.byName.get(normalizeName(entry.meta.name));
+    if(!position)return entry;
     return {...entry,tags:{...entry.tags,next:true,
       personalStatus:tracked.status,
-      ...(nextEpisode?{nextEpisode}:{}),...(nextSeason?{nextSeason}:{})}};
+      nextEpisode:position.episode,
+      ...(position.season?{nextSeason:position.season}:{})}};
   });
 }
 export async function refreshGlobalDiscovery({
   tmdbToken,fetchImpl=fetch,now=new Date(),outputDirectory=path.join(root,'public/account-2'),
   stateFile=path.join(root,'state/account-2/discovery-state.json'),
+  personalStatePath=path.join(root,'state/account-2/simkl-state.json'),
   baseUrl=appendPublicPath(deriveBaseUrl({explicitBaseUrl:process.env.PUBLIC_BASE_URL,githubRepository:process.env.GITHUB_REPOSITORY}),'account-2'),
   maxMovies=50,maxTV=50,
 }={}) {
@@ -206,12 +262,16 @@ export async function refreshGlobalDiscovery({
     cache={version:VERSION,fetchedAt:now.toISOString(),movies,shows};
   }
   const movieEntries=buildUpcomingMovies(cache.movies,now,maxMovies);
-  const account2StatePath=path.join(root,'state/account-2/simkl-state.json');
-  const personalState=await readFile(account2StatePath,'utf8').then(JSON.parse).catch(e=>{
+  const personalState=await readFile(personalStatePath,'utf8').then(JSON.parse).catch(e=>{
     if(e.code!=='ENOENT')warnings.push(`Personal NEXT matching disabled: ${e.message}`);
     return {items:{}};
   });
-  const tvEntries=addPersonalNextTags(buildUpcomingShows(cache.shows,now,maxTV),personalState);
+  const tvUpNextFile=path.join(outputDirectory,'catalog','series','simkl-new-tv-episodes-account2.json');
+  const tvUpNext=await readFile(tvUpNextFile,'utf8').then(JSON.parse).catch(e=>{
+    if(e.code!=='ENOENT')warnings.push(`TV Up Next position fallback unavailable: ${e.message}`);
+    return {metas:[]};
+  });
+  const tvEntries=addPersonalNextTags(buildUpcomingShows(cache.shows,now,maxTV),personalState,tvUpNext);
   const posterStyle=await loadPosterConfig(path.join(root,'config/poster-style.json'));
   const movieImages=await renderDiscoveryPosters(movieEntries,{outputDirectory,baseUrl,fetchImpl,style:posterStyle.upcomingMovies,posterFolder:'upcoming-movies',skipFailures:true,studioSamples:6});
   const tvImages=await renderDiscoveryPosters(tvEntries,{outputDirectory,baseUrl,fetchImpl,style:posterStyle.upcomingTV,posterFolder:'upcoming-tv',skipFailures:true,studioSamples:6});

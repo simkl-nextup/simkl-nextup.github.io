@@ -350,7 +350,7 @@
       main += actual
         ? (Number.isInteger(season) && season>0 && season!==Number(sample.tags.season)
             ? ` · Next S${season}E${ep}` : ` · Next E${ep}`)
-        : " · NEXT";
+        : "";
     }
     const isSmallDate=/^[A-Z]{3} \d{1,2}$/.test(main);
     const dateHeight=isSmallDate?Math.round(L.tabH*.72):L.tabH;

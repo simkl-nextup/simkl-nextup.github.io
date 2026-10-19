@@ -37,9 +37,8 @@ export function upcomingTvTopLabel(tags,showNext=true) {
       ? `${base} · Next S${nextSeason}E${episode}`
       : `${base} · Next E${episode}`;
   }
-  // A tracked title with unavailable next-episode data remains highlighted,
-  // but is never assigned an invented episode number.
-  return `${base} · NEXT`;
+  // Unavailable episode positions never render a generic or guessed NEXT.
+  return base;
 }
 export function discoveryBadge(entry, config={}) {
   const tag=entry.tags || {};

@@ -83,7 +83,7 @@ test('series and returning seasons expose stable metadata and correct tags',()=>
   ],now);
   assert.equal(entries.length,2);
   const bySeason = Object.fromEntries(entries.map(x => [x.tags.statusKey, x.tags]));
-  assert.equal(bySeason.newSeries.main,'NOV 19');
+  assert.equal(bySeason.newSeries.main,'DRAMA · NOV 19');
   assert.equal(bySeason.newSeries.season,1);
   assert.equal(bySeason.returning.main,'S2 · NOV 20');
   assert.equal(bySeason.returning.season,2);
@@ -100,7 +100,7 @@ test('upcoming TV returning seasons keep S-number in poster top label across sma
   const bySeason=new Map(results.map(item=>[item.tags.season,item]));
   assert.equal(bySeason.get(3).tags.main,'S3 · OCT 23');
   assert.equal(bySeason.get(18).tags.main,'S18 · OCT 22');
-  assert.equal(bySeason.get(1).tags.main,'OCT 21');
+  assert.equal(bySeason.get(1).tags.main,'DRAMA · OCT 21');
   assert.equal(bySeason.get(3).tags.statusKey,'returning');
   assert.equal(bySeason.get(1).tags.statusKey,'newSeries');
 });

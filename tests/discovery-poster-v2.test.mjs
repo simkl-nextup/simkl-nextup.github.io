@@ -18,9 +18,9 @@ test('only eligible returning shows in Account 2 Watching or Plan to Watch recei
  ],now);
  const tracked={items:{x:{status:'plantowatch',show:{title:'The Sample',ids:{imdb:'tt5432123'}}}}};
  const matched=addPersonalNextTags(entries,tracked);
- assert.ok(matched.find(e=>e.meta.id==='tt5432123').tags.next);
+ assert.ok(!matched.find(e=>e.meta.id==='tt5432123').tags.next,'unverified NEXT must not be rendered');
  assert.ok(!matched.find(e=>e.tags.statusKey==='newSeries').tags.next);
- assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),normalizePosterConfig({}).upcomingTV).topLabel,'S2 · OCT 24 · NEXT');
+ assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),normalizePosterConfig({}).upcomingTV).topLabel,'S2 · OCT 24');
  assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),normalizePosterConfig({}).upcomingTV).nextLabel,null);
  assert.equal(discoveryBadge(matched.find(e=>e.meta.id==='tt5432123'),{showNext:false}).topLabel,'S2 · OCT 24');
  const wrongStatus={items:{x:{status:'completed',show:{title:'The Sample',ids:{imdb:'tt5432123'}}}}};
@@ -34,7 +34,7 @@ test('custom upcoming poster status colours and date tabs render with Up Next po
  const badge=discoveryBadge(entry,style);
  assert.equal(badge.status,'discoveryReturning');
  assert.equal(badge.statusFill,'#3923A0');
- assert.equal(badge.topLabel,'S3 · OCT 25 · NEXT');
+ assert.equal(badge.topLabel,'S3 · OCT 25');
  assert.equal(badge.nextLabel,null);
  const image=await composeTaggedPoster({poster,name:'The Sample',badge,style});
  const metadata=await sharp(image).metadata();
@@ -71,4 +71,50 @@ test('NEXT is placed inside the top tab using real Simkl episode numbers, includ
  assert.equal(discoveryBadge(behind).topLabel,'S3 · NOV 2 · Next S1E4');
  assert.equal(upcomingTvTopLabel({...own.tags,next:false}),'S3 · NOV 2');
  assert.equal(own.tags.main,'S3 · NOV 2','source discovery date label stays stable');
+});
+
+
+test('tracked returning shows use an authoritative TV Up Next default video when Simkl omits next_to_watch_info',()=>{
+ const entries=buildUpcomingShows([{tmdb:tv,season:3,date:'2026-11-02',imdb:'tt5432123'}],now);
+ const state={items:{one:{status:'watching',show:{title:'The Sample',ids:{imdb:'tt5432123'}}}}};
+ const catalog={metas:[{id:'tt5432123',name:'The Sample',behaviorHints:{defaultVideoId:'tt5432123:2:8'}}]};
+ const result=addPersonalNextTags(entries,state,catalog)[0];
+ assert.equal(discoveryBadge(result).topLabel,'S3 · NOV 2 · Next S2E8');
+ assert.equal(addPersonalNextTags(entries,state,{metas:[]})[0].tags.next,false);
+});
+
+test('tracked shows use the actual TVDB next episode by cumulative count when Simkl omits NEXT',()=>{
+ const entries=buildUpcomingShows([{tmdb:tv,season:3,date:'2026-11-02',imdb:'tt5432123'}],now);
+ const item={status:'watching',watched_episodes_count:3,show:{title:'The Sample',ids:{imdb:'tt5432123'}},
+   _addonTvdbMeta:{videos:[
+     {season:1,episode:1,absoluteNumber:1},
+     {season:1,episode:2,absoluteNumber:2},
+     {season:1,episode:3,absoluteNumber:3},
+     {season:2,episode:1,absoluteNumber:4},
+   ]}};
+ const tagged=addPersonalNextTags(entries,{items:{a:item}})[0];
+ assert.equal(discoveryBadge(tagged).topLabel,'S3 · NOV 2 · Next S2E1');
+ const ambiguous=addPersonalNextTags(entries,{items:{a:{...item,watched_episodes_count:99}}})[0];
+ assert.equal(discoveryBadge(ambiguous).topLabel,'S3 · NOV 2');
+});
+
+test('an unwatched Plan to Watch title gets its documented TVDB first episode, not a guessed season premiere',()=>{
+ const entries=buildUpcomingShows([{tmdb:tv,season:3,date:'2026-11-02',imdb:'tt5432123'}],now);
+ const item={status:'plantowatch',show:{title:'The Sample',ids:{imdb:'tt5432123'}},
+   _addonTvdbMeta:{videos:[{season:1,episode:1},{season:1,episode:2},{season:3,episode:1}]}};
+ assert.equal(discoveryBadge(addPersonalNextTags(entries,{items:{x:item}})[0]).topLabel,'S3 · NOV 2 · Next S1E1');
+});
+
+test('new series show genre then date, while returning seasons always show season then date',()=>{
+ const newSeries=buildUpcomingShows([
+  {tmdb:{...tv,id:701,name:'Dramatic New',genres:[{id:18,name:'Drama'}]},season:1,date:'2026-10-30'},
+  {tmdb:{...tv,id:702,name:'Sci Fi',genres:[{id:10765,name:'Sci-Fi & Fantasy'}]},season:1,date:'2026-10-31'},
+  {tmdb:{...tv,id:703,name:'Genre Missing',genres:[],genre_ids:[]},season:1,date:'2026-11-01'},
+  {tmdb:{...tv,id:704,name:'Return Drama',genres:[{id:18,name:'Drama'}]},season:2,date:'2026-11-02'},
+ ],now);
+ const byName=Object.fromEntries(newSeries.map(e=>[e.meta.name,e]));
+ assert.equal(byName['Dramatic New'].tags.main,'DRAMA · OCT 30');
+ assert.equal(byName['Sci Fi'].tags.main,'SCI-FI · OCT 31');
+ assert.equal(byName['Genre Missing'].tags.main,'NOV 1');
+ assert.equal(byName['Return Drama'].tags.main,'S2 · NOV 2');
 });

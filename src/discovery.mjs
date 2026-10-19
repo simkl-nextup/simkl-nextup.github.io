@@ -165,6 +165,31 @@ export function buildUpcomingMovies(candidates, now=new Date(), maxItems=50) {
   }
   return uniqueTop(rows,now,maxItems);
 }
+// Top-tab context for an upcoming first season. Prefer the full TMDB
+// details.genre name; discover results have only genre_ids. Never guess a
+// genre from the show's name or let an unrecognized code become a label.
+const TV_GENRES = Object.freeze({
+  16:'ANIMATION', 18:'DRAMA', 35:'COMEDY', 37:'WESTERN', 80:'CRIME',
+  99:'DOCUMENTARY', 10751:'FAMILY', 10759:'ACTION', 10762:'KIDS',
+  10765:'SCI-FI', 10768:'WAR', 9648:'MYSTERY',
+});
+const GENRE_NAMES = Object.freeze({
+  'ACTION & ADVENTURE':'ACTION', 'SCI-FI & FANTASY':'SCI-FI',
+  'WAR & POLITICS':'WAR', 'SCIENCE FICTION':'SCI-FI',
+});
+export function upcomingTvGenre(tmdb) {
+  const first = Array.isArray(tmdb?.genres)
+    ? tmdb.genres.find(g => typeof g?.name==='string' && g.name.trim())
+    : null;
+  if (first) {
+    const raw = first.name.trim().toUpperCase();
+    const genre = GENRE_NAMES[raw] || raw;
+    if (genre.length <= 14 && /^[A-Z][A-Z &-]*$/.test(genre)) return genre;
+  }
+  const ids = Array.isArray(tmdb?.genre_ids) ? tmdb.genre_ids : [];
+  for (const id of ids) if (TV_GENRES[id]) return TV_GENRES[id];
+  return null;
+}
 export function buildUpcomingShows(candidates, now=new Date(), maxItems=50) {
   const rows=[];
   for (const r of candidates||[]) {
@@ -174,10 +199,11 @@ export function buildUpcomingShows(candidates, now=new Date(), maxItems=50) {
     const imdb=r.imdb || tmdb.external_ids?.imdb_id || tmdb.imdb_id;
     const chip=season===1?'NEW SERIES':`SEASON ${season}`;
     const entry=releaseEntry(tmdb,date,chip,'series',imdb,now,scoreItem(tmdb,{tv:true,season}),season===1?'Series premiere on':`Season ${season} premiere on`);
-    // Returning premieres show the season + air date in the same top tab.
-    // New series show the date alone: NEW SERIES already appears in the
-    // status pill below. This also drives Poster Studio previews.
-    entry.tags.main = season > 1 ? `S${season} · ${dateLabel(date)}` : dateLabel(date);
+    // Returning shows show the season; new series show a verified genre
+    // instead, without repeating NEW SERIES from the status pill.
+    const genre = season===1 ? upcomingTvGenre(tmdb) : null;
+    entry.tags.main = season>1 ? `S${season} · ${dateLabel(date)}`
+      : genre ? `${genre} · ${dateLabel(date)}` : dateLabel(date);
     entry.tags.statusKey = season===1?'newSeries':'returning';
     entry.tags.season = season;
     entry.tags.next = Boolean(r.next);
