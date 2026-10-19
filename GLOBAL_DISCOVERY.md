@@ -54,3 +54,9 @@ franchise membership is not evidence of a sequel; ambiguous movies remain
 classified by genre/year. The bottom THEATRICAL/STREAMING/LIMITED/PREMIERE pill
 and the Upcoming TV top tab are unchanged. The first refresh after this change
 invalidates the old discovery snapshot so context data can be populated.
+
+### Upcoming TV — major streaming services only
+
+Upcoming TV now uses an explicit ten-service allowlist: **Netflix, HBO Max, Prime Video, Apple TV+, Disney+, Hulu, Paramount+, Peacock, Crunchyroll, and HIDIVE**. This filter affects only the Upcoming TV Shows discovery row. New originals and returning seasons are eligible in any language or country if a service is supported by the TMDB `networks` field or by TVmaze's listed web channel/network. This includes international anime and dramas released by these services, but not shows that are merely available to stream there after an earlier broadcast. TMDB's `watch/providers` entries alone do **not** establish an upcoming premiere and do not qualify a show. Unknown outlets and ordinary broadcast channels are excluded. HBO's linear network is treated as HBO Max for this curated US-streaming discovery row; regional service names are not blindly matched by substring.
+
+The source of each accepted service attribution is shown in the upcoming title description, and the private snapshot is invalidated on the first run. Because TMDB network listings and TVmaze's show-level channels are not guaranteed to predict future season licensing perfectly, the provider shown is a metadata-based curation filter, **not a verified future streaming entitlement**. The Account 2 `status.json` discovery section lists the allowlist and the count of rejected candidates. The Upcoming Movies row and all personal rows are unaffected.

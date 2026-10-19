@@ -10,7 +10,7 @@ import { composeTaggedPoster, STATUS_TAGS, contrast,inkFor } from '../src/poster
 import { normalizePosterConfig } from '../src/poster-style.mjs';
 const now=new Date('2026-10-19T12:00:00Z');
 const overview='An acclaimed international thriller returning with a new season and unexpected revelations.';
-const tv={id:5432,name:'The Sample',poster_path:'/a.jpg',overview,first_air_date:'2022-08-01',popularity:40,vote_average:8.2,vote_count:51,external_ids:{imdb_id:'tt5432123'}};
+const tv={networks:[{name:'Netflix'}],id:5432,name:'The Sample',poster_path:'/a.jpg',overview,first_air_date:'2022-08-01',popularity:40,vote_average:8.2,vote_count:51,external_ids:{imdb_id:'tt5432123'}};
 test('only eligible returning shows in Account 2 Watching or Plan to Watch receive NEXT',()=>{
  const entries=buildUpcomingShows([
   {tmdb:tv,season:2,date:'2026-10-24',imdb:'tt5432123'},

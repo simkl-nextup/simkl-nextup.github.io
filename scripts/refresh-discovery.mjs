@@ -12,9 +12,10 @@ import {
   DISCOVERY_MOVIES_ID, DISCOVERY_TV_ID, DISCOVERY_MOVIES_NAME, DISCOVERY_TV_NAME,
   buildUpcomingMovies, buildUpcomingShows, tvmazePremieres, isQualityTitle,
   isTvmazePremiere, tvmazeMatch, day, futureEnd, scoreItem,
+  UPCOMING_TV_STREAMING_WHITELIST, upcomingTvStreamingPlatform,
 } from '../src/discovery.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const VERSION=5; // new movie sequel relationship metadata
+const VERSION=6; // verified streaming-platform whitelist for Upcoming TV
 const CACHE_TTL_MS=22*3600*1000;
 const API='https://api.themoviedb.org/3';
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
@@ -105,12 +106,14 @@ async function resolveTvmaze({fetchImpl,token,record}) {
     item=(data.results||[]).find(row=>[row.name,row.original_name].some(n=>cleanName(n)===cleanName(show.name)));
   }
   if(!item || !tvmazeMatch(item,{...record,verifiedExternalId}) || !isQualityTitle(item,{tv:true}))return null;
-  return {tmdb:item,season:record.season,date:record.date,imdb:ext.imdb,source:'tvmaze',tvmazeUrl:(typeof show.url==='string' && /^https:\/\/www\.tvmaze\.com\/shows\//.test(show.url))?show.url:`https://www.tvmaze.com/shows/${Number(show.id)||0}`};
+  return {tmdb:item,season:record.season,date:record.date,imdb:ext.imdb,source:'tvmaze',
+    tvmazeWebChannel:show.webChannel || null,tvmazeNetwork:show.network || null,
+    tvmazeUrl:(typeof show.url==='string' && /^https:\/\/www\.tvmaze\.com\/shows\//.test(show.url))?show.url:`https://www.tvmaze.com/shows/${Number(show.id)||0}`};
 }
 async function getTvCandidates({fetchImpl,token,now,warnings}) {
   const today=day(now),end=futureEnd(now,60);
   const newShows=new Map();
-  for(let page=1;page<=4;page++) {
+  for(let page=1;page<=7;page++) {
     const data=await tmdbGet(fetchImpl,token,'/discover/tv',{
       'first_air_date.gte':today,'first_air_date.lte':end,
       include_adult:'false',language:'en-US',sort_by:'popularity.desc',page,
@@ -134,7 +137,7 @@ async function getTvCandidates({fetchImpl,token,now,warnings}) {
       return (b.season>1?4:0)-(a.season>1?4:0)
         || rating(b)-rating(a) || a.date.localeCompare(b.date);
     });
-    external=await concurrent(strong.slice(0,100),5,async rec=>{
+    external=await concurrent(strong.slice(0,130),5,async rec=>{
       try{return await resolveTvmaze({fetchImpl,token,record:rec});}
       catch(e){if([401,403].includes(e.status))throw e;warnings.push(`TVmaze match ${rec.show.name}: ${e.message}`);return null;}
     });
@@ -148,7 +151,7 @@ async function getTvCandidates({fetchImpl,token,now,warnings}) {
     const previous=newShows.get(r.tmdb.id);
     if(!previous || r.season>previous.season || (r.season===previous.season && r.date<previous.date))newShows.set(r.tmdb.id,r);
   }
-  const shortlist=[...newShows.values()].sort((a,b)=>scoreItem(b.tmdb,{season:b.season})-scoreItem(a.tmdb,{season:a.season})).slice(0,85);
+  const shortlist=[...newShows.values()].sort((a,b)=>scoreItem(b.tmdb,{season:b.season})-scoreItem(a.tmdb,{season:a.season})).slice(0,125);
   return concurrent(shortlist,5,async row=>{
     try{
       const details=await tmdbGet(fetchImpl,token,`/tv/${row.tmdb.id}`,{
@@ -271,7 +274,8 @@ export async function refreshGlobalDiscovery({
     if(e.code!=='ENOENT')warnings.push(`TV Up Next position fallback unavailable: ${e.message}`);
     return {metas:[]};
   });
-  const tvEntries=addPersonalNextTags(buildUpcomingShows(cache.shows,now,maxTV),personalState,tvUpNext);
+  const eligibleTv=buildUpcomingShows(cache.shows,now,maxTV);
+  const tvEntries=addPersonalNextTags(eligibleTv,personalState,tvUpNext);
   const posterStyle=await loadPosterConfig(path.join(root,'config/poster-style.json'));
   const movieImages=await renderDiscoveryPosters(movieEntries,{outputDirectory,baseUrl,fetchImpl,style:posterStyle.upcomingMovies,posterFolder:'upcoming-movies',skipFailures:true,studioSamples:6});
   const tvImages=await renderDiscoveryPosters(tvEntries,{outputDirectory,baseUrl,fetchImpl,style:posterStyle.upcomingTV,posterFolder:'upcoming-tv',skipFailures:true,studioSamples:6});
@@ -316,6 +320,9 @@ export async function refreshGlobalDiscovery({
     generatedAt:now.toISOString(),dataFetchedAt:cache.fetchedAt,source:'TMDB movie/TV discovery + TVmaze global premiere schedule',
     upcomingMovies:movieImages.metas.length,upcomingTV:tvImages.metas.length,
     movieWindowDays:90,tvWindowDays:60,
+    streamingWhitelist:[...UPCOMING_TV_STREAMING_WHITELIST],
+    tvCandidatesFetched:cache.shows.length,
+    tvWithoutVerifiedPlatform:cache.shows.filter(row => !upcomingTvStreamingPlatform(row)).length,
     warnings:[...warnings,...movieImages.warnings,...tvImages.warnings].slice(0,30),
   };
   await writeFile(statusFile,json(status));

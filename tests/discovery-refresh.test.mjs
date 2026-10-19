@@ -21,9 +21,9 @@ async function workspace(){
 const description='A determined family discovers the hidden truth behind a mysterious village disappearance.';
 const movie={id:40,title:'Upcoming Film',poster_path:'/movie.jpg',backdrop_path:'/bg.jpg',overview:description,popularity:20,
   imdb_id:'tt1234567',release_dates:{results:[{iso_3166_1:'US',release_dates:[{type:3,release_date:'2026-11-06T00:00:00Z'}]}]}};
-const newShow={id:50,name:'Fresh Drama',poster_path:'/new.jpg',overview:description,popularity:10,first_air_date:'2026-11-07',genre_ids:[18]};
-const returning={id:60,name:'Returning Drama',poster_path:'/return.jpg',overview:description,popularity:22,first_air_date:'2022-03-10',genre_ids:[18]};
-const tvmaze={id:77,name:'Returning Drama',type:'Scripted',genres:['Drama'],image:{medium:'https://tvmaze.com/image.jpg'},
+const newShow={networks:[{name:'Netflix'}],id:50,name:'Fresh Drama',poster_path:'/new.jpg',overview:description,popularity:10,first_air_date:'2026-11-07',genre_ids:[18]};
+const returning={networks:[{name:'Crunchyroll'}],id:60,name:'Returning Drama',poster_path:'/return.jpg',overview:description,popularity:22,first_air_date:'2022-03-10',genre_ids:[18]};
+const tvmaze={id:77,name:'Returning Drama',webChannel:{name:'Crunchyroll'},type:'Scripted',genres:['Drama'],image:{medium:'https://tvmaze.com/image.jpg'},
   rating:{average:8},externals:{imdb:'tt7654321'},url:'https://www.tvmaze.com/shows/77/returning-drama'};
 function fakeFetch(image, log){
   return async (url)=>{
@@ -81,6 +81,8 @@ test('full global refresh appends two rows, publishes tagged artwork and metadat
     const status=JSON.parse(await readFile(path.join(output,'status.json'),'utf8'));
     assert.equal(status.movieRow.published,1);
     assert.equal(status.discovery.upcomingTV,2);
+    assert.ok(status.discovery.streamingWhitelist.includes('Crunchyroll'));
+    assert.equal(status.discovery.tvWithoutVerifiedPlatform,0);
     const firstTmdbCalls=calls.filter(x=>x.includes('api.themoviedb.org')).length;
     assert.ok(firstTmdbCalls>0);
     await refreshGlobalDiscovery({...opts,now:new Date('2026-10-19T12:00:00Z')});

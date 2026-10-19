@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {
   pickMoviePremiere, isTvmazePremiere, tvmazePremieres,
   isQualityTitle, buildUpcomingMovies, buildUpcomingShows,
-  dateLabel, tier,
+  dateLabel, tier, upcomingTvStreamingPlatform, UPCOMING_TV_STREAMING_WHITELIST,
 } from '../src/discovery.mjs';
 const now=new Date('2026-10-19T12:00:00Z');
 const event=(type, date)=>({type,release_date:`${date}T00:00:00.000Z`});
 const release=(country,values)=>({iso_3166_1:country,release_dates:values});
 const poster='/poster.jpg', overview='A richly imagined series full of tense character drama and twists.';
 const film=(id,date,more={})=>({id,title:`Movie ${id}`,poster_path:poster,overview,popularity:20,release_dates:{results:[release('US',[event(3,date)])]},...more});
-const show=(id,name='Example Show')=>({id,name,poster_path:poster,overview,popularity:30,genre_ids:[18],first_air_date:'2026-11-19'});
+const show=(id,name='Example Show')=>({networks:[{name:'Netflix'}],id,name,poster_path:poster,overview,popularity:30,genre_ids:[18],first_air_date:'2026-11-19'});
 const ep=(season,number,airdate,showOverride={})=>({season,number,airdate,show:{id:99,name:'Excellent Drama',type:'Scripted',genres:['Drama'],...showOverride}});
 
 test('movie upcoming considers only commercial premieres; festival dates are not home releases',()=>{
@@ -129,4 +129,44 @@ test('movie statuses distinguish limited, streaming and festival-only premieres'
   ],now);
   assert.deepEqual(new Set(entries.map(e=>e.tags.statusKey)),new Set(['limited','streaming','premiere']));
   assert.ok(entries.every(e=>e.meta.poster.startsWith('https://image.tmdb.org/')));
+});
+
+test('Upcoming TV platform whitelist includes nine US streamers including Crunchyroll',()=>{
+  assert.deepEqual(UPCOMING_TV_STREAMING_WHITELIST,[
+    'Netflix','HBO Max','Prime Video','Apple TV+','Disney+','Hulu',
+    'Paramount+','Peacock','Crunchyroll','HIDIVE',
+  ]);
+  for(const name of UPCOMING_TV_STREAMING_WHITELIST){
+    assert.equal(upcomingTvStreamingPlatform({tmdb:{networks:[{name}]}})?.name,name);
+  }
+  assert.equal(upcomingTvStreamingPlatform({tmdb:{networks:[{name:'HBO'}]}})?.name,'HBO Max');
+  assert.equal(upcomingTvStreamingPlatform({tmdb:{networks:[{name:'Amazon Prime Video'}]}})?.name,'Prime Video');
+});
+test('International Crunchyroll, HIDIVE and Netflix dramas are included without US-country or English restriction',()=>{
+  const anime=show(710,'東京のアニメ');anime.networks=[{name:'Crunchyroll'}];anime.origin_country=['JP'];
+  const drama=show(711,'한국 드라마');drama.networks=[];drama.origin_country=['KR'];
+  const hidive=show(712,'HIDIVE New Anime');hidive.networks=[{name:'HIDIVE'}];hidive.origin_country=['JP'];
+  const entries=buildUpcomingShows([
+    {tmdb:hidive,season:1,date:'2026-11-21'},
+    {tmdb:anime,season:1,date:'2026-11-19'},
+    {tmdb:drama,season:2,date:'2026-11-20',tvmazeWebChannel:{name:'Netflix'}},
+  ],now);
+  assert.equal(entries.length,3);
+  assert.ok(entries.some(e=>e.meta.description.includes('Streaming outlet: HIDIVE')));
+  assert.ok(entries.some(e=>e.meta.description.includes('Streaming outlet: Crunchyroll')));
+  assert.ok(entries.some(e=>e.meta.description.includes('Streaming outlet: Netflix')));
+});
+test('Upcoming TV rejects broadcast, unknown networks and merely licensed past seasons',()=>{
+  const broadcast=show(720,'Broadcast');broadcast.networks=[{name:'NBC'}];
+  const licensed=show(721,'Licensed Show');licensed.networks=[];
+  licensed['watch/providers']={results:{US:{flatrate:[{provider_name:'Netflix'}]}}};
+  const unknown=show(722,'Unknown');unknown.networks=[];
+  const accepted=show(723,'Crunchyroll Originals');accepted.networks=[];
+  const entries=buildUpcomingShows([
+    {tmdb:broadcast,season:1,date:'2026-11-19'},
+    {tmdb:licensed,season:1,date:'2026-11-19'},
+    {tmdb:unknown,season:1,date:'2026-11-19'},
+    {tmdb:accepted,season:2,date:'2026-11-19',tvmazeWebChannel:{name:'Crunchyroll'}},
+  ],now);
+  assert.deepEqual(entries.map(e=>e.meta.name),['Crunchyroll Originals']);
 });

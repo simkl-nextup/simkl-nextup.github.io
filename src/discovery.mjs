@@ -9,6 +9,50 @@ export const DAY = 86400000;
 const UNDESIRED_TV = /\b(?:news|talk|reality|game show|sports?|soap|variety|weather|shopping|late night|awards?)\b/i;
 const UNDESIRED_NAME = /\b(?:tonight|live news|morning show|daily news|evening news|lottery|highlights|weather forecast)\b/i;
 const FILM_FORMATS = new Map([[1,'PREMIERE'],[2,'LIMITED'],[3,'THEATRICAL'],[4,'STREAMING'],[6,'STREAMING']]);
+// Allowlisted *premiere outlets*, not general availability providers. A show
+// that happens to be licensed on Netflix today does not prove its next season
+// will premiere there. Only TMDB networks or TVmaze's broadcaster/webChannel
+// are used; TMDB watch/providers is deliberately NOT used.
+export const UPCOMING_TV_STREAMING_WHITELIST = Object.freeze([
+  'Netflix', 'HBO Max', 'Prime Video', 'Apple TV+', 'Disney+', 'Hulu',
+  'Paramount+', 'Peacock', 'Crunchyroll', 'HIDIVE',
+]);
+const STREAMING_ALIASES = new Map([
+  ['netflix','Netflix'],
+  ['hbo max','HBO Max'], ['max','HBO Max'], ['hbo','HBO Max'],
+  ['amazon prime video','Prime Video'], ['prime video','Prime Video'], ['amazon video','Prime Video'],
+  ['apple tv+','Apple TV+'], ['apple tv plus','Apple TV+'], ['apple tv','Apple TV+'],
+  ['disney+','Disney+'], ['disney plus','Disney+'],
+  ['hulu','Hulu'],
+  ['paramount+','Paramount+'], ['paramount plus','Paramount+'],
+  ['peacock','Peacock'], ['peacock premium','Peacock'],
+  ['crunchyroll','Crunchyroll'], ['hidive','HIDIVE'],
+]);
+function streamingName(name) {
+  const normalized = String(name || '').normalize('NFKC').trim().toLowerCase()
+    .replace(/\s+/g,' ').replace(/\s*\+\s*/g,'+');
+  return STREAMING_ALIASES.get(normalized) || null;
+}
+// Return an audited service + metadata origin or null for unverified outlets.
+// No country/language restriction: international Netflix or Crunchyroll shows
+// are as eligible as US-made shows when the platform itself is confirmed.
+export function upcomingTvStreamingPlatform(row) {
+  const tmdb=row?.tmdb || row?.details || row;
+  const webChannel = row?.tvmazeWebChannel || row?.show?.webChannel;
+  const webName = typeof webChannel === 'string' ? webChannel : webChannel?.name;
+  const webMatch=streamingName(webName);
+  if(webMatch) return {name:webMatch,source:'TVmaze webChannel'};
+  const networks=Array.isArray(tmdb?.networks)?tmdb.networks:[];
+  for(const network of networks) {
+    const found=streamingName(network?.name);
+    if(found)return {name:found,source:'TMDB networks'};
+  }
+  const tvmazeNetwork=row?.tvmazeNetwork || row?.show?.network;
+  const networkName=typeof tvmazeNetwork==='string'?tvmazeNetwork:tvmazeNetwork?.name;
+  const channelMatch=streamingName(networkName);
+  if(channelMatch)return {name:channelMatch,source:'TVmaze network'};
+  return null;
+}
 export const day = (date) => new Date(date).toISOString().slice(0,10);
 export function futureEnd(now, days) { return day(new Date(Date.parse(`${day(now)}T00:00:00Z`) + days * DAY)); }
 export function daysUntil(date, today) { return Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / DAY); }
@@ -196,6 +240,8 @@ export function buildUpcomingShows(candidates, now=new Date(), maxItems=50) {
     const tmdb=r.tmdb||r.details||r, season=Number(r.season||1);
     const date=validDay(r.date||tmdb.first_air_date);
     if (!isQualityTitle(tmdb,{tv:true}) || !date || date<day(now) || date>futureEnd(now,60) || season<1) continue;
+    const platform=upcomingTvStreamingPlatform(r);
+    if(!platform) continue;
     const imdb=r.imdb || tmdb.external_ids?.imdb_id || tmdb.imdb_id;
     const chip=season===1?'NEW SERIES':`SEASON ${season}`;
     const entry=releaseEntry(tmdb,date,chip,'series',imdb,now,scoreItem(tmdb,{tv:true,season}),season===1?'Series premiere on':`Season ${season} premiere on`);
@@ -208,6 +254,7 @@ export function buildUpcomingShows(candidates, now=new Date(), maxItems=50) {
     entry.tags.season = season;
     entry.tags.next = Boolean(r.next);
     entry.tags.compactDate = true;
+    entry.meta.description += ` Streaming outlet: ${platform.name} (${platform.source}).`;
     if(r.tvmazeUrl)entry.meta.links.push({name:'Schedule on TVmaze',category:'tvmaze',url:r.tvmazeUrl});
     rows.push(entry);
   }
