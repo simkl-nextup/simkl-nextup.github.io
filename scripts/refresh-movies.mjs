@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { MOVIE_CATALOG_ID, MOVIE_CATALOG_NAME, COMING_SOON_DAYS, buildMovieCatalog } from '../src/movie-releases.mjs';
 import { renderMoviePosters } from '../src/movie-posters.mjs';
 import { loadPosterConfig } from '../src/poster-style.mjs';
+import { writeReleaseStudio } from '../src/release-studio.mjs';
 import { appendPublicPath, deriveBaseUrl } from '../src/site.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -140,8 +141,10 @@ export async function refreshMovieRow({
   const posterConfig = await loadPosterConfig(path.join(root, 'config/poster-style.json'));
   const rendered = await renderMoviePosters(entries, {
     outputDirectory, baseUrl, fetchImpl,
-    tvStyle: posterConfig.tv, animeStyle: posterConfig.anime,
+    tvStyle: posterConfig.homeReleases, animeStyle: posterConfig.homeReleases.side,
+    studioSamples: 6,
   });
+  await writeReleaseStudio({outputDirectory,account:'homeReleases',samples:rendered.studio,generatedAt:now});
   const manifestPath = path.join(outputDirectory, 'manifest.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   if (manifest.id !== 'community.simkl.new-tv-episodes.account2'

@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadPosterConfig } from '../src/poster-style.mjs';
+import { writeReleaseStudio } from '../src/release-studio.mjs';
 import { renderMoviePosters } from '../src/movie-posters.mjs';
 import { deriveBaseUrl, appendPublicPath } from '../src/site.mjs';
 import {
@@ -148,8 +149,10 @@ export async function refreshGlobalDiscovery({
   const movieEntries=buildUpcomingMovies(cache.movies,now,maxMovies);
   const tvEntries=buildUpcomingShows(cache.shows,now,maxTV);
   const posterStyle=await loadPosterConfig(path.join(root,'config/poster-style.json'));
-  const movieImages=await renderMoviePosters(movieEntries,{outputDirectory,baseUrl,fetchImpl,tvStyle:posterStyle.tv,animeStyle:posterStyle.anime,posterFolder:'upcoming-movies',skipFailures:true});
-  const tvImages=await renderMoviePosters(tvEntries,{outputDirectory,baseUrl,fetchImpl,tvStyle:posterStyle.tv,animeStyle:posterStyle.anime,posterFolder:'upcoming-tv',skipFailures:true});
+  const movieImages=await renderMoviePosters(movieEntries,{outputDirectory,baseUrl,fetchImpl,tvStyle:posterStyle.upcomingMovies,animeStyle:posterStyle.upcomingMovies.side,posterFolder:'upcoming-movies',skipFailures:true,studioSamples:6});
+  const tvImages=await renderMoviePosters(tvEntries,{outputDirectory,baseUrl,fetchImpl,tvStyle:posterStyle.upcomingTV,animeStyle:posterStyle.upcomingTV.side,posterFolder:'upcoming-tv',skipFailures:true,studioSamples:6});
+  await writeReleaseStudio({outputDirectory,account:'upcomingMovies',samples:movieImages.studio,generatedAt:now});
+  await writeReleaseStudio({outputDirectory,account:'upcomingTV',samples:tvImages.studio,generatedAt:now});
   const manifestPath=path.join(outputDirectory,'manifest.json');
   const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
   if(manifest.id!=='community.simkl.new-tv-episodes.account2' || !manifest.catalogs?.some(c=>c.id==='simkl-plan-to-watch-home-releases-account2')) {

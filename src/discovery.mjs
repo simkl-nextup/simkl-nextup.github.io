@@ -136,6 +136,11 @@ export function buildUpcomingShows(candidates, now=new Date(), maxItems=50) {
     const imdb=r.imdb || tmdb.external_ids?.imdb_id || tmdb.imdb_id;
     const chip=season===1?'NEW SERIES':`SEASON ${season}`;
     const entry=releaseEntry(tmdb,date,chip,'series',imdb,now,scoreItem(tmdb,{tv:true,season}),season===1?'Series premiere on':`Season ${season} premiere on`);
+    // Up Next-like, adaptive top tab: the season and its premiere date belong
+    // together. No grey/redundant left-side season chip for this row.
+    entry.tags.main = season===1 ? `NEW SERIES · ${dateLabel(date)}` : `S${season} · ${dateLabel(date)}`;
+    entry.tags.chip = null;
+    entry.tags.compactDate = false;
     if(r.tvmazeUrl)entry.meta.links.push({name:'Schedule on TVmaze',category:'tvmaze',url:r.tvmazeUrl});
     rows.push(entry);
   }

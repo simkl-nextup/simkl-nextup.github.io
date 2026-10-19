@@ -4,6 +4,8 @@
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import sharp from 'sharp';
+import { posterTints } from './poster-tags.mjs';
 
 import { composeMovieReleasePoster, TAG_STYLE_VERSION } from './poster-tags.mjs';
 import { normalizePosterStyle } from './poster-style.mjs';
@@ -34,11 +36,12 @@ async function fetchPoster(url, fetchImpl) {
   } finally { clearTimeout(timer); }
 }
 
-export async function renderMoviePosters(entries, { outputDirectory, baseUrl, fetchImpl = fetch, tvStyle, animeStyle, posterFolder = "movie-releases", skipFailures = false } = {}) {
+export async function renderMoviePosters(entries, { outputDirectory, baseUrl, fetchImpl = fetch, tvStyle, animeStyle, posterFolder = "movie-releases", skipFailures = false, studioSamples = 0 } = {}) {
   const directory = path.join(outputDirectory, 'posters', posterFolder);
   await mkdir(directory, { recursive: true });
   const warnings = [];
   const result = Array(entries.length);
+  const studio = Array(entries.length).fill(null);
   let cursor = 0;
   async function worker() {
     while (cursor < entries.length) {
@@ -73,6 +76,22 @@ export async function renderMoviePosters(entries, { outputDirectory, baseUrl, fe
       });
       await writeFile(path.join(directory, name), rendered);
       meta.poster = `${baseUrl.replace(/\/$/, '')}/posters/${posterFolder}/${name}`;
+      if (index < studioSamples) {
+        try {
+          const baseName = `base-${name}`;
+          const previewDir = path.join(outputDirectory, 'studio', 'base', posterFolder);
+          await mkdir(previewDir, { recursive: true });
+          await writeFile(path.join(previewDir, baseName),
+            await sharp(bytes).resize(500, 750, { fit: 'cover', position: 'centre' }).webp({quality: 88}).toBuffer());
+          studio[index] = {
+            name: meta.name, id: meta.id, tags: entry.tags,
+            poster: `account-2/studio/base/${posterFolder}/${baseName}`,
+            tints: await posterTints(bytes),
+          };
+        } catch (err) {
+          warnings.push({ id: meta.id, warning: `Studio preview unavailable: ${err.message}` });
+        }
+      }
     } catch (error) {
       throw new Error(`Cannot publish ${meta.id} without the required release tags: ${error.message}`);
     }
@@ -84,5 +103,5 @@ export async function renderMoviePosters(entries, { outputDirectory, baseUrl, fe
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, entries.length) }, () => worker()));
-  return { metas: result.filter(Boolean), warnings };
+  return { metas: result.filter(Boolean), warnings, studio: studio.filter(Boolean) };
 }

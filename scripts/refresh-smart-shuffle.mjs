@@ -7,8 +7,6 @@ import {
   SMART_SHUFFLE_ID, SMART_SHUFFLE_NAME, SMART_PAGE_SIZE,
   buildSmartEntries, interleaveSmartMovies, paginateSmartCatalog,
 } from '../src/smart-shuffle.mjs';
-import { renderMoviePosters } from '../src/movie-posters.mjs';
-import { loadPosterConfig } from '../src/poster-style.mjs';
 import { appendPublicPath, deriveBaseUrl } from '../src/site.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -22,7 +20,6 @@ export async function refreshSmartShuffle({
   clientId,accessToken,fetchImpl=fetch,now=new Date(),
   outputDirectory=path.join(root,'public/account-2'),
   releaseStateFile=path.join(root,'state/account-2/movie-release-state.json'),
-  posterSettingsFile=path.join(root,'config/poster-style.json'),
   baseUrl=appendPublicPath(deriveBaseUrl({
     explicitBaseUrl:process.env.PUBLIC_BASE_URL,
     githubRepository:process.env.GITHUB_REPOSITORY,
@@ -40,18 +37,17 @@ export async function refreshSmartShuffle({
   if(!Array.isArray(data?.movies))throw new Error('Simkl movie list has no movies array');
   const cache=JSON.parse(await readFile(releaseStateFile,'utf8'));
   if(!cache?.movies || typeof cache.movies!=='object')throw new Error('Home Releases movie cache missing or invalid: run refresh:movies first');
-  const { entries, skipped }=buildSmartEntries(data.movies,cache.movies,{now});
-  const result=interleaveSmartMovies(entries,{now,randomBetween,rng});
-  const styles=await loadPosterConfig(posterSettingsFile);
-  const tagged=result.entries.filter(entry=>entry.tags);
-  // Only titles with verified home-release dates need an overlay. Other
-  // watchlist titles retain their original BetterPosters / TMDB base image.
-  const rendered=await renderMoviePosters(tagged,{
-    outputDirectory,baseUrl,fetchImpl,tvStyle:styles.tv,animeStyle:styles.anime,
-    posterFolder:'smart-shuffle',skipFailures:true,
-  });
-  const byId=new Map(rendered.metas.map(meta=>[meta.id,meta]));
-  const metas=result.entries.map(({meta})=>byId.get(meta.id) ?? meta);
+  // Match the EXACT published Home Releases row, not independently computed
+  // old release dates. This preserves its cutoff and any max-items limit.
+  const homeCatalogPath=path.join(outputDirectory,'catalog','movie',
+    'simkl-plan-to-watch-home-releases-account2.json');
+  const homeCatalog=JSON.parse(await readFile(homeCatalogPath,'utf8'));
+  if(!Array.isArray(homeCatalog?.metas)) throw new Error('Home Releases catalog missing metas array');
+  const { entries, skipped }=buildSmartEntries(data.movies,cache.movies,{homeCatalog:homeCatalog.metas});
+  const result=interleaveSmartMovies(entries,{randomBetween,rng});
+  // Featured movies reuse the exact rendered poster already published by
+  // Home Releases. Random movies stay plain — no extra poster renders.
+  const metas=result.entries.map(({meta})=>meta);
 
   const manifestPath=path.join(outputDirectory,'manifest.json');
   const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
@@ -92,11 +88,11 @@ export async function refreshSmartShuffle({
   const status=JSON.parse(await readFile(statusPath,'utf8'));
   status.smartShuffle={catalogId:SMART_SHUFFLE_ID,totalWatchlist:data.movies.length,
     published:metas.length,featured:result.featured,random:result.shuffled,
+    taggedFromHomeReleases:result.featured,
     randomBetween,pageSize,pages:pages.length,
     generatedAt:now.toISOString(),shuffleMode:'reshuffle each scheduled build',
     releaseCacheSource:'existing Account 2 movie-release-state.json',
-    warnings:[...skipped.map(s=>`${s.id}: ${s.reason}`),
-      ...rendered.warnings.map(w=>`${w.id}: ${w.warning}`)].slice(0,30)};
+    warnings:skipped.map(s=>`${s.id}: ${s.reason}`).slice(0,30)};
   await writeFile(statusPath,toJson(status));
   await writeFile(manifestPath,toJson(manifest));
   return {metas,status:status.smartShuffle};

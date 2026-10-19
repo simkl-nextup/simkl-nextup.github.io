@@ -82,7 +82,8 @@ test('series and returning seasons expose stable metadata and correct tags',()=>
     {tmdb:show(3,'Weekly Episode'),season:2,date:'2026-10-11'},
   ],now);
   assert.equal(entries.length,2);
-  assert.deepEqual(entries.map(x=>x.tags.chip).sort(),['NEW SERIES','SEASON 2']);
+  assert.deepEqual(entries.map(x=>x.tags.chip),[null,null]);
+  assert.deepEqual(entries.map(x=>x.tags.main).sort(), ['NEW SERIES · NOV 19','S2 · NOV 20'].sort());
   assert.ok(entries.some(x=>x.meta.id==='tt1234567' && x.meta.type==='series'));
   assert.ok(entries.every(x=>x.meta.poster.startsWith('https://')));
 });

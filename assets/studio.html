@@ -104,7 +104,7 @@
 
 <dialog id="dlg">
   <h3 style="margin-top:0">Save &amp; deploy</h3>
-  <p>This commits <code id="cfg-path"></code> to <span id="repo-name"></span> with the settings for <b>both rows</b>. Saving that file starts the refresh workflow, and the new posters appear in Nuvio once it finishes (usually a few minutes).</p>
+  <p>This commits <code id="cfg-path"></code> to <span id="repo-name"></span> with the settings for <b>all five styled rows</b>. The Smart Shuffle row automatically reuses Home Releases posters. Saving that file starts the refresh workflow, and the new posters appear in Nuvio once it finishes (usually a few minutes).</p>
   <p>It needs a GitHub <b>fine-grained personal access token</b>:</p>
   <ol>
     <li>GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token.</li>
@@ -133,11 +133,15 @@
   };
 
   // Each row publishes its own sample cards; the TV row lives under account-2/.
-  const SOURCES = { anime: "studio/", tv: "account-2/studio/" };
+  const SOURCES = {
+    anime: "studio/", tv: "account-2/studio/",
+    homeReleases: "account-2/studio/", upcomingMovies: "account-2/studio/", upcomingTV: "account-2/studio/",
+  };
   const loaded = {};
   await Promise.all(Object.entries(SOURCES).map(async ([account, base]) => {
     try {
-      const res = await fetch(base + "studio-data.json", { cache: "no-store" });
+      const extra = ["homeReleases", "upcomingMovies", "upcomingTV"].includes(account);
+      const res = await fetch(base + (extra ? `${account}.json` : "studio-data.json"), { cache: "no-store" });
       if (res.ok) loaded[account] = await res.json();
     } catch {}
   }));
@@ -150,9 +154,12 @@
   const accounts = data.accounts || { anime: { label: "Anime row" }, tv: { label: "TV row · Account 2" } };
   // Both builds read the same file in the same run; take the newest copy.
   const newest = Object.values(loaded).sort((a, b) => String(b.generatedAt).localeCompare(String(a.generatedAt)))[0];
-  const live = structuredClone(newest.config || data.defaultConfig);
+  // Only anime/TV publish the shared settings schema. Discovery snapshots
+  // contain public preview artwork, not a separate settings copy.
+  const fullData = [loaded.anime, loaded.tv].filter(Boolean).sort((a, b) => String(b.generatedAt).localeCompare(String(a.generatedAt)))[0] || data;
+  const live = structuredClone(fullData.config || data.defaultConfig);
   for (const k of Object.keys(accounts)) live[k] = live[k] || structuredClone(data.defaultConfig[k]);
-  const liveOverrides = { ...(newest.config?.dubOverrides || {}) };
+  const liveOverrides = { ...(fullData.config?.dubOverrides || {}) };
   let styles = structuredClone(live);
   delete styles.dubOverrides;
   let overrides = { ...liveOverrides };
@@ -172,7 +179,7 @@
     const n = samplesFor(account).length;
     $("meta").textContent = `${accounts[account].label} · ${n} sample card${n === 1 ? "" : "s"} · settings file ${data.configPath}` + (data.repository ? ` · ${data.repository}` : "");
   }
-  const differs = (k) => [...Object.keys(options), "look"].some((key) => String(styles[k][key]) !== String(live[k][key]))
+  const differs = (k) => JSON.stringify(styles[k]) !== JSON.stringify(live[k])
     || (k === "anime" && overridesChanged());
   function renderTabs() {
     const box = $("tabs");
@@ -201,7 +208,7 @@
   const rgba = (hex, a) => { const [r, g, b] = hex2rgb(hex); return `rgba(${r},${g},${b},${a})`; };
 
   // ---------- controls ----------
-  function optionBlock(key, opt, value, liveValue, { disabled = false, isLook = false } = {}) {
+  function optionBlock(key, opt, value, liveValue, { disabled = false, isLook = false, section = "top" } = {}) {
     const wrap = document.createElement("div");
     wrap.className = "opt" + (isLook ? " look" : "") + (disabled ? " off" : "");
     wrap.innerHTML = `<h3>${opt.label}</h3>`;
@@ -213,7 +220,8 @@
       b.disabled = disabled;
       b.innerHTML = `${text}${String(liveValue) === choice ? '<span class="live">● live</span>' : ""}`;
       b.onclick = () => {
-        style[key] = isLook ? choice : (typeof data.defaultConfig.anime[key] === "boolean" ? choice === "true" : choice);
+        const target = section === "side" ? style.side : style;
+        target[key] = isLook ? choice : (typeof data.defaultConfig.anime[key] === "boolean" ? choice === "true" : choice);
         saveDraft();
         renderAll();
       };
@@ -225,6 +233,25 @@
   function renderControls() {
     const box = $("controls");
     box.innerHTML = "";
+    if (accounts[account].movieTags) {
+      const note = document.createElement("p");
+      note.className = "note";
+      note.textContent = "BetterPosters supplies the base artwork. These settings control only the local release-date/season tab and, where present, the side format chip. Smart Shuffle inherits the finished Home Releases poster.";
+      box.append(note);
+      const topTitle = document.createElement("h3"); topTitle.textContent = "Top tab";
+      box.append(topTitle);
+      for (const key of ["size", "contrast", "outlineOnWhiteText", "outlineOnDarkText", "outlineWeight", "tagShadow"]) {
+        box.append(optionBlock(key, options[key], style[key], live[account][key]));
+      }
+      if (account !== "upcomingTV") {
+        const sideTitle = document.createElement("h3"); sideTitle.textContent = "Side tag · anime dub-chip styling";
+        box.append(sideTitle);
+        for (const key of ["size", "outlineOnWhiteText", "outlineWeight", "tagShadow"]) {
+          box.append(optionBlock(key, options[key], style.side[key], live[account].side[key], {section:"side"}));
+        }
+      }
+      return;
+    }
     box.append(optionBlock("look", looks, style.look, live[account].look, { isLook: true }));
     const classic = style.look === "classic";
     if (classic) {
@@ -247,9 +274,10 @@
     span.style.fontSize = px + "px";
     span.style.color = color;
     const dark = color.toUpperCase() === "#161616";
-    const want = extra.outline ?? (dark ? style.outlineOnDarkText : style.outlineOnWhiteText);
+    const selected = extra.tagStyle || style;
+    const want = extra.outline ?? (dark ? selected.outlineOnDarkText : selected.outlineOnWhiteText);
     if (want) {
-      const r = Math.max(2, Math.round(px * (style.outlineWeight === "bold" ? 0.075 : 0.055)));
+      const r = Math.max(2, Math.round(px * (selected.outlineWeight === "bold" ? 0.075 : 0.055)));
       span.style.webkitTextStroke = `${r * 2}px ${dark ? "rgba(255,255,255,.85)" : "rgba(0,0,0,.92)"}`;
       span.style.paintOrder = "stroke fill";
     }
@@ -257,19 +285,61 @@
     if (extra.alpha) span.style.opacity = extra.alpha;
     return span;
   }
-  function tagEl({ x, y, w, h, fill, opacity, radius, shape, center = true }) {
+  function tagEl({ x, y, w, h, fill, opacity, radius, shape, center = true, tagStyle = style }) {
     const d = document.createElement("div");
     d.className = "tag";
     Object.assign(d.style, { left: x + "px", top: y + "px", height: h + "px", background: rgba(fill, opacity) });
     if (w) d.style.width = w + "px";
     const r = radius + "px";
     d.style.borderRadius = shape === "top" ? `0 0 ${r} ${r}` : shape === "left" ? `0 ${r} ${r} 0` : shape === "right" ? `${r} 0 0 ${r}` : r;
-    if (style.tagShadow === "coloured") d.style.boxShadow = `0 9px 18px ${shadowShade(fill)}`;
+    if (tagStyle.tagShadow === "coloured") d.style.boxShadow = `0 9px 18px ${shadowShade(fill)}`;
     if (!center) d.style.justifyContent = "flex-start";
     return d;
   }
 
+  function renderMovieCard(sample) {
+    const L = layouts[style.size] || layouts.large;
+    const outer = document.createElement("div");
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.width = zoom + "px"; card.style.height = Math.round(zoom * 1.5) + "px";
+    const stage = document.createElement("div");
+    stage.className = "stage";
+    stage.style.transform = `scale(${zoom / 500})`;
+    const poster = document.createElement("img");
+    poster.className = "poster";
+    poster.src = sample.poster; poster.alt = ""; poster.loading = "lazy";
+    stage.append(poster);
+    const tint = style.contrast === "standard" ? sample.tints?.standard : sample.tints?.max;
+    const fill = /^#[0-9A-Fa-f]{6}$/.test(tint || "") ? tint : "#344359";
+    const main = sample.tags?.main || "";
+    const smallDate = Boolean(sample.tags?.compactDate) && /^[A-Z]{3} \d{1,2}$/.test(main);
+    const tabHeight = smallDate ? Math.round(L.tabH * 0.72) : L.tabH;
+    const tabRadius = smallDate ? Math.round(tabHeight * 0.41) : L.tabRadius;
+    const tab = tagEl({x:0,y:0,h:tabHeight,fill,opacity:L.tabOpacity,radius:tabRadius,shape:"top"});
+    tab.style.padding = `0 ${smallDate ? Math.round(L.tabPad*0.8) : L.tabPad}px`;
+    tab.style.left = "50%"; tab.style.transform = "translateX(-50%)";
+    tab.append(textEl(main, smallDate ? Math.round((L.tabFont - (style.topTab === 'single' ? 6 : 0))*0.85) : L.tabFont - (style.topTab === 'single' ? 6 : 0), inkFor(fill)));
+    stage.append(tab);
+    if (sample.tags?.chip) {
+      const sideStyle = style.side || style;
+      const S = layouts[sideStyle.size] || layouts.large;
+      const chipFill = sample.tags.released ? (data.colours?.dubReady || "#146DD5") : (data.colours?.dubBehind || "#505B70");
+      const chip = tagEl({x:0,y:tabHeight+S.chipGap,h:S.chipH,fill:chipFill,opacity:sample.tags.released ? S.chipOpacity : 0.9,radius:S.chipRadius,shape:"left",tagStyle:sideStyle});
+      chip.style.padding = `0 ${S.chipPad}px`;
+      const label = textEl(sample.tags.chip,S.chipFont,"#FFFFFF",{tagStyle:sideStyle});
+      chip.append(label);
+      stage.append(chip);
+    }
+    card.append(stage);
+    const caption = document.createElement("div");
+    caption.className = "name"; caption.style.width = zoom + "px"; caption.textContent = sample.name;
+    outer.append(card, caption);
+    return outer;
+  }
+
   function renderCard(sample) {
+    if (accounts[account].movieTags) return renderMovieCard(sample);
     const L = layouts[style.size] || layouts.large;
     const W = 500;
     const outer = document.createElement("div");
@@ -473,7 +543,7 @@
       if (current.ok) sha = (await current.json()).sha;
       else if (current.status !== 404) throw new Error(`GitHub said ${current.status} when reading the file.`);
       const body = {
-        message: "style: update anime poster style from studio",
+        message: "style: update Poster Studio row styles",
         content: btoa(unescape(encodeURIComponent(fileText()))),
         branch,
         ...(sha ? { sha } : {}),
@@ -485,7 +555,7 @@
           ? "GitHub refused the token. It needs Contents: Read and write on this repository."
           : `GitHub said ${put.status}${detail.message ? `: ${detail.message}` : ""}.`);
       }
-      for (const k of Object.keys(accounts)) live[k] = { ...styles[k] };
+      for (const k of Object.keys(accounts)) live[k] = structuredClone(styles[k]);
       for (const k of Object.keys(liveOverrides)) delete liveOverrides[k];
       Object.assign(liveOverrides, overrides);
       store.del("studio-draft-v2");

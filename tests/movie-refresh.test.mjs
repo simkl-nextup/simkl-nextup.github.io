@@ -50,6 +50,11 @@ test('refresh appends movies to existing TV addon and renders BetterPosters with
     assert.equal(result.movies.length, 1);
     assert.equal(result.status.released, 1);
     assert.match(result.movies[0].poster, /^https:\/\/test\.github\.io\/account-2\/posters\/movie-releases\//);
+    const homePreview = JSON.parse(await readFile(path.join(output, 'studio/homeReleases.json'),'utf8'));
+    assert.equal(homePreview.account,'homeReleases');
+    assert.equal(homePreview.samples.length,1);
+    assert.equal(homePreview.samples[0].tags.chip,'DIGITAL');
+    assert.ok(homePreview.samples[0].poster.includes('studio/base/movie-releases/'));
     const manifest = JSON.parse(await readFile(path.join(output, 'manifest.json'), 'utf8'));
     assert.deepEqual(manifest.types, ['series', 'movie']);
     assert.equal(manifest.catalogs.length, 2);

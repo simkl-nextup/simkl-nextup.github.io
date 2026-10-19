@@ -38,7 +38,7 @@ Simkl Next Up creates personalized **Up Next** catalogs from your Simkl watchlis
 
 The addon **provides catalogs and metadata, not video streams**. Playback still comes from your Stremio/Nuvio streaming addons.
 
-## Two addon URLs, three catalog rows
+## Two addon URLs; five Account 2 catalog rows
 
 | | Anime | TV series |
 |---|---|---|
@@ -47,7 +47,7 @@ The addon **provides catalogs and metadata, not video streams**. Playback still 
 | State and catalog | Separate | Separate |
 | Poster settings | Independent | Independent |
 
-The Account 2 addon is optional: configure `SIMKL_ACCESS_TOKEN_2` to enable it. That same addon now publishes **two rows** (TV series and movie home releases), while the primary anime addon remains independent. The movie row requires the existing `TMDB_READ_ACCESS_TOKEN` secret.
+The Account 2 addon is optional: configure `SIMKL_ACCESS_TOKEN_2` to enable it. That same addon publishes **five rows** (TV Up Next, Home Releases, Upcoming Movies, Upcoming TV Shows, and Smart Shuffle), while the primary anime addon remains independent. The movie row requires the existing `TMDB_READ_ACCESS_TOKEN` secret.
 
 ## New: Account 2 movie home-release row
 
@@ -59,9 +59,9 @@ The Account 2 addon is optional: configure `SIMKL_ACCESS_TOKEN_2` to enable it. 
 - Shows eligible released movies first, ordered by their most recent home-release event, and Coming Soon titles afterward, nearest upcoming home-release first. Old titles expire automatically after six calendar months.
 - Updates automatically to **Digital**, **Physical**, or **Digital + Physical**; a newly released format can bump a movie toward the front.
 - Never bumps a title merely because it was added late to your Simkl list. Removing it from Plan to Watch removes it from the row.
-- Uses `https://btttr.cc/poster/imdb/poster-default/{imdb_id}.jpg?tag=none` for the **base BetterPosters image**. The top release-date tab uses the **same TV tag drawing logic and settings** selected in Poster Studio; the left format chip uses the **same anime dub-chip logic and settings**. No extra bottom tag. A TMDB poster is used when BetterPosters fails or IMDb is missing.
+- Uses `https://btttr.cc/poster/imdb/poster-default/{imdb_id}.jpg?tag=none` for the **base BetterPosters image**. The top release-date tab uses the **same TV tag drawing primitives**, and the left format chip uses the **same anime dub-chip primitives**, each with independent Home Releases Studio settings. No extra bottom tag. A TMDB poster is used when BetterPosters fails or IMDb is missing.
 
-**Source limitations:** TMDB's country-specific release dates are community-entered and can be missing, delayed, or incorrect; a recorded release date is not a guarantee that a stream or disc is available in every country. No additional source or secret is required beyond your already-integrated TMDB token. Movie tags automatically inherit TV (top tab) and anime (side chip) settings from Poster Studio; no extra movie-specific control is needed. Details and troubleshooting: [`MOVIE_ROW.md`](MOVIE_ROW.md).
+**Source limitations:** TMDB's country-specific release dates are community-entered and can be missing, delayed, or incorrect; a recorded release date is not a guarantee that a stream or disc is available in every country. No additional source or secret is required beyond your already-integrated TMDB token. Home Releases has its own Poster Studio tab: top-tab settings and anime-style side-chip controls can be edited independently of the existing TV and Anime tabs. Initial settings preserve the previously selected look. Details and troubleshooting: [`MOVIE_ROW.md`](MOVIE_ROW.md).
 
 ## Artwork and customization
 
@@ -70,7 +70,7 @@ The Account 2 addon is optional: configure `SIMKL_ACCESS_TOKEN_2` to enable it. 
 - TMDB artwork, title logos, and TV ratings (when available).
 - TheTVDB metadata, seasons, episode stills, and grouping of related series records (when configured).
 - Anime extras: MyAnimeList scores and optional English-dub progress via AnimeSchedule.
-- **[Poster Studio](https://simkl-nextup.github.io/studio.html):** Customize the anime and TV rows separately with *Tags* or *Classic* looks, then preview your settings.
+- **[Poster Studio](https://simkl-nextup.github.io/studio.html):** Customize Anime, TV, Home Releases, Upcoming Movies, and Upcoming TV separately, with local previews. Smart Shuffle inherits its tagged posters unchanged from Home Releases.
 
 Poster preferences are saved in [`config/poster-style.json`](config/poster-style.json). Some enriched metadata and episode labels depend on the accuracy of their upstream sources.
 

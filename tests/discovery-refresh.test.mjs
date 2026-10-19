@@ -64,6 +64,12 @@ test('full global refresh appends two rows, publishes tagged artwork and metadat
     assert.ok(tvCat.metas.find(x=>x.id==='tt7654321'));
     assert.ok(tvCat.metas.find(x=>x.id==='tt7654321').links.some(x=>x.url.includes('tvmaze.com')));
     assert.ok(tvCat.metas.every(x=>x.poster.includes('upcoming-tv/')));
+    const movieStudio=JSON.parse(await readFile(path.join(output,'studio/upcomingMovies.json'),'utf8'));
+    const tvStudio=JSON.parse(await readFile(path.join(output,'studio/upcomingTV.json'),'utf8'));
+    assert.equal(movieStudio.samples.length,1);
+    assert.equal(tvStudio.samples.length,2);
+    assert.ok(tvStudio.samples.every(s=>s.tags.chip===null));
+    assert.ok(tvStudio.samples.some(s=>s.tags.main==='S3 · NOV 11'));
     assert.ok((await stat(path.join(output,'meta/series/tt7654321.json'))).isFile());
     assert.deepEqual(JSON.parse(await readFile(path.join(output,'meta/series/tt7654321.json'),'utf8')),existing);
     const published=JSON.stringify(movieCat)+JSON.stringify(tvCat)+JSON.stringify(manifest);

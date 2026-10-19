@@ -1,25 +1,17 @@
 // Additional Account 2 Simkl movie catalog, independent from Home Releases.
-// Interleave one chronologically-ordered fresh home release with two random
-// Plan-to-Watch movies. The *entire* list remains eligible, not just six months.
+// One movie from the *published* Home Releases row followed by two randomly
+// selected movies from the rest of Plan to Watch, repeated until all are used.
+// Only Home Releases movies inherit release tags/posters; everyone else uses
+// the untouched BetterPosters / TMDB base poster.
 import { randomInt } from 'node:crypto';
-import { classifyHomeReleases, formatMovieDate, movieTags } from './movie-releases.mjs';
 
 export const SMART_SHUFFLE_ID = 'simkl-movies-smart-shuffle-account2';
 export const SMART_SHUFFLE_NAME = 'Movies · Smart Shuffle · Simkl';
 export const SMART_PAGE_SIZE = 50;
 export const RANDOM_BETWEEN_RELEASES = 2;
 
-function plusMonthsBack(now, months) {
-  const d = new Date(now);
-  const year = d.getUTCFullYear(), month = d.getUTCMonth(), day = d.getUTCDate();
-  const first = new Date(Date.UTC(year, month - months, 1));
-  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
-  first.setUTCDate(Math.min(day, last));
-  return first.toISOString().slice(0,10);
-}
-
-// Inject rng for deterministic tests. Live builds use crypto randomInt, not a
-// fixed seed, so the uncategorized portion changes with each generated build.
+// Live builds use crypto randomInt, not a fixed seed. A new sequence is
+// generated on every successful scheduled build, not every client request.
 export function shuffleList(values, rng = (limit) => randomInt(limit)) {
   const result = [...values];
   for (let i = result.length - 1; i > 0; i--) {
@@ -31,39 +23,30 @@ export function shuffleList(values, rng = (limit) => randomInt(limit)) {
 }
 
 export function interleaveSmartMovies(entries, {
-  now = new Date(), randomBetween = RANDOM_BETWEEN_RELEASES, rng,
+  randomBetween = RANDOM_BETWEEN_RELEASES, rng,
 } = {}) {
   if (!Number.isInteger(randomBetween) || randomBetween < 0 || randomBetween > 20) {
     throw new Error('randomBetween must be an integer from 0 to 20');
   }
-  const today = new Date(now).toISOString().slice(0,10);
-  const cutoff = plusMonthsBack(now, 6);
   const seen = new Set(), featured = [], ordinary = [];
   for (const entry of entries) {
     if (!entry?.meta?.id || seen.has(entry.meta.id)) continue;
     seen.add(entry.meta.id);
-    const info = entry.release;
-    const first = info?.firstHomeDate;
-    const recent = first && first >= cutoff && first <= today && info?.released;
-    const imminent = first && first > today && info && !info.released;
-    if (recent || imminent) featured.push(entry);
+    // The source of truth is actual membership in the published Home
+    // Releases row (not an independently calculated or historical date).
+    if (Number.isInteger(entry.homeRank) && entry.homeRank >= 0) featured.push(entry);
     else ordinary.push(entry);
   }
-  featured.sort((a,b) => Number(b.release.released) - Number(a.release.released)
-    || (a.release.released
-      ? b.release.sortDate.localeCompare(a.release.sortDate)
-      : a.release.sortDate.localeCompare(b.release.sortDate))
-    || a.meta.id.localeCompare(b.meta.id));
+  // Preserve Home Releases' published order: released newest first, then
+  // confirmed Coming Soon, nearest first.
+  featured.sort((a, b) => a.homeRank - b.homeRank);
   const shuffled = shuffleList(ordinary, rng);
   const result = [];
   let i = 0, j = 0;
   while (i < featured.length || j < shuffled.length) {
     if (i < featured.length) result.push(featured[i++]);
-    for (let k=0; k<randomBetween && j<shuffled.length; k++) result.push(shuffled[j++]);
-    // Once releases run out, just append the remaining shuffled titles.
+    for (let k = 0; k < randomBetween && j < shuffled.length; k++) result.push(shuffled[j++]);
     if (i >= featured.length) { result.push(...shuffled.slice(j)); break; }
-    // If randomBetween=0, release titles come first and random entries still
-    // remain present at the end; never silently lose those entries.
   }
   return { entries: result, featured: featured.length, shuffled: ordinary.length };
 }
@@ -75,18 +58,17 @@ function posterFor(movie, tmdb, imdb) {
   return 'https://simkl.in/poster_no_pic_c.png';
 }
 
-function oldReleaseTags(release) {
-  const tags = movieTags(release);
-  // Old movie releases need the year, otherwise "OCT 6" falsely looks new.
-  if (release.released) {
-    const year = release.event.date.slice(2,4);
-    tags.main = `${formatMovieDate(release.event.date)} '${year}`;
-    tags.compactDate = true;
+// The Home Releases JSON has already applied ALL of the original rules,
+// including six months, 30-day Coming Soon, US priority and max row size.
+// Matching against that output ensures exactly the same tagged titles and
+// allows us to reuse its final rendered posters, rather than recomposing.
+export function buildSmartEntries(movies, cacheMovies = {}, { homeCatalog = [] } = {}) {
+  const homeById = new Map();
+  for (const [index, meta] of homeCatalog.entries()) {
+    if (meta?.type === 'movie' && typeof meta.id === 'string' && !homeById.has(meta.id)) {
+      homeById.set(meta.id, { rank: index, meta });
+    }
   }
-  return tags;
-}
-
-export function buildSmartEntries(movies, cacheMovies = {}, { now = new Date() } = {}) {
   const result = [], skipped = [];
   for (const row of movies) {
     if (row.status && row.status !== 'plantowatch') continue;
@@ -101,37 +83,35 @@ export function buildSmartEntries(movies, cacheMovies = {}, { now = new Date() }
     if (!id || (!cached?.title && !movie.title)) {
       skipped.push({ id: simklId, reason: 'missing ID or title' }); continue;
     }
-    // The Home Releases row intentionally applies a six-month cutoff. Here
-    // we inspect all available history so old movies can still carry tags.
-    const release = cached?.release_dates ? classifyHomeReleases(cached.release_dates, {
-      now, comingSoonDays: 30, releaseHistoryMonths: 2400,
-    }) : null;
-    const tags = release ? (release.firstHomeDate < plusMonthsBack(now, 6) ? oldReleaseTags(release) : movieTags(release)) : null;
+    const home = homeById.get(id);
     const meta = {
-      id, type:'movie', name: cached?.title || movie.title,
-      poster: posterFor(movie, cached, imdb),
-      ...(cached?.backdrop_path ? { background:`https://image.tmdb.org/t/p/w1280${cached.backdrop_path}` } : {}),
-      ...(movie.year || cached?.release_date ? { year: Number(movie.year || cached.release_date?.slice(0,4)) } : {}),
-      ...(cached?.genres?.length ? { genres: cached.genres.map(g=>g.name).filter(Boolean) } : {}),
-      ...(cached?.runtime ? {runtime:`${cached.runtime} min`} : {}),
-      ...(tags ? {releaseInfo:tags.label} : {}),
-      description: `${release ? `${tags.label} · ${formatMovieDate(release.event.date)} ${release.event.date.slice(0,4)} (${release.event.country || 'international'}). ` : 'Home release date not verified. '}${cached?.overview || ''}`.trim(),
+      id, type: 'movie', name: cached?.title || movie.title,
+      // Home Releases titles get precisely the SAME final rendered poster.
+      // Ordinary shuffled titles get plain BetterPosters, no home-release tabs.
+      poster: home?.meta?.poster || posterFor(movie, cached, imdb),
+      ...(cached?.backdrop_path ? { background: `https://image.tmdb.org/t/p/w1280${cached.backdrop_path}` } : {}),
+      ...(movie.year || cached?.release_date ? { year: Number(movie.year || cached.release_date?.slice(0, 4)) } : {}),
+      ...(cached?.genres?.length ? { genres: cached.genres.map(g => g.name).filter(Boolean) } : {}),
+      ...(cached?.runtime ? { runtime: `${cached.runtime} min` } : {}),
+      // No date/status hint for random titles. Even if a 2018 digital date
+      // exists in the cache, that title should have no Home Releases tag.
+      ...(home?.meta?.releaseInfo ? { releaseInfo: home.meta.releaseInfo } : {}),
+      description: (home?.meta?.description || cached?.overview || '').trim(),
       links: [
-        ...(simklId ? [{name:'View on Simkl',category:'simkl',url:`https://simkl.com/movies/${simklId}`}] : []),
-        ...(tmdbId ? [{name:'View on TMDB',category:'tmdb',url:`https://www.themoviedb.org/movie/${tmdbId}`}] : []),
+        ...(simklId ? [{ name: 'View on Simkl', category: 'simkl', url: `https://simkl.com/movies/${simklId}` }] : []),
+        ...(tmdbId ? [{ name: 'View on TMDB', category: 'tmdb', url: `https://www.themoviedb.org/movie/${tmdbId}` }] : []),
       ],
     };
-    result.push({ meta, release, tags, tmdbPoster:cached?.poster_path ? `https://image.tmdb.org/t/p/w500${cached.poster_path}` : null });
+    result.push({ meta, homeRank: home?.rank ?? null });
   }
-  return { entries:result, skipped };
+  return { entries: result, skipped };
 }
 
 export function paginateSmartCatalog(entries, pageSize = SMART_PAGE_SIZE) {
   if (!Number.isInteger(pageSize) || pageSize < 1) throw new Error('Invalid page size');
   const pages = [];
-  // Publish skip=0 and base even for an empty catalog.
-  for (let skip=0; skip<Math.max(entries.length,1); skip += pageSize) {
-    pages.push({ skip, metas:entries.slice(skip, skip+pageSize) });
+  for (let skip = 0; skip < Math.max(entries.length, 1); skip += pageSize) {
+    pages.push({ skip, metas: entries.slice(skip, skip + pageSize) });
   }
   return pages;
 }

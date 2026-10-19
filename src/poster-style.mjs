@@ -58,6 +58,9 @@ export const POSTER_LOOKS = {
 export const POSTER_ACCOUNTS = {
   anime: { label: "Anime row", defaultLook: "tags" },
   tv: { label: "TV row · Account 2", defaultLook: "classic" },
+  homeReleases: { label: "Home Releases · Account 2", defaultLook: "tags", movieTags: true },
+  upcomingMovies: { label: "Upcoming Movies · Account 2", defaultLook: "tags", movieTags: true },
+  upcomingTV: { label: "Upcoming TV Shows · Account 2", defaultLook: "tags", movieTags: true },
 };
 
 // 1.11.1 without the white outline on black text.
@@ -101,7 +104,20 @@ export function normalizePosterConfig(raw) {
   const legacy = !source.anime && !source.tv && Object.keys(POSTER_STYLE_OPTIONS).some((key) => key in source);
   const config = {};
   for (const account of Object.keys(POSTER_ACCOUNTS)) {
-    config[account] = normalizeAccountStyle(legacy && account === "anime" ? source : source[account], account);
+    const movieTags = POSTER_ACCOUNTS[account].movieTags;
+    // Preserve legacy visuals: before independent settings, movie top tags
+    // inherited TV and movie side chips inherited anime. Saved sections take
+    // priority; the three new rows never silently alter either existing row.
+    const raw = legacy && account === "anime" ? source : source[account];
+    if (movieTags) {
+      const initial = raw ?? { ...source.tv, look: "tags" };
+      config[account] = {
+        ...normalizeAccountStyle({ ...initial, look: "tags" }, account),
+        side: normalizePosterStyle(raw?.side ?? source.anime),
+      };
+    } else {
+      config[account] = normalizeAccountStyle(raw, account);
+    }
   }
   config.dubOverrides = normalizeDubOverrides(source.dubOverrides);
   return config;

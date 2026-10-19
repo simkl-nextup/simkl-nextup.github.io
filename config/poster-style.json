@@ -23,5 +23,68 @@
   },
   "dubOverrides": {
     "21": 1155
+  },
+  "homeReleases": {
+    "look": "tags",
+    "topTab": "single",
+    "size": "large",
+    "outlineOnWhiteText": true,
+    "outlineOnDarkText": false,
+    "outlineWeight": "thin",
+    "tagShadow": "coloured",
+    "contrast": "max",
+    "ratingShadow": true,
+    "side": {
+      "topTab": "single",
+      "size": "large",
+      "outlineOnWhiteText": true,
+      "outlineOnDarkText": false,
+      "outlineWeight": "thin",
+      "tagShadow": "coloured",
+      "contrast": "max",
+      "ratingShadow": true
+    }
+  },
+  "upcomingMovies": {
+    "look": "tags",
+    "topTab": "single",
+    "size": "large",
+    "outlineOnWhiteText": true,
+    "outlineOnDarkText": false,
+    "outlineWeight": "thin",
+    "tagShadow": "coloured",
+    "contrast": "max",
+    "ratingShadow": true,
+    "side": {
+      "topTab": "single",
+      "size": "large",
+      "outlineOnWhiteText": true,
+      "outlineOnDarkText": false,
+      "outlineWeight": "thin",
+      "tagShadow": "coloured",
+      "contrast": "max",
+      "ratingShadow": true
+    }
+  },
+  "upcomingTV": {
+    "look": "tags",
+    "topTab": "single",
+    "size": "large",
+    "outlineOnWhiteText": true,
+    "outlineOnDarkText": false,
+    "outlineWeight": "thin",
+    "tagShadow": "coloured",
+    "contrast": "max",
+    "ratingShadow": true,
+    "side": {
+      "topTab": "single",
+      "size": "large",
+      "outlineOnWhiteText": true,
+      "outlineOnDarkText": false,
+      "outlineWeight": "thin",
+      "tagShadow": "coloured",
+      "contrast": "max",
+      "ratingShadow": true
+    }
   }
 }

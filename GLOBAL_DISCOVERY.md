@@ -15,7 +15,7 @@ The installed manifest remains **`https://simkl-nextup.github.io/account-2/manif
 
 **Curation:** The result is a high-signal, Netflix-style preview rather than a comprehensive TV calendar. Requires usable artwork, a meaningful description, a valid date and stable metadata ID. Shows are ranked first by proximity (within 7 days, 8–30 days, then later) and then by TMDB popularity/metadata quality. Up to 50 of each type are published. There may be fewer than 50 entries, which is preferable to padding with low-quality titles.
 
-**Posters:** BetterPosters is used solely for the base artwork when an IMDb ID exists (`?tag=none`). The existing local renderer injects a compact TV-style adaptive-color **date tab** and anime dub-style **left chip** (`THEATRICAL`, `STREAMING`, `NEW SERIES`, `SEASON 2`, etc.). TV/anime settings from `config/poster-style.json` are respected. TMDB artwork is the fallback. No extra watchlist/status badge is added at the bottom.
+**Posters:** BetterPosters is used solely for the base artwork when an IMDb ID exists (`?tag=none`). The existing local renderer injects the adaptive-color **date tab** and an anime dub-style **left chip** for movies (`THEATRICAL` or `STREAMING`). Upcoming TV has **no redundant grey side chip**: the top tag reads `NEW SERIES · NOV 7` or `S3 · NOV 11`. Poster Studio now has separately editable Upcoming Movies and Upcoming TV tabs; they preserve the selected look on initial migration without changing Anime or TV. TMDB artwork is the fallback. No extra watchlist/status badge is added at the bottom.
 
 ## Data and attribution
 

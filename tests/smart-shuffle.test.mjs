@@ -1,117 +1,171 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, readFile, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import path from 'node:path';
-import {join} from 'node:path';
-import { buildSmartEntries,interleaveSmartMovies,paginateSmartCatalog,SMART_SHUFFLE_ID } from '../src/smart-shuffle.mjs';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path, { join } from 'node:path';
+import { buildSmartEntries, interleaveSmartMovies, paginateSmartCatalog, SMART_SHUFFLE_ID } from '../src/smart-shuffle.mjs';
 import { refreshSmartShuffle } from '../scripts/refresh-smart-shuffle.mjs';
 
-const make = (n, date, category='recent') => ({meta:{id:`tt${1000000+n}`,name:`Movie ${n}`,type:'movie',poster:`https://btttr.cc/poster/imdb/poster-default/tt${1000000+n}.jpg?tag=none`},
-  release:date?{released:category==='recent',firstHomeDate:date,sortDate:date}:null,tags:null});
-const seededRandom=(limit)=>limit-1;
+const seededRandom = (limit) => limit - 1;
+const make = (n, homeRank = null) => ({
+  meta: { id: `tt${1000000 + n}`, name: `Movie ${n}`, type: 'movie',
+    poster: `https://btttr.cc/poster/imdb/poster-default/tt${1000000 + n}.jpg?tag=none` },
+  homeRank,
+});
+const originalIds = [
+  'simkl-new-tv-episodes-account2', 'simkl-plan-to-watch-home-releases-account2',
+  'global-upcoming-movies', 'global-upcoming-tv',
+];
+function originalManifest() {
+  return { id: 'community.simkl.new-tv-episodes.account2', types: ['series', 'movie'],
+    idPrefixes: ['tt', 'tmdb:'], catalogs: originalIds.map((id, i) => ({
+      type: i === 0 || i === 3 ? 'series' : 'movie', id, name: id,
+    })) };
+}
+const homeFile = (outputDirectory) => join(outputDirectory, 'catalog/movie/simkl-plan-to-watch-home-releases-account2.json');
 
-test('1 release + 2 randoms, no duplicates, featured stay chronologically sorted',()=>{
-  const movies=[make(1,'2026-10-18'),make(2,null),make(3,'2026-10-17'),make(4,null),make(5,'2026-08-11'),make(6,null),make(7,null)];
-  const {entries,featured,shuffled}=interleaveSmartMovies(movies,{now:new Date('2026-10-19T12:00:00Z'),rng:seededRandom});
-  assert.deepEqual(entries.map(x=>x.meta.id),['tt1000001','tt1000002','tt1000004','tt1000003','tt1000006','tt1000007','tt1000005']);
-  assert.equal(featured,3);assert.equal(shuffled,4);
-  assert.equal(new Set(entries.map(x=>x.meta.id)).size,7);
+async function fixture(t, { movies, homeMetas = [], tmdbCache = null, originalMetadata = null } = {}) {
+  const temp = await mkdtemp(join(tmpdir(), 'smart-shuffle-tags-'));
+  const outputDirectory = join(temp, 'public/account-2');
+  const releaseStateFile = join(temp, 'state/movie.json');
+  await mkdir(join(outputDirectory, 'catalog/movie'), { recursive: true });
+  await mkdir(join(outputDirectory, 'meta/movie'), { recursive: true });
+  await mkdir(path.dirname(releaseStateFile), { recursive: true });
+  const manifest = originalManifest();
+  const status = { old: 'original', discovery: { foo: 1 }, movieRow: { bar: 2 } };
+  await writeFile(join(outputDirectory, 'manifest.json'), JSON.stringify(manifest));
+  await writeFile(join(outputDirectory, 'status.json'), JSON.stringify(status));
+  await writeFile(homeFile(outputDirectory), JSON.stringify({ metas: homeMetas }));
+  const cache = tmdbCache ?? Object.fromEntries(movies.map((movie) => [String(movie.movie.ids.simkl),
+    { tmdb: null, fetchedAt: '2026-10-19T00:00:00Z' }]));
+  await writeFile(releaseStateFile, JSON.stringify({ movies: cache }));
+  if (originalMetadata) await writeFile(join(outputDirectory, `meta/movie/${originalMetadata.meta.id}.json`), JSON.stringify(originalMetadata));
+  const fetchImpl = async (url) => {
+    assert.match(String(url), /api.simkl.com/);
+    return { ok: true, json: async () => ({ movies }) };
+  };
+  return { temp, outputDirectory, releaseStateFile, fetchImpl, manifest, status };
+}
+
+const planMovie = (n) => ({ status: 'plantowatch', movie: {
+  title: `Film ${n}`, ids: { simkl: n, imdb: `tt${1000000 + n}` },
+}});
+
+test('one published Home Releases movie then two randomized movies; no repeats; preserves Home Releases order', () => {
+  const entries = [make(1, 0), make(2), make(3, 2), make(4), make(5, 1), make(6), make(7)];
+  const { entries: ordered, featured, shuffled } = interleaveSmartMovies(entries, { rng: seededRandom });
+  assert.deepEqual(ordered.map(x => x.meta.id), [
+    'tt1000001', 'tt1000002', 'tt1000004', 'tt1000005', 'tt1000006',
+    'tt1000007', 'tt1000003',
+  ]);
+  assert.equal(featured, 3);
+  assert.equal(shuffled, 4);
+  assert.equal(new Set(ordered.map(x => x.meta.id)).size, 7);
 });
 
-test('old movies remain included, but are not prioritized; imminent home releases are featured',()=>{
-  const movies=[make(1,'2026-01-01'),make(2,'2026-10-25','soon'),make(3,'2026-10-12'),make(4,null)];
-  const {entries,featured}=interleaveSmartMovies(movies,{now:new Date('2026-10-19'),rng:seededRandom});
-  assert.equal(featured,2);
-  assert.deepEqual(entries.map(x=>x.meta.id),['tt1000003','tt1000001','tt1000004','tt1000002']);
+test('unfeatured entire Plan to Watch is still included, no matter how old, with randomization', () => {
+  const entries = [make(1), make(2), make(3)];
+  const result = interleaveSmartMovies(entries, { rng: seededRandom });
+  assert.equal(result.featured, 0);
+  assert.equal(result.shuffled, 3);
+  assert.equal(result.entries.length, 3);
+  assert.equal(interleaveSmartMovies([make(1, 1), make(2, 0)]).entries.length, 2);
 });
 
-test('if no releases, full list is shuffled; if no ordinary movies, releases remain',()=>{
-  const {entries}=interleaveSmartMovies([make(1,null),make(2,null),make(3,null)],{rng:seededRandom});
-  assert.equal(entries.length,3);
-  assert.equal(new Set(entries.map(x=>x.meta.id)).size,3);
-  assert.equal(interleaveSmartMovies([make(1,'2026-10-12'),make(2,'2026-10-13')],{now:new Date('2026-10-19')}).entries.length,2);
+test('pagination preserves all titles with Stremio skip pages', () => {
+  const entries = Array.from({ length: 121 }, (_, i) => ({ id: `tt${1000000 + i}` }));
+  const pages = paginateSmartCatalog(entries);
+  assert.deepEqual(pages.map(p => [p.skip, p.metas.length]), [[0, 50], [50, 50], [100, 21]]);
+  assert.deepEqual(pages.flatMap(p => p.metas), entries);
 });
 
-test('pagination preserves all titles with Stremio skip pages',()=>{
-  const entries=Array.from({length:121},(_,i)=>({id:`tt${1000000+i}`}));
-  const pages=paginateSmartCatalog(entries);
-  assert.deepEqual(pages.map(p=>[p.skip,p.metas.length]),[[0,50],[50,50],[100,21]]);
-  assert.deepEqual(pages.flatMap(p=>p.metas),entries);
+test('ONLY actual published Home Releases titles receive tags; older and non-featured recent movies get plain BetterPosters', () => {
+  const movies = [planMovie(1), planMovie(2), planMovie(3), planMovie(4)];
+  const cache = {
+    1: { tmdb: { id: 55, title: 'Film 1', release_dates: { results: [
+      { iso_3166_1: 'US', release_dates: [{ type: 4, release_date: '2018-09-02T00:00:00Z' }] },
+    ] } } },
+    2: { tmdb: { id: 66, title: 'Film 2', release_dates: { results: [
+      { iso_3166_1: 'US', release_dates: [{ type: 4, release_date: '2026-10-15T00:00:00Z' }] },
+    ] } } },
+    3: { tmdb: { id: 77, title: 'Film 3', release_dates: { results: [
+      { iso_3166_1: 'US', release_dates: [{ type: 4, release_date: '2026-10-14T00:00:00Z' }] },
+    ] } } },
+    4: { tmdb: null },
+  };
+  // Film 3 has a recent release date but is not on the actual Home Releases
+  // catalog (e.g. max 50). Film 1 has an old date. Neither gets an overlay.
+  const taggedPoster = 'https://site.test/account-2/posters/movies/released.webp';
+  const homeCatalog = [
+    { id: 'tt1000002', type: 'movie', name: 'Film 2', poster: taggedPoster,
+      releaseInfo: 'DIGITAL OUT', description: 'DIGITAL OUT · OCT 15 (US).' },
+  ];
+  const { entries } = buildSmartEntries(movies, cache, { homeCatalog });
+  const featured = entries.find(e => e.meta.id === 'tt1000002');
+  assert.equal(featured.homeRank, 0);
+  assert.equal(featured.meta.poster, taggedPoster);
+  assert.equal(featured.meta.releaseInfo, 'DIGITAL OUT');
+  for (const id of ['tt1000001', 'tt1000003', 'tt1000004']) {
+    const entry = entries.find(e => e.meta.id === id);
+    assert.equal(entry.homeRank, null);
+    assert.equal('releaseInfo' in entry.meta, false);
+    assert.match(entry.meta.poster, /^https:\/\/btttr\.cc\/poster\/imdb\/poster-default\//);
+    assert.doesNotMatch(entry.meta.description, /DIGITAL OUT|PHYSICAL OUT|COMING SOON/);
+  }
 });
 
-test('old release tags retain year and verified unknowns have no misleading tag',()=>{
-  const movies=[{status:'plantowatch',movie:{title:'Classic',ids:{simkl:11,imdb:'tt1234567'},poster:'1/xyz'}},
-    {status:'plantowatch',movie:{title:'No date',ids:{simkl:12,imdb:'tt1234568'}}}];
-  const cache={'11':{tmdb:{id:55,title:'Classic',release_dates:{results:[{iso_3166_1:'US',release_dates:[{type:4,release_date:'2018-09-02T00:00:00Z'}]}]}}},'12':{tmdb:null}};
-  const {entries}=buildSmartEntries(movies,cache,{now:new Date('2026-10-19')});
-  assert.equal(entries[0].tags.main,"SEP 2 '18");
-  assert.equal(entries[1].tags,null);
-  assert.equal(entries[1].meta.id,'tt1234568');
+test('end-to-end fifth catalog preserves four rows, existing metadata, pagination; reuses home tagged poster without rewriting it', async () => {
+  const movies = Array.from({ length: 107 }, (_, i) => planMovie(i + 1));
+  const homePosters = [3, 9, 20].map((n) => ({
+    type: 'movie', id: `tt${1000000 + n}`, name: `Film ${n}`,
+    poster: `https://example.test/account-2/posters/movie/${n}.webp`,
+    releaseInfo: n === 20 ? 'COMING SOON' : 'DIGITAL OUT',
+  }));
+  const originalMetadata = { meta: { type: 'movie', id: 'tt1000003', videos: [{ id: 'existing', season: 1, episode: 1 }] } };
+  const f = await fixture(null, { movies, homeMetas: homePosters, originalMetadata });
+  const result = await refreshSmartShuffle({ clientId: 'fake', accessToken: 'fake',
+    fetchImpl: f.fetchImpl, outputDirectory: f.outputDirectory, releaseStateFile: f.releaseStateFile,
+    baseUrl: 'https://unit.test/account-2', rng: seededRandom });
+  assert.equal(result.metas.length, 107);
+  assert.equal(result.status.featured, 3);
+  assert.equal(result.status.taggedFromHomeReleases, 3);
+  assert.equal(result.status.random, 104);
+  assert.deepEqual(result.metas.slice(0, 1).map(x => x.id), ['tt1000003']);
+  for (let i = 0; i < homePosters.length; i++) {
+    const meta = result.metas.find(e => e.id === homePosters[i].id);
+    assert.equal(meta.poster, homePosters[i].poster);
+    assert.equal(meta.releaseInfo, homePosters[i].releaseInfo);
+  }
+  for (const meta of result.metas.filter(e => !homePosters.some(home => home.id === e.id))) {
+    assert.match(meta.poster, /btttr\.cc\/poster\/imdb\/poster-default/);
+    assert.equal(Object.hasOwn(meta, 'releaseInfo'), false);
+  }
+  const updated = JSON.parse(await readFile(join(f.outputDirectory, 'manifest.json')));
+  assert.deepEqual(updated.catalogs.slice(0, 4), f.manifest.catalogs);
+  assert.equal(updated.catalogs[4].id, SMART_SHUFFLE_ID);
+  assert.equal(updated.catalogs[4].extra[0].name, 'skip');
+  const base = JSON.parse(await readFile(join(f.outputDirectory, `catalog/movie/${SMART_SHUFFLE_ID}.json`)));
+  const pages = await Promise.all([0, 50, 100, 150].map(async (skip) => JSON.parse(await readFile(
+    join(f.outputDirectory, `catalog/movie/${SMART_SHUFFLE_ID}/skip=${skip}.json`)))));
+  assert.deepEqual(base, pages[0]);
+  assert.deepEqual(pages.map(p => p.metas.length), [50, 50, 7, 0]);
+  assert.equal(new Set(pages.flatMap(p => p.metas.map(x => x.id))).size, 107);
+  assert.deepEqual(JSON.parse(await readFile(join(f.outputDirectory, 'meta/movie/tt1000003.json'))), originalMetadata);
+  const updatedStatus = JSON.parse(await readFile(join(f.outputDirectory, 'status.json')));
+  assert.equal(updatedStatus.old, 'original');
+  assert.deepEqual(updatedStatus.discovery, f.status.discovery);
+  assert.deepEqual(updatedStatus.movieRow, f.status.movieRow);
+  assert.equal(updatedStatus.smartShuffle.published, 107);
+  assert.deepEqual(JSON.parse(await readFile(homeFile(f.outputDirectory))), { metas: homePosters });
 });
 
-test('end-to-end fifth catalog preserves first four, status and existing metadata; publishes 3 pages',async()=>{
-  const temp=await mkdtemp(join(tmpdir(),'smart-shuffle-'));
-  const outputDirectory=join(temp,'public/account-2');
-  const releaseStateFile=join(temp,'state/movie.json');
-  await mkdir(join(outputDirectory,'catalog','movie'),{recursive:true});
-  await mkdir(join(outputDirectory,'meta','movie'),{recursive:true});
-  await mkdir(path.dirname(releaseStateFile),{recursive:true});
-  const ids=['simkl-new-tv-episodes-account2','simkl-plan-to-watch-home-releases-account2','global-upcoming-movies','global-upcoming-tv'];
-  const manifest={id:'community.simkl.new-tv-episodes.account2',types:['series','movie'],idPrefixes:['tt','tmdb:'],catalogs:ids.map((id,i)=>({type:i===0||i===3?'series':'movie',id,name:id}))};
-  const status={old:'original',discovery:{foo:1},movieRow:{bar:2}};
-  await writeFile(join(outputDirectory,'manifest.json'),JSON.stringify(manifest));
-  await writeFile(join(outputDirectory,'status.json'),JSON.stringify(status));
-  const originalMeta={meta:{type:'movie',id:'tt1000001',videos:[{id:'existing',season:1,episode:1}]}};
-  await writeFile(join(outputDirectory,'meta/movie/tt1000001.json'),JSON.stringify(originalMeta));
-  const movies=Array.from({length:107},(_,i)=>({status:'plantowatch',movie:{title:`Film ${i}`,ids:{simkl:i+1,imdb:`tt${1000001+i}`}}}));
-  const cache=Object.fromEntries(movies.map((movie,i)=>[String(i+1),{tmdb:null,fetchedAt:'2026-10-19T00:00:00Z'}]));
-  await writeFile(releaseStateFile,JSON.stringify({movies:cache}));
-  const fetchImpl=async (url)=>{assert.match(String(url),/api.simkl.com/);return {ok:true,json:async()=>({movies})};};
-  const result=await refreshSmartShuffle({clientId:'fake',accessToken:'fake',fetchImpl,outputDirectory,releaseStateFile,baseUrl:'https://unit.test/account-2',rng:seededRandom});
-  assert.equal(result.metas.length,107);
-  const updated=JSON.parse(await readFile(join(outputDirectory,'manifest.json')));
-  assert.deepEqual(updated.catalogs.slice(0,4),manifest.catalogs);
-  assert.equal(updated.catalogs[4].id,SMART_SHUFFLE_ID);
-  assert.equal(updated.catalogs[4].extra[0].name,'skip');
-  const base=JSON.parse(await readFile(join(outputDirectory,`catalog/movie/${SMART_SHUFFLE_ID}.json`)));
-  const pages=await Promise.all([0,50,100,150].map(async skip=>JSON.parse(await readFile(join(outputDirectory,`catalog/movie/${SMART_SHUFFLE_ID}/skip=${skip}.json`)))));
-  assert.deepEqual(base,pages[0]);
-  assert.deepEqual(pages.map(p=>p.metas.length),[50,50,7,0]);
-  assert.equal(new Set(pages.flatMap(p=>p.metas.map(x=>x.id))).size,107);
-  assert.deepEqual(JSON.parse(await readFile(join(outputDirectory,'meta/movie/tt1000001.json'))),originalMeta);
-  const updatedStatus=JSON.parse(await readFile(join(outputDirectory,'status.json')));
-  assert.equal(updatedStatus.old,'original');
-  assert.deepEqual(updatedStatus.discovery,status.discovery);
-  assert.deepEqual(updatedStatus.movieRow,status.movieRow);
-  assert.equal(updatedStatus.smartShuffle.published,107);
-});
-
-test('released poster in fifth row uses the established TV/anime style and separate folder',async()=>{
-  const sharp=(await import('sharp')).default;
-  const temp=await mkdtemp(join(tmpdir(),'smart-shuffle-poster-'));
-  const outputDirectory=join(temp,'public/account-2');
-  const releaseStateFile=join(temp,'state/movie.json');
-  await mkdir(outputDirectory,{recursive:true});
-  await mkdir(path.dirname(releaseStateFile),{recursive:true});
-  const baseIds=['simkl-new-tv-episodes-account2','simkl-plan-to-watch-home-releases-account2','global-upcoming-movies','global-upcoming-tv'];
-  const catalogNames=baseIds.map((id,i)=>({type:i===0||i===3?'series':'movie',id}));
-  await writeFile(join(outputDirectory,'manifest.json'),JSON.stringify({id:'community.simkl.new-tv-episodes.account2',catalogs:catalogNames,types:['movie','series'],idPrefixes:['tt','tmdb:']}));
-  await writeFile(join(outputDirectory,'status.json'),JSON.stringify({movieRow:{},discovery:{}}));
-  const tmdb={id:500,title:'Recent Movie',imdb_id:'tt1234567',poster_path:'/recent.jpg',release_dates:{results:[{
-    iso_3166_1:'US',release_dates:[{type:4,release_date:'2026-10-14T00:00:00Z'}]
-  }]}};
-  await writeFile(releaseStateFile,JSON.stringify({movies:{1:{fetchedAt:'2026-10-19T00:00:00Z',tmdb}}}));
-  const image=await sharp({create:{width:500,height:750,channels:3,background:{r:50,g:120,b:180}}}).png().toBuffer();
-  const fetchImpl=async(url)=>String(url).includes('api.simkl.com')
-    ? {ok:true,json:async()=>({movies:[{status:'plantowatch',movie:{title:'Recent Movie',ids:{simkl:1,imdb:'tt1234567'}}}]})}
-    : {ok:true,url:String(url),headers:{get:()=>null},arrayBuffer:async()=>image};
-  const result=await refreshSmartShuffle({clientId:'fake',accessToken:'fake',fetchImpl,outputDirectory,releaseStateFile,
-    baseUrl:'https://unit.test/account-2'});
-  assert.equal(result.status.featured,1);
-  assert.match(result.metas[0].poster,/\/posters\/smart-shuffle\/[0-9a-f]{24}\.webp$/);
-  const filename=result.metas[0].poster.split('/').at(-1);
-  const poster=await readFile(join(outputDirectory,'posters/smart-shuffle',filename));
-  assert.equal((await sharp(poster).metadata()).height,750);
-  assert.equal((await sharp(poster).metadata()).width,500);
+test('if Home Releases has no eligible movies, Smart Shuffle never adds release tags', async () => {
+  const movies = [planMovie(1), planMovie(2)];
+  const f = await fixture(null, { movies, homeMetas: [] });
+  const result = await refreshSmartShuffle({ clientId: 'fake', accessToken: 'fake',
+    fetchImpl: f.fetchImpl, outputDirectory: f.outputDirectory, releaseStateFile: f.releaseStateFile,
+    baseUrl: 'https://unit.test/account-2', rng: seededRandom });
+  assert.equal(result.status.featured, 0);
+  assert.equal(result.metas.length, 2);
+  assert.ok(result.metas.every(meta => meta.poster.includes('btttr.cc') && !('releaseInfo' in meta)));
 });
