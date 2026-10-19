@@ -98,7 +98,5 @@
     "showNext": true,
     "showRatings": true
   },
-  "dubOverrides": {
-    "21": 1155
-  }
+  "dubOverrides": {}
 }
