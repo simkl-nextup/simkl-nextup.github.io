@@ -233,6 +233,15 @@ jobs:
           MAX_DISCOVERY_TV: 50
         run: npm run refresh:discovery
 
+      - name: Add independent Account 2 Smart Shuffle movie row
+        if: steps.account2.outputs.enabled == 'true'
+        env:
+          SIMKL_CLIENT_ID_2: ${{ secrets.SIMKL_CLIENT_ID_2 }}
+          SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+          SIMKL_ACCESS_TOKEN_2: ${{ secrets.SIMKL_ACCESS_TOKEN_2 }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+        run: npm run refresh:smart
+
       - name: Verify account 2 TV addon
         if: steps.account2.outputs.enabled == 'true'
         env:
@@ -247,6 +256,7 @@ jobs:
           MEDIA_TYPE: tv
           VERIFY_MOVIE_ROW: "true"
           VERIFY_DISCOVERY: "true"
+          VERIFY_SMART_SHUFFLE: "true"
         run: npm run verify
 
       - name: Assert account 2 output is TV, not anime
@@ -272,6 +282,10 @@ jobs:
             || manifest.catalogs?.[3]?.id !== "global-upcoming-tv" || manifest.catalogs?.[3]?.type !== "series"
             || !status.discovery) {
             throw new Error("The two public discovery rows are missing.");
+          }
+          if (manifest.catalogs?.[4]?.id !== "simkl-movies-smart-shuffle-account2"
+            || manifest.catalogs?.[4]?.type !== "movie" || !status.smartShuffle) {
+            throw new Error("Fifth Smart Shuffle catalog is missing.");
           }
           if (status.mediaType !== "tv") {
             throw new Error(`Wrong account-2 mediaType: ${status.mediaType}`);

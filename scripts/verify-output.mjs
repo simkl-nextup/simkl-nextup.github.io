@@ -189,6 +189,36 @@ if (process.env.VERIFY_DISCOVERY === "true") {
   console.log(`Verified global upcoming rows: ${status.discovery.upcomingMovies} movies and ${status.discovery.upcomingTV} shows.`);
 }
 
+// Independent fifth Smart Shuffle row, with static Stremio skip pagination.
+if (process.env.VERIFY_SMART_SHUFFLE === "true") {
+  const id = "simkl-movies-smart-shuffle-account2";
+  const fifth = manifest.catalogs?.[4];
+  if (manifest.catalogs?.length !== 5 || fifth?.id !== id || fifth?.type !== "movie"
+    || !fifth.extra?.some(e => e.name === "skip") || !status.smartShuffle) {
+    throw new Error("Fifth independent Smart Shuffle row missing or invalid.");
+  }
+  const total = status.smartShuffle.published;
+  const size = status.smartShuffle.pageSize;
+  const base = JSON.parse(await readFile(path.join(publicDir,"catalog","movie",`${id}.json`),"utf8"));
+  const seen = new Set();
+  for(let skip=0;skip<Math.max(1,total);skip+=size){
+    const page = JSON.parse(await readFile(path.join(publicDir,"catalog","movie",id,`skip=${skip}.json`),"utf8"));
+    if(skip===0 && JSON.stringify(base)!==JSON.stringify(page))throw new Error("Smart Shuffle first page mismatch");
+    for(const meta of page.metas){
+      if(meta.type!=="movie" || !/^(?:tt\d+|tmdb:\d+|simkl:\d+)$/.test(meta.id)
+        || !meta.poster?.startsWith("https://") || seen.has(meta.id)){
+        throw new Error(`Invalid/duplicate Smart Shuffle movie ${meta.id}`);
+      }
+      seen.add(meta.id);
+      const details=JSON.parse(await readFile(path.join(publicDir,"meta","movie",safeMetaFilename(meta.id)),"utf8"));
+      if(details.meta?.id!==meta.id)throw new Error(`Missing Smart Shuffle metadata ${meta.id}`);
+    }
+  }
+  const empty=JSON.parse(await readFile(path.join(publicDir,"catalog","movie",id,`skip=${Math.ceil(total/size)*size}.json`),"utf8"));
+  if(empty.metas.length || seen.size!==total)throw new Error("Incomplete Smart Shuffle pagination");
+  console.log(`Verified Smart Shuffle: ${total} movies over ${status.smartShuffle.pages} pages`);
+}
+
 const secrets = [
   process.env.SIMKL_ACCESS_TOKEN,
   process.env.TMDB_READ_ACCESS_TOKEN,

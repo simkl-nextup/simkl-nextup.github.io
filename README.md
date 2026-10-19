@@ -168,3 +168,8 @@ npm run verify
 ## Credits and license
 
 Watchlist and schedule data: [Simkl](https://simkl.com). Artwork and supplementary metadata: [TMDB](https://www.themoviedb.org), [TheTVDB](https://thetvdb.com), and optional anime metadata services. This product uses the TMDB API but is **not endorsed or certified by TMDB**. See [`LICENSE`](LICENSE) for the project license.
+
+
+## Additional Account 2 Smart Shuffle movie row
+
+The fifth Account 2 catalog mixes **one recently home-released movie + two randomized Plan to Watch movies**, preserving the full watchlist with Stremio `skip` pagination. It does not change the other four Account 2 rows or the root anime addon. See [SMART_SHUFFLE.md](SMART_SHUFFLE.md) for exact behavior and refresh limitations.

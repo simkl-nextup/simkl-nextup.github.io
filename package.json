@@ -12,7 +12,8 @@
     "refresh:movies": "node scripts/refresh-movies.mjs",
     "test": "node --test",
     "verify": "node scripts/verify-output.mjs",
-    "refresh:discovery": "node scripts/refresh-discovery.mjs"
+    "refresh:discovery": "node scripts/refresh-discovery.mjs",
+    "refresh:smart": "node scripts/refresh-smart-shuffle.mjs"
   },
   "engines": {
     "node": ">=20.9.0"
