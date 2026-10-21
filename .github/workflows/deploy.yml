@@ -74,6 +74,19 @@ jobs:
             echo "SIMKL_ACCESS_TOKEN_2 is absent; deploying the existing root account only."
           fi
 
+      - name: Detect third Simkl account (anime only)
+        id: account3
+        env:
+          THIRD_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_3 }}
+        run: |
+          if [ -n "$THIRD_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Third Simkl account (anime) is enabled."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SIMKL_ACCESS_TOKEN_3 is absent; account-3 stays a setup placeholder."
+          fi
+
       - name: Keep scheduled workflows active
         run: |
           node scripts/update-keepalive.mjs
@@ -124,6 +137,15 @@ jobs:
           key: global-discovery-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             global-discovery-v1-
+
+      - name: Restore account 3 private anime sync state
+        if: steps.account3.outputs.enabled == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: state/account-3/simkl-state.json
+          key: simkl-account-3-anime-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            simkl-account-3-anime-state-
 
       - name: Run tests
         run: npm test
@@ -313,6 +335,102 @@ jobs:
         with:
           path: state/account-2/discovery-state.json
           key: global-discovery-v1-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # ---------------- Account 3: anime only, under /account-3 ----------------
+      # Same anime pipeline as the root account, but with its own token, state
+      # file, cache prefix, output folder, addon ID and catalog ID.
+
+      - name: Publish account 3 authorization placeholder
+        if: steps.account3.outputs.enabled != 'true'
+        env:
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          PUBLIC_PATH_PREFIX: account-3
+          OUTPUT_DIRECTORY: public/account-3
+          ADDON_ID: community.simkl.new-anime-episodes.account3
+          CATALOG_ID: simkl-new-anime-episodes-account3
+          CATALOG_NAME: Account 3 · Anime Up Next · Simkl
+          ADDON_NAME: Simkl Anime Up Next · Account 3
+          SITE_TITLE: Account 3 Anime Up Next
+          ACCOUNT_LABEL: Simkl Account 3
+          SETUP_SECRET_NAME: SIMKL_ACCESS_TOKEN_3
+          MEDIA_TYPE: anime
+        run: npm run build:placeholder
+
+      - name: Refresh account 3 anime under /account-3
+        if: steps.account3.outputs.enabled == 'true'
+        env:
+          SIMKL_CLIENT_ID_3: ${{ secrets.SIMKL_CLIENT_ID_3 }}
+          SIMKL_CLIENT_ID_PRIMARY: ${{ secrets.SIMKL_CLIENT_ID }}
+          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_3 }}
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+          MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
+          TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
+          TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
+          TVDB_SEASON_TYPE: ${{ vars.TVDB_SEASON_TYPE }}
+          TVDB_LANGUAGE: ${{ vars.TVDB_LANGUAGE }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          ANIMESCHEDULE_TOKEN: ${{ secrets.ANIMESCHEDULE_TOKEN }}
+          PUBLIC_PATH_PREFIX: account-3
+          OUTPUT_DIRECTORY: public/account-3
+          SIMKL_STATE_FILE: state/account-3/simkl-state.json
+          ADDON_ID: community.simkl.new-anime-episodes.account3
+          CATALOG_ID: simkl-new-anime-episodes-account3
+          CATALOG_NAME: Account 3 · Anime Up Next · Simkl
+          ADDON_NAME: Simkl Anime Up Next · Account 3
+          SITE_TITLE: Account 3 Anime Up Next
+          ACCOUNT_LABEL: Simkl Account 3
+          SETUP_SECRET_NAME: SIMKL_ACCESS_TOKEN_3
+          MAX_CATALOG_ITEMS: 50
+          POSTER_BADGES: "true"
+          MEDIA_TYPE: anime
+        run: |
+          export SIMKL_CLIENT_ID="${SIMKL_CLIENT_ID_3:-$SIMKL_CLIENT_ID_PRIMARY}"
+          if [ -z "$SIMKL_CLIENT_ID" ]; then
+            echo "Neither SIMKL_CLIENT_ID_3 nor SIMKL_CLIENT_ID is configured." >&2
+            exit 1
+          fi
+          npm run refresh
+
+      - name: Verify account 3 anime addon
+        if: steps.account3.outputs.enabled == 'true'
+        env:
+          OUTPUT_DIRECTORY: public/account-3
+          ADDON_ID: community.simkl.new-anime-episodes.account3
+          CATALOG_ID: simkl-new-anime-episodes-account3
+          SIMKL_ACCESS_TOKEN: ${{ secrets.SIMKL_ACCESS_TOKEN_3 }}
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+          MDBLIST_API_KEY: ${{ secrets.MDBLIST_API_KEY }}
+          TVDB_API_KEY: ${{ secrets.TVDB_API_KEY }}
+          TVDB_SUBSCRIBER_PIN: ${{ secrets.TVDB_SUBSCRIBER_PIN }}
+          ANIMESCHEDULE_TOKEN: ${{ secrets.ANIMESCHEDULE_TOKEN }}
+          MEDIA_TYPE: anime
+        run: npm run verify
+
+      - name: Assert account 3 output is anime only
+        if: steps.account3.outputs.enabled == 'true'
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+          const manifest = JSON.parse(await readFile("public/account-3/manifest.json", "utf8"));
+          const status = JSON.parse(await readFile("public/account-3/status.json", "utf8"));
+          if (manifest.id !== "community.simkl.new-anime-episodes.account3") {
+            throw new Error(`Wrong account-3 addon ID: ${manifest.id}`);
+          }
+          if (manifest.catalogs?.length !== 1 || manifest.catalogs[0].id !== "simkl-new-anime-episodes-account3") {
+            throw new Error(`Account 3 must publish exactly one anime catalog, got: ${JSON.stringify(manifest.catalogs?.map((c) => c.id))}`);
+          }
+          if (status.mediaType !== "anime") {
+            throw new Error(`Wrong account-3 mediaType: ${status.mediaType}`);
+          }
+          console.log(`Confirmed account 3 anime output: ${status.catalogItems} title(s).`);
+          NODE
+
+      - name: Save account 3 private anime sync state
+        if: steps.account3.outputs.enabled == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: state/account-3/simkl-state.json
+          key: simkl-account-3-anime-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

@@ -12,7 +12,7 @@ Account 2 now includes two **Simkl-independent** discovery rows alongside its pe
 **Anime and TV Up Next, plus Account 2 movie digital/physical home-release tracking for Stremio and Nuvio.**  
 Powered by [Simkl](https://simkl.com) · Hosted on GitHub Pages · Open source
 
-[**Anime addon**](https://simkl-nextup.github.io/manifest.json) · [**TV addon**](https://simkl-nextup.github.io/account-2/manifest.json) · [**Poster Studio**](https://simkl-nextup.github.io/studio.html)
+[**Anime addon**](https://simkl-nextup.github.io/manifest.json) · [**TV addon**](https://simkl-nextup.github.io/account-2/manifest.json) · [**Anime addon · Account 3**](https://simkl-nextup.github.io/account-3/manifest.json) · [**Poster Studio**](https://simkl-nextup.github.io/studio.html)
 
 </div>
 
@@ -38,16 +38,16 @@ Simkl Next Up creates personalized **Up Next** catalogs from your Simkl watchlis
 
 The addon **provides catalogs and metadata, not video streams**. Playback still comes from your Stremio/Nuvio streaming addons.
 
-## Two addon URLs; five Account 2 catalog rows
+## Three addon URLs; five Account 2 catalog rows
 
-| | Anime | TV series |
-|---|---|---|
-| Simkl library | Account 1 — anime | Account 2 — TV shows |
-| Addon URL | [`/manifest.json`](https://simkl-nextup.github.io/manifest.json) | [`/account-2/manifest.json`](https://simkl-nextup.github.io/account-2/manifest.json) |
-| State and catalog | Separate | Separate |
-| Poster settings | Independent | Independent |
+| | Anime | TV series | Anime (second account) |
+|---|---|---|---|
+| Simkl library | Account 1 — anime | Account 2 — TV shows | Account 3 — anime |
+| Addon URL | [`/manifest.json`](https://simkl-nextup.github.io/manifest.json) | [`/account-2/manifest.json`](https://simkl-nextup.github.io/account-2/manifest.json) | [`/account-3/manifest.json`](https://simkl-nextup.github.io/account-3/manifest.json) |
+| State and catalog | Separate | Separate | Separate |
+| Poster settings | Independent | Independent | Shares the anime row's settings |
 
-The Account 2 addon is optional: configure `SIMKL_ACCESS_TOKEN_2` to enable it. That same addon publishes **five rows** (TV Up Next, Home Releases, Upcoming Movies, Upcoming TV Shows, and Smart Shuffle), while the primary anime addon remains independent. The movie row requires the existing `TMDB_READ_ACCESS_TOKEN` secret.
+The Account 2 and Account 3 addons are optional: configure `SIMKL_ACCESS_TOKEN_2` / `SIMKL_ACCESS_TOKEN_3` to enable them (see [`THIRD_ACCOUNT_SETUP.md`](THIRD_ACCOUNT_SETUP.md) for Account 3, a second anime-only slot). That same addon publishes **five rows** (TV Up Next, Home Releases, Upcoming Movies, Upcoming TV Shows, and Smart Shuffle), while the primary anime addon remains independent. The movie row requires the existing `TMDB_READ_ACCESS_TOKEN` secret.
 
 ## New: Account 2 movie home-release row
 
@@ -142,8 +142,10 @@ simkl-nextup.github.io/
 ├── tests/                       ← automated tests
 ├── .github/workflows/           ← deployment and refresh jobs
 ├── public/                      ← generated Pages content (rebuilt by sync)
-│   └── account-2/               ← generated TV addon
-└── SECOND_ACCOUNT_SETUP.md      ← second-account guide
+│   ├── account-2/               ← generated TV addon
+│   └── account-3/               ← generated second anime addon
+├── SECOND_ACCOUNT_SETUP.md      ← second-account guide
+└── THIRD_ACCOUNT_SETUP.md       ← third-account (anime) guide
 ```
 
 **Promo upload instructions:** Upload `README.md` to the **repository root** and the five media files to **`assets/promo/`**, preserving the filenames. You do **not** need to change the GitHub Actions workflow for the README preview: GitHub serves these files directly from the repository. Do **not** place promo files inside `public/`; the refresh process rebuilds that folder and would delete them.
